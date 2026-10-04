@@ -27,7 +27,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     const decisions=s.decisions || {},filter=$('proposalFilter').value,search=$('proposalSearch').value.toLowerCase();
     const strong=pack.proposals.filter(p=>p.tier==='strong_proposal');
     const list=pack.proposals.filter(p=>decisions[p.id]!=='accepted' && (!filter || p.tier===filter) && (p.rule.name+' '+p.rule.category+' '+p.reason).toLowerCase().includes(search)).sort((a,b)=>(b.evidence.eligibleChange || 0)-(a.evidence.eligibleChange || 0)||(b.evidence.eligible || 0)-(a.evidence.eligible || 0));
-    status(pack.proposals.length+' proposals loaded. '+strong.length+' strong proposals. '+Object.values(decisions).filter(x=>x==='accepted').length+' accepted; '+Object.values(decisions).filter(x=>x==='rejected').length+' rejected. Accepted rules are saved under Merchant rules.');
+    status(pack.proposals.length+' proposals loaded. '+strong.length+' strong; '+pack.proposals.filter(p=>p.tier==='needs_judgment').length+' need judgment; '+pack.proposals.filter(p=>p.tier==='existing_approved').length+' existing policies. '+Object.values(decisions).filter(x=>x==='accepted').length+' accepted; '+Object.values(decisions).filter(x=>x==='rejected').length+' rejected. Accepted rules are saved under Merchant rules.');
     const activeQueue=workingQueue(proposals(s.dataset.transactions,s.rules,5,s.business),s.workFrom || '2025-01-01');
     const blockers=new Set(activeQueue.filter(t=>['Transfer candidate','Ambiguous transfer','Possible refund','Existing multi-account','Manual review'].includes(t.kind)).map(t=>t.id));
     const actual=ruleCoverage(s.dataset.transactions.filter(t=>t.date>=(s.workFrom || '2025-01-01')),s.rules,s.business,blockers);
@@ -41,7 +41,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     if(!list.length) $('proposalRows').append(make('p','No proposals remain in this view. Accepted rules are saved under Merchant rules.'));
     for(const p of list) {
       const detail=make('details');detail.className='proposal-card';detail.dataset.proposalId=p.id;detail.open=openId ? p.id===openId : opened.has(p.id);
-      detail.append(make('summary',p.rule.name+' → '+p.rule.category+' · '+(decisions[p.id] || p.tier.replaceAll('_',' '))));
+      const summary=make('summary');summary.append(make('span',p.rule.name),make('span','Category: '+p.rule.category),make('small',decisions[p.id] || p.tier.replaceAll('_',' ')));summary.children[0].className='proposal-merchant';summary.children[1].className='proposal-category';detail.append(summary);
       detail.append(make('p',p.reason),make('p','Purpose evidence: '+(p.purposeEvidence || 'Not supplied')));
       if(p.sources?.length){const sources=make('p','Provider sources: ');for(const url of p.sources){const a=make('a',new URL(url).hostname);a.href=url;a.target='_blank';a.rel='noopener noreferrer';sources.append(a,make('span',' '));}detail.append(sources);}
       const e=p.evidence;
@@ -60,11 +60,7 @@ export function installProposalReview({ getState, categories, imported, accepted
       else {
         const yes=make('button','Accept rule'),no=make('button','Reject proposal');no.className='secondary';
         yes.disabled=decisions[p.id]==='accepted';
-        if(p.tier==='needs_judgment') {
-          const label=make('label'),checkBox=make('input');checkBox.type='checkbox';label.className='proposal-confirm';
-          label.append(checkBox,make('span','I have checked the purchase purpose and accept this scope.'));
-          yes.disabled=true;checkBox.onchange=()=>{yes.disabled=!checkBox.checked || getState().decisions?.[p.id]==='accepted';};bar.append(label);
-        }
+        if(p.tier==='needs_judgment')bar.append(make('p','Needs your judgment: Accept rule approves this category for the displayed scope.'));
         yes.onclick=async()=>{const position={left:window.scrollX,top:window.scrollY,behavior:'instant'};const index=list.indexOf(p);const pending=c=>c.tier!=='existing_approved' && decisions[c.id]!=='rejected';const next=list.slice(index+1).find(pending) || list.slice(0,index).find(pending);yes.disabled=true;try {await check(pack);const live=getState();if(live.pack!==pack)throw Error('Proposal pack changed. Review the current pack before accepting.');const result=acceptProposal(pack,p.id,live.rules,live.decisions);await accepted(result);await render(next?.id);await new Promise(resolve=>requestAnimationFrame(()=>{const panel=$('proposalRows'),card=[...panel.querySelectorAll('.proposal-card')].find(c=>c.dataset.proposalId===next?.id);if(card){panel.scrollTop+=card.getBoundingClientRect().top-panel.getBoundingClientRect().top;card.querySelector('summary').focus({preventScroll:true});}window.scrollTo(position);resolve();}));}catch(e){status(e.message);yes.disabled=false;}};
         no.disabled=decisions[p.id]==='rejected' || decisions[p.id]==='accepted';
         no.onclick=async()=>{try{await check(pack);if(getState().pack!==pack)throw Error('Proposal pack changed.');await rejected({...getState().decisions,[p.id]:'rejected'});await render();}catch(e){status(e.message);}};

@@ -11,9 +11,10 @@ for(let n=1;n<=6;n++){
  rows.push([id,'2026-10-01','Fictional Checking',desc,'','10.00','Asset','Cash and Bank','fictional-bank']);
  rows.push([id,'2026-10-01',category,desc,'10.00','','Expense','Expense','fictional-category']);
 }
+for(const [id,account,accountId,desc,direction,category] of [['1000000000000000007','Fictional Checking','fictional-bank','Card payment','out','Uncategorized Expense'],['1000000000000000008','Fictional Credit Card','fictional-card','Payment thank you','in','Uncategorized Income']]){rows.push([id,'2026-10-01',account,desc,direction==='in'?'99.00':'',direction==='out'?'99.00':'',direction==='in'?'Liability':'Asset',direction==='in'?'Credit Card':'Cash and Bank',accountId]);rows.push([id,'2026-10-01',category,desc,direction==='out'?'99.00':'',direction==='in'?'99.00':'',direction==='out'?'Expense':'Income',direction==='out'?'Expense':'Income','fixture-category']);}
 const csvText=[headers,...rows].map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n');
 const dataset=importAccounting(csvText),hash=await sourceHash(csvText);
-const pack=analyzeHistory(dataset,{business,groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:6,ledgerRows:12}).pack;
+const pack=analyzeHistory(dataset,{business,groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:8,ledgerRows:16}).pack;
 let state={dataset,business,csvText,sample:false,rules:[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}],pack,decisions:{},packFileName:'synthetic-proposals.json'};
 const output=document.getElementById('fixtureStatus');
 const save=async()=>saveSession({version:1,business,csvText,sourceName:'Fictional integration test.csv',sample:false,shortlist:['1000000000000000005'],proposalPack:state.pack,proposalDecisions:state.decisions,proposalFileName:state.packFileName});

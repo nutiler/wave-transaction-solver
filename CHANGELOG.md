@@ -73,3 +73,8 @@ This initial milestone preceded deliberate category Apply and review requests, a
 ## 0.8.4
 
 - Highlight open rule proposals in blue. Accepting removes the current proposal and opens the next pending proposal in the filtered list, keeping the page viewport in place and showing the next card at the top of the proposal panel.
+
+## 0.9.0
+
+- Make proposal merchant/category headings larger and distinct. Remove the extra judgment checkbox; Accept rule is explicit approval.
+- Add a searchable, deduplicated transfer-review view, paired money-out/in details, ambiguity review, and read-only two-record live verification. Keep transfer creation and linking manual.

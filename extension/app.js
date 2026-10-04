@@ -1,3 +1,5 @@
+import { transferPairs } from './transfers.js';
+import { installTransferReview } from './transfer-view.js';
 import { validateRule } from './rules.js';
 import { installProposalReview } from './proposal-view.js';
 import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult, resetAttemptReceipt } from './editor.js';
@@ -24,7 +26,7 @@ let liveGeneration = 0;
 let lastLiveSnapshot = null, applying = false, editReceipts = {};
 const receiptKey = () => business + ':' + chosen?.id;
 let exportTab = null, liveStepLabel = 'Not checked';
-const stepKeys = ['setup','chart','import','merchant','proposals','history','queue','live','plan'];
+const stepKeys = ['setup','chart','import','merchant','proposals','history','queue','transfers','live','plan'];
 const stepComplete = new Map();
 function stepStatus(key, text, complete = false, foldOnComplete = false) {
   const badge = $(`step-${key}-status`); badge.textContent = `${complete ? '✓ ' : ''}${text}`; badge.classList.toggle('complete',complete);
@@ -39,13 +41,14 @@ function updateSteps() {
   stepStatus('proposals',proposalPack ? Object.values(proposalDecisions).filter(d=>d==='accepted').length+' proposals accepted' : 'Import proposal pack');
   stepStatus('history','Optional suggestions');
   stepStatus('queue',dataset ? `${queue.length.toLocaleString()} proposals to inspect` : 'Import CSV first');
+  stepStatus('transfers',transferPairs(queue).length+' candidate pairs');
   stepStatus('live',liveStepLabel,liveStepLabel==='Fields match');
   stepStatus('plan',shortlist.size ? `${shortlist.size} records in draft` : 'Choose proposals');
   $('openExport').disabled = !extensionMode || !exportUrlFor(business, exportPages);
   $('readChart').classList.toggle('secondary', !chartTab);
   $('readChart').disabled = chartCollecting || !extensionMode || !business || !chartTab;
 }
-const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter', 'workFrom'];
+const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter', 'workFrom', 'transferSearch'];
 const draftIds = ['ruleName', 'aliases', 'category'];
 function rememberSession() {
   if (restoring) return Promise.resolve();
@@ -205,7 +208,7 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); void proposalReview.render(); }
+function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
 const workFrom = () => $('workFrom').value || '2025-01-01';
@@ -219,7 +222,7 @@ function analyze(preserveDraft = false, renderProposals = true) {
   $('queue').hidden = false;
   $('counts').textContent = `${queue.filter(t => t.kind === 'Merchant rule').length} merchant suggestions · ${new Set(queue.filter(t => t.kind === 'Transfer candidate').map(t => [t.id, t.partner.id].sort().join(':'))).size} transfer pairs`;
   if (chosen) { chosen = queue.find(t => t.id === chosen.id); if(chosen)select(chosen, false);else {liveGeneration++;lastLiveSnapshot=null;liveStepLabel='Not checked';$('live').hidden=true;updateApply();} }
-  renderQueue();
+  renderQueue();transferReview.render();
   renderHistory(); renderPlan(); validateLoadedPlan();
   if(renderProposals)void proposalReview.render();
   rememberSoon();
@@ -531,6 +534,7 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
+const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
@@ -542,7 +546,7 @@ renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
 await refreshTabs();
-await proposalReview.render();
+await proposalReview.render();transferReview.render();
 updateSteps();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
