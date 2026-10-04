@@ -30,6 +30,16 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   return { categoryVerified, reviewedVerified, message };
 }
 
+export function resetAttemptReceipt(transaction, snapshot, business, receipt, resetAt = new Date().toISOString()) {
+  if (!receipt?.saveAttempted) throw new Error('This record has no locked Apply attempt.');
+  if (!transaction || transaction.kind !== 'Merchant rule' || transaction.direction !== 'out' || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary) throw new Error('Reset supports only the original single-category merchant purchase.');
+  if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction,snapshot).checks.some(check=>check.state !== 'Match')) throw new Error('The freshly loaded Wave record must match all original export fields before resetting.');
+  if (transaction.categories[0] === receipt.category) throw new Error('The original category already equals the previous target. Review this transaction manually before starting another attempt.');
+  if (snapshot.reviewed === 'Reviewed' || (snapshot.controls || []).some(name=>/^(Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name))) throw new Error('Wave still indicates this record is reviewed. Restore its original state before resetting.');
+  const { previousAttempts = [], ...previous } = receipt;
+  return { category: transaction.proposed, saveAttempted:false, categoryVerified:false, reviewedVerified:false, resetAt, previousAttempts:[...previousAttempts,{...previous, resetAt}], message:'Previous attempt reset after a fresh original-record check. Re-planned; nothing changed in Wave.' };
+}
+
 // Runs only after the user clicks Apply. Every action stays inside the exact record.
 export async function editWaveTransaction(request, testContext) {
   const doc = testContext?.document || document, loc = testContext?.location || location;

@@ -41,3 +41,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.4
 
 - Wait for Save redirects to settle, then reopen the exact saved transaction without an immediate reload cancelling the navigation. Recover closed test tabs for read-only rechecks and keep uncertain saves blocked from repeating.
+
+## 0.7.5
+
+- Add an explicit Reset attempt and re-plan action after manual restoration. Recheck original fields, preserve attempt history, and unlock a new deliberate Apply without changing Wave.

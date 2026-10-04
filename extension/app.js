@@ -1,4 +1,4 @@
-import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult } from './editor.js';
+import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult, resetAttemptReceipt } from './editor.js';
 import { defaultRules, importAccounting, proposals, waveIdentity, compareLive, normalize } from './model.js';
 import { readWavePage } from './live-reader.js';
 import { historySuggestions } from './history.js';
@@ -355,6 +355,8 @@ function updateApply() {
   $('applyPanel').hidden = !supported;
   $('apply').disabled = true;
   $('verifyApply').hidden = !editReceipts[receiptKey()]?.saveAttempted;
+  $('resetAttempt').hidden = !supported || !editReceipts[receiptKey()]?.saveAttempted;
+  $('resetAttempt').disabled = applying || !extensionMode || !business;
   if (!supported) return;
   $('applyPreview').textContent = chosen.date + ' · ' + chosen.description + ' · USD ' + (chosen.amount / 100).toFixed(2) + ' · ' + chosen.primary.account + '\n' + chosen.categories.join(' + ') + ' → ' + chosen.proposed + '. Request reviewed status.';
   const receipt = editReceipts[receiptKey()];
@@ -366,8 +368,9 @@ function updateApply() {
   } catch (e) { $('applyStatus').textContent = e.message; }
 }
 async function storeEditReceipt(key, receipt) {
-  editReceipts[key] = receipt;
-  await chrome.storage.local.set({ solverEditReceipts: editReceipts });
+  const next = { ...editReceipts, [key]: receipt };
+  await chrome.storage.local.set({ solverEditReceipts: next });
+  editReceipts = next;
 }
 async function reloadForVerification(tabId, expectedBusiness, id) {
   const current = () => business === expectedBusiness && chosen?.id === id;
@@ -403,7 +406,7 @@ $('apply').onclick = handle(async () => {
     const request = currentEditRequest(snapshot);
     if (chosen?.id !== transaction.id || business !== expectedBusiness || liveTab !== tabId) throw new Error('Selection changed. Nothing applied.');
     // Persist before injection: a lost response or extension reload must not retry a save.
-    await storeEditReceipt(key, { category: request.category, saveAttempted: true, startedAt: new Date().toISOString(), message: 'Apply outcome is not yet verified. Use Recheck saved result.' });
+    await storeEditReceipt(key, { previousAttempts: editReceipts[key]?.previousAttempts || [], category: request.category, saveAttempted: true, startedAt: new Date().toISOString(), message: 'Apply outcome is not yet verified. Use Recheck saved result.' });
     attempted = true; $('applyStatus').textContent = 'Selecting category and requesting reviewed status in Wave…';
     const results = await chrome.scripting.executeScript({ target: { tabId }, func: editWaveTransaction, args: [request] });
     const outcome = results[0]?.result;
@@ -421,6 +424,21 @@ $('apply').onclick = handle(async () => {
   } finally {
     applying = false; document.querySelector('main').inert = false; renderPlan(); updateApply();
   }
+}, 'applyStatus');
+$('resetAttempt').onclick = handle(async () => {
+  if (applying || sampleMode || !extensionMode || !business || !chosen || !editReceipts[receiptKey()]?.saveAttempted) throw new Error('Select a real transaction with a previous Apply attempt.');
+  const transaction = chosen, expectedBusiness = business, key = receiptKey();
+  applying = true; liveGeneration++; document.querySelector('main').inert = true;
+  try {
+    $('applyStatus').textContent = 'Reopening the original record before resetting the previous attempt…';
+    const snapshot = await reloadForVerification(liveTab, expectedBusiness, transaction.id);
+    if (chosen?.id !== transaction.id || business !== expectedBusiness) throw new Error('Selection changed. Attempt was not reset.');
+    const reset = resetAttemptReceipt(transaction, snapshot, expectedBusiness, editReceipts[key]);
+    await storeEditReceipt(key, reset);
+    shortlist.add(transaction.id); await rememberSession();
+    renderLive(snapshot); renderQueue();
+    $('liveStatus').textContent = 'Previous attempt reset after matching the original record. Nothing changed in Wave. Click Apply to retry.';
+  } finally { applying = false; document.querySelector('main').inert = false; renderPlan(); updateApply(); }
 }, 'applyStatus');
 $('verifyApply').onclick = handle(async () => {
   if (applying || !editReceipts[receiptKey()]?.saveAttempted || !business || !chosen) throw new Error('Select the attempted transaction before checking its saved result.');

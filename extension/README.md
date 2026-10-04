@@ -89,3 +89,7 @@ The old CSV remains a historical snapshot. After a verified category save, that 
 Equity categories such as personal groceries are selected through Wave’s **Personal Expense or Withdrawal** submenu. The solver searches inside the category popup when needed and matches the exact account name, excluding icon text.
 
 After Save, Wave may close the dialog and return to the list. Verification waits for that redirect, then opens the exact saved ID and checks a freshly loaded record. **Recheck saved result** can also replace a closed test tab without pressing Save again.
+
+## Retry after a manual restoration
+
+If you manually restore the original category and unreviewed state in Wave, select **Reset attempt and re-plan**. It loads the saved record again and requires every original export field to match. It preserves the previous attempt locally, adds the transaction back to the draft, and unlocks Apply. Reset does not click Save or change Wave. A still-reviewed record, changed amount, different transaction, or saved target category keeps the attempt locked.

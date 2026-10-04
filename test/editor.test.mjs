@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareCategoryEdit, verifyCategoryResult } from '../extension/editor.js';
+import { prepareCategoryEdit, verifyCategoryResult, resetAttemptReceipt } from '../extension/editor.js';
 import { buildPlan } from '../extension/plan.js';
 const business = '11111111-1111-1111-1111-111111111111';
 const primary = { id:'1000000000000000001', account:'Test Card', accountId:'card', type:'Credit Card', debit:0, credit:5280, group:'Liability', date:'2026-09-20', description:'Test Store' };
@@ -45,4 +45,17 @@ test('Equity merchant categories route through the personal-expense submenu', ()
   const equity = {name:'Equity',accounts:[{name:'Personal Groceries'}]};
   assert.deepEqual(prepareCategoryEdit(transaction,snapshot,{...options,categoryGroups:[equity]}).categoryPath,['Personal Expense or Withdrawal']);
   assert.deepEqual(prepareCategoryEdit(transaction,snapshot,{...options,categoryGroups:[{...equity,name:'Expenses'}]}).categoryPath,[]);
+});
+
+test('Explicit reset archives the previous attempt only after the original live record matches',()=>{
+  const receipt={saveAttempted:true,category:'Personal Groceries',message:'Unverified',previousAttempts:[{category:'Old category',saveAttempted:true}]};
+  const reset=resetAttemptReceipt(transaction,snapshot,business,receipt,'2026-10-04T00:00:00.000Z');
+  assert.equal(reset.saveAttempted,false); assert.equal(reset.previousAttempts.length,2); assert.equal(reset.previousAttempts[1].message,'Unverified'); assert.equal(receipt.saveAttempted,true); assert.equal(receipt.previousAttempts.length,1);
+  assert.equal(prepareCategoryEdit(transaction,snapshot,options).category,reset.category);
+});
+test('Reset keeps locks for saved targets, changed records, wrong businesses or reviewed records',()=>{
+  const receipt={saveAttempted:true,category:'Personal Groceries'};
+  for(const modified of [{fields:{...snapshot.fields,category:'Personal Groceries'}},{fields:{...snapshot.fields,amount:'99.00'}},{identity:{business:'other',transaction:transaction.id}},{identity:{business,transaction:'2'}},{problems:['Unknown category']},{reviewed:'Reviewed'},{controls:['Mark as unreviewed']}]) assert.throws(()=>resetAttemptReceipt(transaction,{...snapshot,...modified},business,receipt));
+  assert.throws(()=>resetAttemptReceipt(transaction,snapshot,business,{...receipt,saveAttempted:false}));
+  assert.throws(()=>resetAttemptReceipt(transaction,snapshot,business,{...receipt,category:'Uncategorized Expense'}));
 });
