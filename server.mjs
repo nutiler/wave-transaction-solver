@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/core.js': ['core.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
-const extensionFiles = { 'app.html': 'text/html', 'app.js': 'text/javascript', 'app.css': 'text/css', 'model.js': 'text/javascript', 'csv.js': 'text/javascript', 'live-reader.js': 'text/javascript', 'chart-reader.js': 'text/javascript', 'catalog.js': 'text/javascript', 'session.js': 'text/javascript', 'workflow.js': 'text/javascript', 'history.js': 'text/javascript', 'plan.js': 'text/javascript', 'reader-fixture.html': 'text/html', 'reader-fixture.js': 'text/javascript' };
+const extensionFiles = { 'editor-fixture.html': 'text/html', 'editor-fixture.js': 'text/javascript', 'editor.js': 'text/javascript', 'app.html': 'text/html', 'app.js': 'text/javascript', 'app.css': 'text/css', 'model.js': 'text/javascript', 'csv.js': 'text/javascript', 'live-reader.js': 'text/javascript', 'chart-reader.js': 'text/javascript', 'catalog.js': 'text/javascript', 'session.js': 'text/javascript', 'workflow.js': 'text/javascript', 'history.js': 'text/javascript', 'plan.js': 'text/javascript', 'reader-fixture.html': 'text/html', 'reader-fixture.js': 'text/javascript' };
 const port = Number(process.env.PORT || 4317);
 http.createServer(async (req, res) => {
   const extensionName = req.url?.startsWith('/extension/') ? req.url.slice('/extension/'.length) : '';

@@ -1,0 +1,145 @@
+import { compareLive } from './model.js';
+import { buildPlan, validatePlan } from './plan.js';
+
+export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories }) {
+  if (sample || !business) throw new Error('Select a real Wave business and export first.');
+  if (!transaction || transaction.kind !== 'Merchant rule' || transaction.direction !== 'out' || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
+  if (!categories.includes(transaction.proposed)) throw new Error('Collect the exact category name from Chart of Accounts first.');
+  let entry;
+  if (shortlist.has(transaction.id)) entry = buildPlan(queue, [transaction.id], { business, sourceName: '' }).entries[0];
+  else if (loadedPlan) {
+    const validations = validatePlan(loadedPlan, queue, business);
+    const index = loadedPlan.entries.findIndex(e => e.ids.length === 1 && e.ids[0] === transaction.id);
+    if (index >= 0 && validations[index].state === 'Unchanged in export') entry = loadedPlan.entries[index];
+  }
+  if (!entry || entry.category !== transaction.proposed || !entry.requestReviewAfterMatch) throw new Error('Tick this transaction’s Plan checkbox, or import its unchanged draft plan.');
+  if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction, snapshot).checks.some(c => c.state !== 'Match')) throw new Error('All live fields must match the export before Apply.');
+  return { business, id: transaction.id, category: entry.category, expected: { ...snapshot.fields } };
+}
+
+export function verifyCategoryResult(transaction, snapshot, business, category) {
+  const result = compareLive({ ...transaction, categories: [category] }, snapshot);
+  const categoryVerified = snapshot.identity?.business === business && !snapshot.problems?.length && result.checks.every(c => c.state === 'Match');
+  const controls = snapshot.controls || [];
+  const inverse = controls.filter(name => /^(Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
+  const mark = controls.filter(name => /^Mark (as )?reviewed$/i.test(name));
+  const reviewedVerified = categoryVerified && (snapshot.reviewed === 'Reviewed' || (inverse.length === 1 && mark.length === 0));
+  const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : 'Saved result could not be verified. Inspect Wave; Apply will not repeat this attempt.';
+  return { categoryVerified, reviewedVerified, message };
+}
+
+// Runs only after the user clicks Apply. Every action stays inside the exact record.
+export async function editWaveTransaction(request, testContext) {
+  const doc = testContext?.document || document, loc = testContext?.location || location;
+  const style = testContext?.getComputedStyle || getComputedStyle;
+  const wait = testContext?.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+  const tidy = value => String(value || '').replace(/\s+/g, ' ').trim();
+  const visible = el => !!el && !el.hidden && !el.closest('[hidden],[aria-hidden="true"]') && style(el).display !== 'none' && style(el).visibility !== 'hidden' && el.getClientRects().length > 0;
+  let saveAttempted = false, stage = 'preflight';
+  function identity() {
+    const url = new URL(loc.href);
+    if (url.origin !== 'https://next.waveapps.com' || url.pathname !== '/' + request.business + '/transactions/' + request.id) throw new Error('Wave navigated away from the requested transaction.');
+  }
+  function root() {
+    const dialogs = [...doc.querySelectorAll('[role="dialog"],[aria-modal="true"]')].filter(el => visible(el) && tidy(el.textContent).includes('Edit transaction'));
+    const outer = dialogs.filter(el => !dialogs.some(other => other !== el && other.contains(el)));
+    if (outer.length === 1) return outer[0];
+    if (outer.length > 1) throw new Error('Multiple edit dialogs are open.');
+    const headings = [...doc.querySelectorAll('h1,h2,h3,h4,h5,div,span')].filter(el => visible(el) && !el.children.length && tidy(el.textContent) === 'Edit transaction');
+    if (headings.length === 1) {
+      for (let el = headings[0].parentElement, i = 0; el && el !== doc.body && i < 8; el = el.parentElement, i++) {
+        if (el.querySelectorAll('input').length >= 3 && [...el.querySelectorAll('button')].some(b => tidy(b.textContent) === 'Save')) return el;
+      }
+    }
+    throw new Error('Open the Edit transaction dialog before applying.');
+  }
+  function control(dialog, name) {
+    const selector = 'input:not([type="hidden"]):not([type="checkbox"]),select,[role="combobox"],.wv-select';
+    const named = [...dialog.querySelectorAll(selector)].filter(el => visible(el) && tidy(el.getAttribute('aria-label')) === name);
+    if (named.length === 1) return named[0];
+    const labels = [...dialog.querySelectorAll('label,span')].filter(el => visible(el) && !el.children.length && tidy(el.textContent) === name);
+    const found = new Set();
+    for (const label of labels) {
+      const linked = label.control || (label.htmlFor && doc.getElementById(label.htmlFor));
+      if (linked && dialog.contains(linked) && visible(linked)) { found.add(linked); continue; }
+      for (let el = label.parentElement, i = 0; el && el !== dialog && i < 4; el = el.parentElement, i++) {
+        const labelsHere = [...el.querySelectorAll('label,span')].filter(l => !l.children.length && ['Date','Description','Account','Type','Amount','Category'].includes(tidy(l.textContent)));
+        if (labelsHere.some(l => tidy(l.textContent) !== name)) break;
+        const controls = [...el.querySelectorAll(selector)].filter(visible);
+        const top = controls.filter(c => !controls.some(other => other !== c && other.contains(c)));
+        if (top.length === 1) { found.add(top[0]); break; }
+      }
+    }
+    if (found.size !== 1) throw new Error(name + ': cannot identify one editable control.');
+    return [...found][0];
+  }
+  function value(el) {
+    if (el.tagName === 'INPUT') return tidy(el.value);
+    if (el.tagName === 'SELECT') return tidy(el.selectedOptions[0]?.textContent);
+    const labels = [...el.querySelectorAll('.wv-select__label')].filter(visible);
+    if (labels.length !== 1) throw new Error('Selected dropdown value is ambiguous.');
+    return tidy(labels[0].textContent);
+  }
+  function assertFields(category) {
+    identity(); const dialog = root();
+    for (const name of ['Date','Description','Account','Type','Amount','Category']) {
+      const actual = value(control(dialog, name)), expected = name === 'Category' ? category : request.expected[name.toLowerCase()];
+      const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
+      if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected)) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
+    }
+    return dialog;
+  }
+  const buttons = (dialog, names) => [...dialog.querySelectorAll('button,[role="button"]')].filter(el => visible(el) && names.includes(tidy(el.textContent || el.getAttribute('aria-label'))));
+  function enabled(el) { return !el.disabled && el.getAttribute('aria-disabled') !== 'true'; }
+  try {
+    if (!request || !/^[0-9a-f-]{36}$/i.test(request.business || '') || !/^\d+$/.test(request.id || '') || !tidy(request.category) || !request.expected) throw new Error('Invalid edit request.');
+    let dialog = assertFields(request.expected.category);
+    if (buttons(dialog, ['Save']).length !== 1) throw new Error('Cannot identify one Save button.');
+    const review = buttons(dialog, ['Mark as reviewed', 'Mark reviewed']);
+    const alreadyReviewed = buttons(dialog, ['Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
+    if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
+    if (review.length && !enabled(review[0])) throw new Error('The review control is disabled.');
+    if (tidy(request.expected.category) !== tidy(request.category)) {
+      stage = 'category selection';
+      const category = control(dialog, 'Category');
+      if (category.tagName === 'SELECT') {
+        const options = [...category.options].filter(o => tidy(o.textContent) === tidy(request.category) && !o.disabled);
+        if (options.length !== 1) throw new Error('Exact category is missing or ambiguous.');
+        category.value = options[0].value; category.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        category.click();
+        let options = [];
+        for (let i = 0; i < 20; i++) {
+          identity();
+          const matches = [...doc.querySelectorAll('[role="option"],li,button,[role="menuitem"],.wv-dropdown__menu__item,.wv-select__option,.wv-select__menu__option')].filter(el => visible(el) && tidy(el.textContent) === tidy(request.category));
+          options = matches.filter(el => !matches.some(other => other !== el && el.contains(other)));
+          if (options.length) break;
+          await wait(100);
+        }
+        if (options.length !== 1 || !enabled(options[0])) throw new Error('Exact category option not found. Choose it manually or share the dropdown diagnostics.');
+        // Selecting is allowed only while every original field still matches.
+        assertFields(request.expected.category); options[0].click();
+      }
+      let ready = false;
+      for (let i = 0; i < 20; i++) { try { dialog = assertFields(request.category); ready = true; break; } catch { await wait(100); } }
+      if (!ready) throw new Error('Category selection could not be confirmed. Save was not clicked.');
+    }
+    dialog = assertFields(request.category);
+    stage = 'review';
+    const mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
+    if (mark.length === 1) {
+      // Some Wave layouts use this as a save-and-review action.
+      saveAttempted = true; mark[0].click();
+      for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested: true }; }
+      dialog = assertFields(request.category);
+    }
+    stage = 'save';
+    const save = buttons(dialog, ['Save']);
+    if (save.length !== 1 || !enabled(save[0])) throw new Error('Save is unavailable. Check the Wave dialog before continuing.');
+    assertFields(request.category); saveAttempted = true; save[0].click();
+    for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested: true }; }
+    return { saveAttempted, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
+  } catch (error) {
+    return { saveAttempted, stage, problem: error.message, categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+  }
+}

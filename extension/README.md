@@ -1,4 +1,4 @@
-# Dandelion's Wave Transaction Solver — read-only test
+# Dandelion's Wave Transaction Solver
 
 ## Install in Chrome
 
@@ -65,12 +65,23 @@ Fictional samples can produce clearly marked sample plans for interface testing,
 
 The extension requests access only to `https://next.waveapps.com/*`, plus script execution and local extension storage. It reads visible transaction fields only when **Read live details** is clicked. It uses no private API, cookies, authentication tokens, external services, or AI upload. The export stays in the solver tab's memory; closing or reloading clears it. Only merchant rules persist in local extension storage. No sync storage is used.
 
-**This release has no Apply action.** It never clicks Save, changes a category, matches transfers, or marks anything reviewed. It can navigate a dedicated Wave test tab when you explicitly click Open. The original working tab is preserved. Reusing the test tab navigates away from its current transaction; keep that tab for inspection rather than manual unsaved edits.
+Apply is available for one planned, outgoing merchant purchase with two ledger postings and one category. Transfers and splits still require manual handling. It can navigate a dedicated Wave test tab when you explicitly click Open. The original working tab is preserved. Reusing the test tab navigates away from its current transaction; keep that tab for inspection rather than manual unsaved edits.
 
-The export's reviewed status and currency context are incomplete. A successful field comparison does not authorize an edit or establish that a transaction is unreviewed.
+The export's reviewed status and currency context are incomplete. A successful field comparison does not establish that a transaction is unreviewed. Only clicking Apply starts an edit.
 
 ## Development checks
 
 From the parent project directory, run `node --test`. Tests cover CSV parsing, grouping, full-precision IDs, payment pairing, ambiguous matches, refunds, existing multi-account records, merchant alias boundaries, comparison failures, and the read-only reader contract.
 
 For mock DOM checks, run the local server and visit `/extension/reader-fixture.html`. The harness tests native labels, custom dropdowns, calendar/currency decorations, duplicate controls and dialogs, hidden dialogs, unknown review state, and absence of mutations. It supplies a fictional URL to the reader with local mock DOM data. This tests reader behavior, not compatibility with Wave's live markup.
+
+
+## Apply one merchant transaction (0.7.0)
+
+Tick the transaction's **Plan** checkbox or import its unchanged draft JSON. Inspect it, open it in Wave, and wait for all live fields to match. Its rule category must be an exact name from the collected Chart of Accounts. Section 5 shows the original category, proposed category, and **Apply this transaction** button.
+
+Click Apply to recheck the record, select the exact category, request reviewed status, and save. The solver reloads the Wave record to confirm what persisted. If reviewed status cannot be read, it reports that separately from category verification. An unsupported or ambiguous dropdown stops the attempt; **Copy diagnostics** includes the editing result. This release has been tested against local mock dialogs; the first real Wave edit still needs checking against Wave's current markup.
+
+Apply attempts are saved locally before editing starts. After a possible Save, the button stays disabled even after an extension reload. **Recheck saved result** performs a read-only verification and never repeats Save. If category selection fails before Save, cancel the unsaved Wave dialog and read the original record again before retrying. Clearing the imported session preserves these attempt records.
+
+The old CSV remains a historical snapshot. After a verified category save, that record is removed from the draft shortlist; the live table compares against the expected saved value. Import a fresh export for subsequent bookkeeping work.

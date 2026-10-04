@@ -19,3 +19,9 @@ This repository starts with the completed local prototype. The initial commits g
 - Synthetic test identifiers and an automated test suite.
 
 Wave category updates, transfer matching, and marking transactions reviewed are not implemented.
+
+## 0.7.0
+
+- Add deliberate Apply for one planned merchant transaction, fresh field checks, exact category selection, review requests, and saved-result verification.
+- Persist attempt records and offer read-only rechecks to prevent uncertain saves being repeated.
+- Highlight available chart collection and add diagnostic copy buttons.

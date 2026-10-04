@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.6.0",
-  "description": "Local accounting-export analysis and read-only checks of Wave transactions. Does not save or review transactions.",
+  "version": "0.7.0",
+  "description": "Local accounting-export analysis, live checks, and deliberate single-transaction category editing in Wave.",
   "permissions": ["storage", "scripting"],
   "host_permissions": ["https://next.waveapps.com/*"],
   "action": { "default_title": "Open Dandelion's Wave Transaction Solver" },

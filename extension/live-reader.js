@@ -77,7 +77,7 @@ export function readWavePage(testContext) {
     return '';
   }
   for (const name of names) result.fields[name.toLowerCase()] = field(name);
-  result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(el => tidy(el.textContent || el.getAttribute('aria-label'))).filter(text => /^(Save|Cancel|Review updates|Mark (as )?reviewed)$/i.test(text));
+  result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(el => tidy(el.textContent || el.getAttribute('aria-label'))).filter(text => /^(Save|Cancel|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));
   // Do not infer reviewed status from the list filter, bold font or suggestion dots.
   // An action checkbox saying "Mark as reviewed" is not proof of saved state.
   const reviewed = [...root.querySelectorAll('[role="checkbox"],input[type="checkbox"]')].filter(el => visible(el) && /^(reviewed|transaction reviewed)$/i.test(tidy(el.getAttribute('aria-label') || el.labels?.[0]?.textContent)));

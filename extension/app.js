@@ -1,3 +1,4 @@
+import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult } from './editor.js';
 import { defaultRules, importAccounting, proposals, waveIdentity, compareLive, normalize } from './model.js';
 import { readWavePage } from './live-reader.js';
 import { historySuggestions } from './history.js';
@@ -17,6 +18,8 @@ let csvText = '', importedAt = '', restoring = true, saveChain = Promise.resolve
 let exportPages = {};
 try { exportPages = (await import('./settings.local.js')).exportPages || {}; } catch { /* Optional, private configuration. */ }
 let liveGeneration = 0;
+let lastLiveSnapshot = null, applying = false, editReceipts = {};
+const receiptKey = () => business + ':' + chosen?.id;
 let exportTab = null, liveStepLabel = 'Not checked';
 const stepKeys = ['setup','chart','import','merchant','history','queue','live','plan'];
 const stepComplete = new Map();
@@ -252,9 +255,9 @@ function renderPlan() {
   $('plan').hidden = !dataset;
   const pairs = new Set(queue.filter(t => shortlist.has(t.id) && t.partner).map(t => [t.id, t.partner.id].sort().join(':'))).size;
   const singles = queue.filter(t => shortlist.has(t.id) && !t.partner).length;
-  $('planStatus').textContent = `${singles} merchant proposal(s) and ${pairs} transfer pair(s) shortlisted. ${shortlist.size} records. Nothing executed.`;
+  $('planStatus').textContent = `${singles} merchant proposal(s) and ${pairs} transfer pair(s) shortlisted. ${shortlist.size} records in this draft. ${Object.entries(editReceipts).filter(([key, receipt]) => key.startsWith(business + ':') && receipt.saveAttempted).length} local Apply attempt(s); inspect their saved results in section 5.`;
   $('downloadPlan').disabled = !shortlist.size;
-  updateSteps();
+  updateSteps(); updateApply();
 }
 $('clearPlan').onclick = () => { shortlist.clear(); $('planText').hidden = true; renderQueue(); renderPlan(); };
 $('downloadPlan').onclick = handle(() => {
@@ -265,6 +268,7 @@ $('downloadPlan').onclick = handle(() => {
 });
 $('planFile').onchange = handle(async () => { const file = $('planFile').files[0]; if (!file) return; if (file.size > 20 * 1024 * 1024) throw new Error('Choose a plan under 20 MB.'); loadedPlan = JSON.parse(await file.text()); validateLoadedPlan(); await rememberSession(); });
 function validateLoadedPlan() {
+  updateApply();
   $('planValidation').replaceChildren();
   if (!loadedPlan) return;
   if (!dataset || !business) { $('planValidation').append(make('p', 'Import a fresh real export and choose the same Wave business to compare this plan.')); return; }
@@ -277,7 +281,8 @@ function validateLoadedPlan() {
 function select(t, scroll = true) {
   liveGeneration++;
   liveStepLabel = 'Not checked'; $('fold-live').open = true; updateSteps();
-  chosen = t; $('live').hidden = false; $('selected').textContent = `${t.date} · ${t.description} · ID ${t.id}. ${t.kind}: ${t.proposed || t.reason}`;
+  lastLiveSnapshot = null;
+  chosen = t; $('applyStatus').textContent = ''; updateApply(); $('live').hidden = false; $('selected').textContent = `${t.date} · ${t.description} · ID ${t.id}. ${t.kind}: ${t.proposed || t.reason}`;
   $('counterpart').hidden = !t.partner;
   $('open').disabled = !extensionMode || sampleMode; $('read').disabled = !extensionMode || sampleMode;
   $('counterpart').disabled = !extensionMode || sampleMode;
@@ -329,17 +334,108 @@ async function captureLive(tabId,expectedBusiness,selectedId) {
   return snapshot;
 }
 function renderLive(snapshot) {
-  const result = compareLive(chosen, snapshot);
+  lastLiveSnapshot = snapshot; updateApply();
+  const receipt = editReceipts[receiptKey()];
+  const result = compareLive(receipt?.categoryVerified ? { ...chosen, categories: [receipt.category] } : chosen, snapshot);
   liveStepLabel = result.state === 'Export and visible fields match' ? 'Fields match' : 'Inspect results'; updateSteps();
   $('liveStatus').textContent = `${result.state}. Reviewed status: ${result.reviewed}. Read only; nothing saved.`;
   const table = make('table'), head = make('thead'), heading = make('tr');
-  for (const label of ['Field', 'Export', 'Live Wave', 'Result']) heading.append(make('th', label)); head.append(heading); table.append(head);
+  for (const label of ['Field', receipt?.categoryVerified ? 'Expected saved value' : 'Export', 'Live Wave', 'Result']) heading.append(make('th', label)); head.append(heading); table.append(head);
   const body = make('tbody');
   for (const c of result.checks) { const row = make('tr'), state = make('td'); state.append(make('span', c.state, `status ${c.state}`)); row.append(make('td', c.field), make('td', c.exported), make('td', c.live), state); body.append(row); }
   table.append(body); $('comparison').replaceChildren(table);
   $('diagnostics').textContent = JSON.stringify({ problems: snapshot.problems, fieldContexts: snapshot.fieldContexts, readableControls: snapshot.controls, capturedAt: snapshot.capturedAt }, null, 2); $('diagnosticToggle').hidden = false; $('copyDiagnostics').hidden = false; $('liveCopyStatus').textContent = '';
 }
 $('diagnosticToggle').onclick = () => { $('diagnostics').hidden = !$('diagnostics').hidden; };
+function currentEditRequest(snapshot = lastLiveSnapshot) {
+  return prepareCategoryEdit(chosen, snapshot, { business, sample: sampleMode, shortlist, queue, loadedPlan, categories: categoryNames(catalog, []) });
+}
+function updateApply() {
+  const supported = chosen?.kind === 'Merchant rule' && !sampleMode;
+  $('applyPanel').hidden = !supported;
+  $('apply').disabled = true;
+  $('verifyApply').hidden = !editReceipts[receiptKey()]?.saveAttempted;
+  if (!supported) return;
+  $('applyPreview').textContent = chosen.date + ' · ' + chosen.description + ' · USD ' + (chosen.amount / 100).toFixed(2) + ' · ' + chosen.primary.account + '\n' + chosen.categories.join(' + ') + ' → ' + chosen.proposed + '. Request reviewed status.';
+  const receipt = editReceipts[receiptKey()];
+  if (receipt?.saveAttempted) { $('applyStatus').textContent = receipt.message; return; }
+  try {
+    if (!extensionMode || !liveTab || applying) throw new Error('Open the transaction in Wave and wait for its live check.');
+    currentEditRequest(); $('apply').disabled = false;
+    $('applyStatus').textContent = 'Ready. Apply rechecks this record before clicking Wave controls.';
+  } catch (e) { $('applyStatus').textContent = e.message; }
+}
+async function storeEditReceipt(key, receipt) {
+  editReceipts[key] = receipt;
+  await chrome.storage.local.set({ solverEditReceipts: editReceipts });
+}
+async function reloadForVerification(tabId, expectedBusiness, id) {
+  const tab = await chrome.tabs.get(tabId);
+  const identity = waveIdentity(tab.url);
+  if (identity?.business !== expectedBusiness) throw new Error('The Wave tab changed businesses. Reopen the intended record before verifying.');
+  await chrome.tabs.update(tabId, { url: 'https://next.waveapps.com/' + expectedBusiness + '/transactions/' + id, active: false });
+  // Force a new document, rather than accepting unsaved values from the old dialog.
+  await chrome.tabs.reload(tabId);
+  let loaded = false;
+  for (let i = 0; i < 100; i++) {
+    const current = await chrome.tabs.get(tabId);
+    if (current.status === 'complete') { loaded = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!loaded) throw new Error('Wave has not finished reloading. Use Recheck saved result when it is ready.');
+  const snapshot = await waitForLiveSnapshot(() => captureLive(tabId, expectedBusiness, id), () => business === expectedBusiness && chosen?.id === id);
+  if (!snapshot) throw new Error('The selection changed during verification.');
+  return snapshot;
+}
+async function verifyReceipt(key, tabId, transaction, expectedBusiness) {
+  const receipt = editReceipts[key], snapshot = await reloadForVerification(tabId, expectedBusiness, transaction.id);
+  const { categoryVerified, reviewedVerified, message } = verifyCategoryResult(transaction, snapshot, expectedBusiness, receipt.category);
+  await storeEditReceipt(key, { ...receipt, categoryVerified, reviewedVerified, message, verifiedAt: new Date().toISOString() });
+  if (categoryVerified) shortlist.delete(transaction.id);
+  renderQueue(); renderPlan(); rememberSoon();
+  if (business === expectedBusiness && chosen?.id === transaction.id) {
+    renderLive(snapshot);
+    $('liveStatus').textContent = message;
+    liveStepLabel = categoryVerified ? 'Saved category verified' : 'Inspect saved result'; updateSteps();
+    $('diagnostics').textContent = JSON.stringify({ ...snapshot, editResult: editReceipts[key] }, null, 2);
+  }
+}
+$('apply').onclick = handle(async () => {
+  if (applying || editReceipts[receiptKey()]?.saveAttempted) throw new Error('This record already has an Apply attempt. Use Recheck saved result.');
+  const transaction = chosen, expectedBusiness = business, tabId = liveTab, key = receiptKey();
+  currentEditRequest();
+  applying = true; document.querySelector('main').inert = true; $('apply').disabled = true;
+  let attempted = false;
+  try {
+    $('applyStatus').textContent = 'Rechecking the live transaction…';
+    const snapshot = await captureLive(tabId, expectedBusiness, transaction.id);
+    const request = currentEditRequest(snapshot);
+    if (chosen?.id !== transaction.id || business !== expectedBusiness || liveTab !== tabId) throw new Error('Selection changed. Nothing applied.');
+    // Persist before injection: a lost response or extension reload must not retry a save.
+    await storeEditReceipt(key, { category: request.category, saveAttempted: true, startedAt: new Date().toISOString(), message: 'Apply outcome is not yet verified. Use Recheck saved result.' });
+    attempted = true; $('applyStatus').textContent = 'Selecting category and requesting reviewed status in Wave…';
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: editWaveTransaction, args: [request] });
+    const outcome = results[0]?.result;
+    if (!outcome) throw new Error('Wave returned no Apply result. Inspect it before continuing.');
+    await storeEditReceipt(key, { ...editReceipts[key], ...outcome, message: outcome.problem || 'Save was requested. Verifying the saved result…' });
+    $('diagnostics').textContent = JSON.stringify({ editResult: outcome, before: snapshot }, null, 2);
+    if (outcome.problem) throw new Error(outcome.problem);
+    if (!outcome.saveAttempted) throw new Error('Save was not requested.');
+    $('applyStatus').textContent = 'Reloading Wave to verify saved values…';
+    await verifyReceipt(key, tabId, transaction, expectedBusiness);
+  } catch (e) {
+    if (attempted) await storeEditReceipt(key, { ...editReceipts[key], message: e.message + (editReceipts[key]?.saveAttempted ? ' Use Recheck saved result; this attempt will not run again.' : ' Save was not clicked. Cancel the Wave dialog and read it again before retrying.') });
+    throw e;
+  } finally {
+    applying = false; document.querySelector('main').inert = false; renderPlan(); updateApply();
+  }
+}, 'applyStatus');
+$('verifyApply').onclick = handle(async () => {
+  if (applying || !editReceipts[receiptKey()]?.saveAttempted || !liveTab) throw new Error('Reopen this transaction in Wave before checking its saved result.');
+  applying = true; document.querySelector('main').inert = true;
+  try { await verifyReceipt(receiptKey(), liveTab, chosen, business); }
+  finally { applying = false; document.querySelector('main').inert = false; updateApply(); }
+}, 'applyStatus');
 async function copyDiagnostics(sourceId, statusId) {
   const text = $(sourceId).textContent;
   if (!text.trim()) { $(statusId).textContent = 'No diagnostics to copy yet.'; return; }
@@ -407,6 +503,7 @@ async function restoreSession() {
   updateSteps();
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
+if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;

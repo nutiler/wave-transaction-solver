@@ -1,6 +1,6 @@
 # Dandelion's Wave Transaction Solver
 
-A local Chrome extension for organizing Wave accounting transactions from an accounting CSV export. It proposes merchant categories and transfer matches, checks transaction details against Wave, and builds draft session plans. It currently reads Wave data without saving categories, matching transfers, or marking records reviewed.
+A local Chrome extension for organizing Wave accounting transactions from an accounting CSV export. It proposes merchant categories and transfer matches, checks transaction details against Wave, and builds draft session plans. Apply saves one planned merchant category and requests reviewed status after a fresh live check. It reloads Wave to verify saved values and records attempts locally to prevent uncertain saves from being repeated. Transfer matching remains a draft proposal.
 
 ## Install
 
@@ -14,13 +14,13 @@ See [the extension guide](extension/README.md) for account-name collection, rule
 
 ## Local data
 
-CSV exports, working sessions, rules, and collected account names stay on your computer. The extension requests access only to next.waveapps.com for its DOM readers. Configure your personal export URL in the ignored extension/settings.local.js file, using settings.example.js as a template. Accounting exports, screenshots, ZIP files, and local settings are excluded from Git.
+CSV exports, working sessions, rules, and collected account names stay on your computer. The extension requests access only to next.waveapps.com for its DOM readers and deliberate editing controls. Configure your personal export URL in the ignored extension/settings.local.js file, using settings.example.js as a template. Accounting exports, screenshots, ZIP files, and local settings are excluded from Git.
 
 ## Development
 
 Requires Node.js 20 or later. No package installation is needed.
 
-Run node --test for the automated checks. Run node server.mjs and open http://127.0.0.1:4317/extension/app.html to preview the interface. Live Wave checks require the installed extension. The DOM test harness is at /extension/reader-fixture.html.
+Run node --test for the automated checks. Run node server.mjs and open http://127.0.0.1:4317/extension/app.html to preview the interface. Live Wave checks require the installed extension. DOM checks are at /extension/reader-fixture.html; Apply mock-dialog checks are at /extension/editor-fixture.html.
 
 The earlier standalone CSV organizer remains available at http://127.0.0.1:4317/.
 
