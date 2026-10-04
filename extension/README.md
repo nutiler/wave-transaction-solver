@@ -98,7 +98,7 @@ The saved-state reader recognizes Wave’s green **Reviewed** confirmation in th
 
 ## Rule proposals and full-history analysis (0.8.0)
 
-Expand **Rule proposal review** and choose a local `proposed-rule-pack.local.json`. The preview shows exact categories, descriptor variants, date ranges, account/category distributions, supporting counts, exclusions, and provider references where supplied. **Accept rule** adds one proposal to local rules; **Reject proposal** leaves it inactive. Rules needing judgment require a purchase-purpose acknowledgment. Existing approved rules are preserved, and acceptance retains eligible draft selections. The pack and decisions return after reload.
+Expand **Rule proposal review** and choose a local `proposed-rule-pack.local.json`. The preview shows exact categories, descriptor variants, date ranges, account/category distributions, supporting counts, exclusions, and provider references where supplied. **Accept rule** adds one proposal to local rules; **Reject proposal** leaves it inactive. Rules needing judgment require a purchase-purpose acknowledgment. Existing approved rules are preserved, and acceptance retains eligible draft selections. Accepted proposals leave the review list and appear under **Merchant rules → Current rules**. **View current rules** opens that section. Removing an accepted rule returns its proposal to review. The pack and decisions return after reload.
 
 A pack must match the selected business and SHA-256 of the exact imported CSV. A different export blocks acceptance until a matching pack is regenerated. Accepted rules remain business-scoped for future sessions. New proposals never modify Wave. Planning and the existing deliberate Apply workflow remain separate actions.
 

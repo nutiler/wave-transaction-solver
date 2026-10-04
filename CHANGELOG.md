@@ -57,3 +57,7 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Add a generic full-history analyzer with private reports, audits, coverage, conditional plans, and tag suggestions.
 - Preserve exported memos and keep all derived accounting data in the ignored local-analysis directory.
 - Add synthetic matching, analysis, and browser integration checks. Wave editing permissions and the deliberate Apply workflow remain unchanged.
+
+## 0.8.1
+
+- Move accepted proposals out of the review list and provide a shortcut to Merchant rules → Current rules. Saved rules, decisions, and drafts retain their existing persistence.

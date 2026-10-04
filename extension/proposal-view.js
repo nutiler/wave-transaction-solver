@@ -22,12 +22,18 @@ export function installProposalReview({ getState, categories, imported, accepted
     if(generation!==current)return;
     const decisions=s.decisions || {},filter=$('proposalFilter').value,search=$('proposalSearch').value.toLowerCase();
     const strong=pack.proposals.filter(p=>p.tier==='strong_proposal');
-    const list=pack.proposals.filter(p=>(!filter || p.tier===filter) && (p.rule.name+' '+p.rule.category+' '+p.reason).toLowerCase().includes(search)).sort((a,b)=>(b.evidence.eligibleChange || 0)-(a.evidence.eligibleChange || 0)||(b.evidence.eligible || 0)-(a.evidence.eligible || 0));
-    status(pack.proposals.length+' proposals loaded. '+strong.length+' strong proposals. '+Object.values(decisions).filter(x=>x==='accepted').length+' accepted; '+Object.values(decisions).filter(x=>x==='rejected').length+' rejected. All decisions are local.');
+    const list=pack.proposals.filter(p=>decisions[p.id]!=='accepted' && (!filter || p.tier===filter) && (p.rule.name+' '+p.rule.category+' '+p.reason).toLowerCase().includes(search)).sort((a,b)=>(b.evidence.eligibleChange || 0)-(a.evidence.eligibleChange || 0)||(b.evidence.eligible || 0)-(a.evidence.eligible || 0));
+    status(pack.proposals.length+' proposals loaded. '+strong.length+' strong proposals. '+Object.values(decisions).filter(x=>x==='accepted').length+' accepted; '+Object.values(decisions).filter(x=>x==='rejected').length+' rejected. Accepted rules are saved under Merchant rules.');
     const blockers=new Set(proposals(s.dataset.transactions,s.rules,5,s.business).filter(t=>['Transfer candidate','Ambiguous transfer','Possible refund','Existing multi-account','Manual review'].includes(t.kind)).map(t=>t.id));
     const actual=ruleCoverage(s.dataset.transactions,s.rules,s.business,blockers);
     const potential=pack.coverage?.combined;
     $('proposalCoverage').textContent='Current approved rules: '+actual.covered+' historical records / '+money(actual.coveredCents)+'. Conflicting matches withheld: '+actual.conflicts+'.'+(potential?' Pack potential after approval: '+potential.covered+' / '+money(potential.coveredCents)+'. '+potential.changes+' proposed category changes; '+potential.confirmations+' already match.':'')+' These counts are not an unreviewed backlog.';
+    if(Object.values(decisions).includes('accepted') && $('fold-merchant')) {
+      const currentRules=make('button','View current rules');currentRules.className='secondary';
+      currentRules.onclick=()=>{const section=$('fold-merchant');section.open=true;section.scrollIntoView({block:'start'});};
+      $('proposalRows').append(currentRules);
+    }
+    if(!list.length) $('proposalRows').append(make('p','No proposals remain in this view. Accepted rules are saved under Merchant rules.'));
     for(const p of list) {
       const detail=make('details');detail.className='proposal-card';
       detail.append(make('summary',p.rule.name+' → '+p.rule.category+' · '+(decisions[p.id] || p.tier.replaceAll('_',' '))));
