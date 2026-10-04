@@ -35,7 +35,7 @@ export async function editWaveTransaction(request, testContext) {
   const wait = testContext?.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const tidy = value => String(value || '').replace(/\s+/g, ' ').trim();
   const visible = el => !!el && !el.hidden && !el.closest('[hidden],[aria-hidden="true"]') && style(el).display !== 'none' && style(el).visibility !== 'hidden' && el.getClientRects().length > 0;
-  let saveAttempted = false, stage = 'preflight';
+  let saveAttempted = false, reviewRequested = false, stage = 'preflight';
   function identity() {
     const url = new URL(loc.href);
     if (url.origin !== 'https://next.waveapps.com' || url.pathname !== '/' + request.business + '/transactions/' + request.id) throw new Error('Wave navigated away from the requested transaction.');
@@ -98,7 +98,7 @@ export async function editWaveTransaction(request, testContext) {
     const review = buttons(dialog, ['Mark as reviewed', 'Mark reviewed']);
     const alreadyReviewed = buttons(dialog, ['Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
-    if (review.length && !enabled(review[0])) throw new Error('The review control is disabled.');
+    reviewRequested = alreadyReviewed.length === 1;
     if (tidy(request.expected.category) !== tidy(request.category)) {
       stage = 'category selection';
       const category = control(dialog, 'Category');
@@ -126,19 +126,24 @@ export async function editWaveTransaction(request, testContext) {
     }
     dialog = assertFields(request.category);
     stage = 'review';
-    const mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
-    if (mark.length === 1) {
+    let mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
+    // Wave may keep Review disabled while the purchase is uncategorized or loading.
+    for (let i = 0; mark.length === 1 && !enabled(mark[0]) && i < 15; i++) {
+      await wait(100); dialog = assertFields(request.category);
+      mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
+    }
+    if (mark.length === 1 && enabled(mark[0])) {
       // Some Wave layouts use this as a save-and-review action.
-      saveAttempted = true; mark[0].click();
-      for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested: true }; }
+      assertFields(request.category); saveAttempted = true; reviewRequested = true; mark[0].click();
+      for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
       dialog = assertFields(request.category);
     }
     stage = 'save';
     const save = buttons(dialog, ['Save']);
     if (save.length !== 1 || !enabled(save[0])) throw new Error('Save is unavailable. Check the Wave dialog before continuing.');
     assertFields(request.category); saveAttempted = true; save[0].click();
-    for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested: true }; }
-    return { saveAttempted, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
+    for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
+    return { saveAttempted, reviewRequested, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
     return { saveAttempted, stage, problem: error.message, categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }

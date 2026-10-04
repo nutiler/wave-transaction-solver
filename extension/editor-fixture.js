@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false } = {}) {
+function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -18,7 +18,7 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
   }
   let selected = original.category, reviewed = false, saves = 0;
   const category = dialog.querySelector('[aria-label="Category"]');
-  category.onchange = () => { selected = category.value; };
+  category.onchange = () => { selected = category.value; if (reviewEnablesOnCategory) mark.disabled = false; };
   if (custom) {
     const wrapper = category.parentElement; category.remove();
     const control = document.createElement('div'); control.className = 'wv-select'; control.tabIndex = 0;
@@ -27,12 +27,12 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
       const list = document.createElement('ul');
       for (let i = 0; i < (missing ? 0 : duplicate ? 2 : 1); i++) {
         const option = document.createElement('li'); option.setAttribute('role','option'); option.textContent = request.category;
-        option.onclick = event => { event.stopPropagation(); label.textContent = request.category; selected = request.category; list.remove(); }; list.append(option);
+        option.onclick = event => { event.stopPropagation(); label.textContent = request.category; selected = request.category; if (reviewEnablesOnCategory) mark.disabled = false; list.remove(); }; list.append(option);
       }
       dialog.append(list);
     };
   }
-  const mark = document.createElement('button'); mark.textContent = 'Mark as reviewed';
+  const mark = document.createElement('button'); mark.textContent = 'Mark as reviewed'; mark.disabled = reviewDisabled;
   mark.onclick = () => { reviewed = true; mark.textContent = 'Mark as unreviewed'; if(reviewSave) { saves++; dialog.hidden = true; } };
   const save = document.createElement('button'); save.textContent = 'Save'; save.onclick = () => { saves++; if(!validationError) dialog.hidden = true; };
   dialog.append(mark,save); mount.append(dialog);
@@ -48,10 +48,12 @@ document.getElementById('run').onclick = async () => {
   await check('Native dropdown selects category, requests review, and saves once', {}, (r,s) => !r.problem && s.selected === request.category && s.reviewed && s.saves === 1);
   await check('Wave-style dropdown uses exact selected label', { custom:true }, (r,s) => !r.problem && s.selected === request.category && s.saves === 1);
   await check('Review action that saves closes without a second save', { reviewSave:true }, (r,s) => !r.problem && s.reviewed && s.saves === 1);
+  await check('Initially disabled review enables after category selection', { custom:true,reviewDisabled:true,reviewEnablesOnCategory:true }, (r,s) => !r.problem && r.reviewRequested && s.reviewed && s.saves === 1);
+  await check('Permanently disabled review saves category without claiming reviewed', { reviewDisabled:true }, (r,s) => !r.problem && !r.reviewRequested && !s.reviewed && s.selected === request.category && s.saves === 1);
   await check('Changed amount is blocked before any edit', { original:{...expected,amount:'99.00'} }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0 && s.selected === expected.category);
   await check('Changed transaction identity is blocked', {}, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0, {...request,id:'1000000000000000002'});
   await check('Missing category does not click Save', { custom:true,missing:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Ambiguous category does not click Save', { custom:true,duplicate:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Wave validation error reports unverified save, without retry', { validationError:true }, (r,s) => r.saveAttempted && !!r.problem && s.saves === 1);
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 8 editor checks passed';
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 10 editor checks passed';
 };

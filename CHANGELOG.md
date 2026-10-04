@@ -25,3 +25,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 - Add deliberate Apply for one planned merchant transaction, fresh field checks, exact category selection, review requests, and saved-result verification.
 - Persist attempt records and offer read-only rechecks to prevent uncertain saves being repeated.
 - Highlight available chart collection and add diagnostic copy buttons.
+
+## 0.7.1
+
+- Check review availability after selecting the category and wait briefly for it to enable. If Review remains disabled, save and verify the category while reporting reviewed status separately.
