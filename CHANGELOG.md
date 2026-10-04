@@ -18,7 +18,7 @@ This repository starts with the completed local prototype. The initial commits g
 - Private exports, previews, and local settings excluded from Git.
 - Synthetic test identifiers and an automated test suite.
 
-Wave category updates, transfer matching, and marking transactions reviewed are not implemented.
+This initial milestone preceded deliberate category Apply and review requests, added in 0.7.0. Automatic transfer matching remains unimplemented.
 
 ## 0.7.0
 
@@ -49,3 +49,11 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.6
 
 - Recognize Wave’s Reviewed confirmation button in the edit dialog, excluding checkmark icon text. Verify saved review state, preserve already-reviewed records, and reject contradictory confirmation indicators.
+
+## 0.8.0
+
+- Add local rule-pack previews with evidence, explicit accept/reject decisions, exact CSV/business binding, and saved-session restoration.
+- Support account/category scopes and exclusions, strict descriptor boundaries, and conflicting-rule review.
+- Add a generic full-history analyzer with private reports, audits, coverage, conditional plans, and tag suggestions.
+- Preserve exported memos and keep all derived accounting data in the ignored local-analysis directory.
+- Add synthetic matching, analysis, and browser integration checks. Wave editing permissions and the deliberate Apply workflow remain unchanged.

@@ -1,3 +1,5 @@
+import { validateRule } from './rules.js';
+import { installProposalReview } from './proposal-view.js';
 import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult, resetAttemptReceipt } from './editor.js';
 import { defaultRules, importAccounting, proposals, waveIdentity, compareLive, normalize } from './model.js';
 import { readWavePage } from './live-reader.js';
@@ -13,6 +15,7 @@ const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
+let proposalPack = null, proposalDecisions = {};
 let catalog = null, chartTab = null, chartCollecting = false;
 let csvText = '', importedAt = '', restoring = true, saveChain = Promise.resolve();
 let exportPages = {};
@@ -21,7 +24,7 @@ let liveGeneration = 0;
 let lastLiveSnapshot = null, applying = false, editReceipts = {};
 const receiptKey = () => business + ':' + chosen?.id;
 let exportTab = null, liveStepLabel = 'Not checked';
-const stepKeys = ['setup','chart','import','merchant','history','queue','live','plan'];
+const stepKeys = ['setup','chart','import','merchant','proposals','history','queue','live','plan'];
 const stepComplete = new Map();
 function stepStatus(key, text, complete = false, foldOnComplete = false) {
   const badge = $(`step-${key}-status`); badge.textContent = `${complete ? '✓ ' : ''}${text}`; badge.classList.toggle('complete',complete);
@@ -33,6 +36,7 @@ function updateSteps() {
   stepStatus('chart',catalog ? `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} names saved` : 'Collect names',!!catalog,true);
   stepStatus('import',dataset ? `${sampleMode ? 'Sample · ' : ''}${dataset.transactions.length.toLocaleString()} transactions loaded` : 'Import CSV',!!dataset,true);
   stepStatus('merchant',`${rules.length} rules saved`,rules.length>0,true);
+  stepStatus('proposals',proposalPack ? Object.values(proposalDecisions).filter(d=>d==='accepted').length+' proposals accepted' : 'Import proposal pack');
   stepStatus('history','Optional suggestions');
   stepStatus('queue',dataset ? `${queue.length.toLocaleString()} proposals to inspect` : 'Import CSV first');
   stepStatus('live',liveStepLabel,liveStepLabel==='Fields match');
@@ -41,11 +45,11 @@ function updateSteps() {
   $('readChart').classList.toggle('secondary', !chartTab);
   $('readChart').disabled = chartCollecting || !extensionMode || !business || !chartTab;
 }
-const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch'];
+const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter'];
 const draftIds = ['ruleName', 'aliases', 'category'];
 function rememberSession() {
   if (restoring) return Promise.resolve();
-  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
+  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, proposalPack, proposalDecisions, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
   saveChain = saveChain.catch(()=>{}).then(()=>saveSession(snapshot));
   return saveChain;
 }
@@ -168,7 +172,10 @@ function renderRules() {
   rules.forEach((r, i) => {
     const row = make('div', undefined, 'rule'), detail = make('div'); detail.append(make('strong', r.name), make('small', r.aliases.join(', ')));
     const remove = make('button', 'Remove', 'secondary'); remove.setAttribute('aria-label', `Remove ${r.name} rule`);
-    remove.onclick = handle(async () => { rules.splice(i, 1); await persistRules(); renderRules(); analyze(); });
+    remove.onclick = handle(async () => { rules.splice(i, 1); if(r.proposalId && r.business===proposalPack?.business) delete proposalDecisions[r.proposalId]; await persistRules(); renderRules(); analyze(true); void proposalReview.render(); });
+    if (r.accountNames?.length || r.accountIds?.length) detail.append(make('small','Only accounts: '+(r.accountNames || r.accountIds).join(', ')));
+    if (r.onlyCategories?.length) detail.append(make('small','Only current categories: '+r.onlyCategories.join('; ')));
+    if (r.excludeAliases?.length) detail.append(make('small','Excluded aliases: '+r.excludeAliases.join(', ')));
     row.append(detail, make('span', r.category), remove); $('rules').append(row);
   });
   updateSteps();
@@ -179,9 +186,13 @@ $('ruleForm').onsubmit = handle(async event => {
   const name = $('ruleName').value.trim(), category = $('category').value.trim(), aliases = $('aliases').value.split(',').map(a => a.trim()).filter(Boolean);
   if (!name || !category || !aliases.length) throw new Error('Enter a merchant family, aliases, and category.');
   if ((dataset || catalog) && !categoryNames(sampleMode ? null : catalog, dataset?.categories || []).includes(category)) throw new Error('Choose an exact name from your export or collected Chart of Accounts.');
-  const rule = { name, aliases, category }, i = rules.findIndex(r => r.name.toLowerCase() === name.toLowerCase());
+  const i = rules.findIndex(r => r.name.toLowerCase() === name.toLowerCase() && (!r.business || r.business===business));
+  const rule = { ...(i>=0 ? rules[i] : {}), name, aliases, category };
+  if(rule.onlyCategories) rule.onlyCategories=[category,...(dataset?.categories || []).filter(c=>/^(Uncategorized |Personal Uncategorized)/i.test(c))];
+  validateRule(rule);
+  if(i>=0 && rule.proposalId && (rules[i].category!==category || rules[i].name!==name || JSON.stringify(rules[i].aliases)!==JSON.stringify(aliases))) { delete proposalDecisions[rule.proposalId]; delete rule.proposalId; delete rule.sourceHash; }
   if (i >= 0) rules[i] = rule; else rules.push(rule);
-  await persistRules(); renderRules(); analyze(); $('ruleName').value = ''; $('aliases').value = '';
+  await persistRules(); renderRules(); analyze(true); $('ruleName').value = ''; $('aliases').value = '';
   $('fold-merchant').open = false;
 });
 function imported(text, name, isSample = false) {
@@ -194,18 +205,21 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); }
+function clearImported() { proposalPack=null; proposalDecisions={}; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
-function analyze() {
+function analyze(preserveDraft = false) {
   if (!dataset) return;
+  const previous = preserveDraft ? [...shortlist] : [];
   shortlist.clear(); $('planText').hidden = true;
-  queue = proposals(dataset.transactions, rules).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  queue = proposals(dataset.transactions, rules, 5, business).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  for (const id of previous) { const t=queue.find(t=>t.id===id); if(t && actionable(t)) {shortlist.add(id);if(t.partner)shortlist.add(t.partner.id);} }
   $('queue').hidden = false;
   $('counts').textContent = `${queue.filter(t => t.kind === 'Merchant rule').length} merchant suggestions · ${new Set(queue.filter(t => t.kind === 'Transfer candidate').map(t => [t.id, t.partner.id].sort().join(':'))).size} transfer pairs`;
   if (chosen) { chosen = queue.find(t => t.id === chosen.id); select(chosen); }
   renderQueue();
   renderHistory(); renderPlan(); validateLoadedPlan();
+  void proposalReview.render();
   rememberSoon();
 }
 function renderQueue() {
@@ -238,7 +252,7 @@ function renderHistory() {
   if (!dataset) return;
   $('history').hidden = false;
   const query = $('historySearch').value.toLowerCase();
-  const items = historySuggestions(dataset.transactions, rules).filter(g => `${g.merchant} ${g.distribution.map(c => c.category).join(' ')}`.toLowerCase().includes(query));
+  const items = historySuggestions(dataset.transactions, rules, 3, business).filter(g => `${g.merchant} ${g.distribution.map(c => c.category).join(' ')}`.toLowerCase().includes(query));
   $('historyInfo').textContent = `Showing ${Math.min(items.length, 30)} of ${items.length} repeated descriptions not already covered by your rules.`;
   $('historyRows').replaceChildren();
   for (const g of items.slice(0, 30)) {
@@ -499,6 +513,7 @@ async function restoreSession() {
     if (saved.chosenId) { const transaction = queue.find(t=>t.id===saved.chosenId); if (transaction) select(transaction, false); }
   }
   loadedPlan = saved.loadedPlan || null;
+  proposalPack = saved.proposalPack || null; proposalDecisions = saved.proposalDecisions || {};
   for (const id of draftIds) if (typeof saved.draft?.[id] === 'string') $(id).value = saved.draft[id];
   await loadCatalog();
   if (extensionMode && business) {
@@ -514,10 +529,18 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
+const proposalReview=installProposalReview({
+  getState:()=>({dataset,business,sample:sampleMode,csvText,rules,pack:proposalPack,decisions:proposalDecisions}),
+  categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
+  imported:async pack=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; await rememberSession(); updateSteps(); },
+  accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true);await rememberSession(); },
+  rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
+});
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
 await refreshTabs();
+await proposalReview.render();
 updateSteps();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);

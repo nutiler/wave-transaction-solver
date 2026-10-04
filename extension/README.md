@@ -95,3 +95,25 @@ After Save, Wave may close the dialog and return to the list. Verification waits
 If you manually restore the original category and unreviewed state in Wave, select **Reset attempt and re-plan**. It loads the saved record again and requires every original export field to match. It preserves the previous attempt locally, adds the transaction back to the draft, and unlocks Apply. Reset does not click Save or change Wave. A still-reviewed record, changed amount, different transaction, or saved target category keeps the attempt locked.
 
 The saved-state reader recognizes Wave’s green **Reviewed** confirmation in the Edit transaction panel. Recheck saved result uses that confirmation after reloading the record; it does not press the Reviewed button again.
+
+## Rule proposals and full-history analysis (0.8.0)
+
+Expand **Rule proposal review** and choose a local `proposed-rule-pack.local.json`. The preview shows exact categories, descriptor variants, date ranges, account/category distributions, supporting counts, exclusions, and provider references where supplied. **Accept rule** adds one proposal to local rules; **Reject proposal** leaves it inactive. Rules needing judgment require a purchase-purpose acknowledgment. Existing approved rules are preserved, and acceptance retains eligible draft selections. The pack and decisions return after reload.
+
+A pack must match the selected business and SHA-256 of the exact imported CSV. A different export blocks acceptance until a matching pack is regenerated. Accepted rules remain business-scoped for future sessions. New proposals never modify Wave. Planning and the existing deliberate Apply workflow remain separate actions.
+
+Matching supports whole-word, exact, and prefix descriptors, account IDs/names, excluded accounts/descriptors/categories, and allowed current categories. Reference/card tails are excluded from merchant text. Numeric aliases require the merchant position. Conflicting rule categories produce **Conflicting merchant rules** and cannot be planned. Same-category overlaps are counted once. Incoming transactions, recognized payments/financing/cash, splits, and refund pairs do not receive purchase rules. Account scopes are also honored by historical suggestions.
+
+To regenerate private analysis with Node.js, supply your local merchant-purpose context and complete chart catalog:
+
+```powershell
+node scripts/analyze.mjs accounting.csv local-analysis/merchant-context.local.json local-analysis/catalog.local.json local-analysis
+```
+
+The generic analyzer processes every balanced transaction group, preserves string IDs and exported memos, and reconciles ledger totals. The local context has a business UUID and `groups` containing `name`, `aliases`, exact `category`, optional `excludeAliases`/`matchMode`, `purpose`, `reason`, and Boolean `approved`/`narrow` flags. These flags record user policies and independently established narrow product/service purposes; they must not be set from category frequency alone. A complete catalog uses the format produced by Collect all five tabs. Browser-approved rules cannot be read by the command; add explicit policies to your local context if you want them included in its baseline.
+
+Outputs are written only to a directory named `local-analysis`, which is ignored by Git. It contains START-HERE.md, an offline HTML merchant review, complete JSON/CSV merchant and ambiguity reports, a source-control and transaction audit, coverage, tag suggestions, the proposal pack, a conditional proposed session plan, an approved-policy draft, and a shorter next-session review list. Historical potential is not the live unreviewed backlog. Category changes and already-matching confirmations are reported separately. Incoming amounts stay separate from gross spending; refund candidates are not confirmed links. Tags are suggestions only; an accounting export without tag fields cannot establish existing tags.
+
+The conditional proposed-session-plan format is deliberately unsupported by Apply or draft import until rules are approved and individual records are planned. Only the approved-policy draft uses the normal draft format, and every entry still requires live validation.
+
+Synthetic browser checks: `/extension/proposal-fixture.html` tests evidence review, source mismatch, acceptance, rejection, and session round trips. Its **Seed fictional integration session** and **Open integration preview** controls use isolated local data and mocked Chrome bindings. They never access Wave. Do not load fixture files as your extension entry page.

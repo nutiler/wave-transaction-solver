@@ -3,10 +3,10 @@ const payment = /\b(payment|pymt|pmt|epay|transfer|xfer|autopay|thank you|starti
 const uncategorized = /^uncategorized (income|expense)$/i;
 // Keep descriptors exact by default. Removing card references automatically can
 // accidentally combine unrelated merchants, so new aliases require a decision.
-export function historySuggestions(transactions, rules, minimum = 3) {
+export function historySuggestions(transactions, rules, minimum = 3, business = null) {
   const groups = new Map();
   for (const t of transactions) {
-    if (!t.primary || t.direction !== 'out' || payment.test(t.description) || ruleFor(t.description, rules)) continue;
+    if (!t.primary || t.direction !== 'out' || payment.test(t.description) || ruleFor(t.description, rules, t, business)) continue;
     const key = normalize(t.description);
     if (!key || /^\d+$/.test(key)) continue;
     if (!groups.has(key)) groups.set(key, { merchant: t.description.trim(), count: 0, categories: new Map(), latest: t.date, accounts: new Set() });

@@ -25,3 +25,7 @@ Run node --test for the automated checks. Run node server.mjs and open http://12
 The earlier standalone CSV organizer remains available at http://127.0.0.1:4317/.
 
 See [development milestones](CHANGELOG.md) for the work included in this prototype.
+
+## Local rule review
+
+Version 0.8 adds evidence-backed rule-pack previews with explicit acceptance/rejection, account/category restrictions, and conflict handling. Imported proposals stay inactive until approved. Full-history analysis and all derived financial reports stay under the ignored `local-analysis/` directory. See the extension guide for the private analysis command and synthetic browser checks.

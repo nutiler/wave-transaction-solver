@@ -1,11 +1,23 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.7.6",
+  "version": "0.8.0",
   "description": "Local accounting-export analysis, live checks, and deliberate single-transaction category editing in Wave.",
-  "permissions": ["storage", "scripting"],
-  "host_permissions": ["https://next.waveapps.com/*"],
-  "action": { "default_title": "Open Dandelion's Wave Transaction Solver" },
-  "background": { "service_worker": "background.js", "type": "module" },
-  "content_security_policy": { "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'" }
+  "permissions": [
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://next.waveapps.com/*"
+  ],
+  "action": {
+    "default_title": "Open Dandelion's Wave Transaction Solver"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+  }
 }

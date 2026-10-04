@@ -1,10 +1,7 @@
 import { parseCSV } from './csv.js';
+import { normalize, ruleFor, matchingRules, nonPurchaseReason } from './rules.js';
+export { normalize, ruleFor } from './rules.js';
 export const defaultRules = [{ name: '7-Eleven', aliases: ['7-Eleven', '7-11', '711', '7-Elev'], category: 'Equipment Fuel — Diesel, Gas, Machinery Fuel' }, { name: 'Chevron', aliases: ['Chevron'], category: 'Equipment Fuel — Diesel, Gas, Machinery Fuel' }];
-export const normalize = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-export function ruleFor(description, rules) {
-  const text = ` ${normalize(description)} `;
-  return rules.find(r => r.aliases.some(a => normalize(a) && text.includes(` ${normalize(a)} `)));
-}
 export function cents(value) {
   const str = String(value ?? '').trim().replace(/[$,]/g, '');
   if (!str) return 0;
@@ -31,7 +28,7 @@ export function importAccounting(text) {
     const r = Object.fromEntries(headers.map((h, i) => [h, row[i]]));
     const id = r['Transaction ID'];
     if (!/^\d+$/.test(id)) throw new Error(`Missing or invalid transaction ID on row ${index + 2}.`);
-    const posting = { id, date: r['Transaction Date'], day: day(r['Transaction Date']), description: r['Transaction Description'], account: r['Account Name'], accountId: r['Account ID'] || '', group: r['Account Group'], type: r['Account Type'], debit: cents(r['Debit Amount (Two Column Approach)']), credit: cents(r['Credit Amount (Two Column Approach)']), modified: r['Transaction Date Last Modified'] || '' };
+    const posting = { id, date: r['Transaction Date'], day: day(r['Transaction Date']), description: r['Transaction Description'], account: r['Account Name'], accountId: r['Account ID'] || '', group: r['Account Group'], type: r['Account Type'], debit: cents(r['Debit Amount (Two Column Approach)']), credit: cents(r['Credit Amount (Two Column Approach)']), modified: r['Transaction Date Last Modified'] || '', metadata: { memo:r['Notes / Memo'] || '', lineDescription:r['Transaction Line Description'] || '', customer:r['Customer'] || '', vendor:r['Vendor'] || '', invoice:r['Invoice Number'] || '', bill:r['Bill Number'] || '' } };
     if (posting.debit < 0 || posting.credit < 0) throw new Error(`Negative debit or credit on row ${index + 2}; this format needs further inspection.`);
     if (!groups.has(id)) groups.set(id, []);
     groups.get(id).push(posting);
@@ -42,13 +39,13 @@ export function importAccounting(text) {
     const endpoints = postings.filter(p => /^(Cash and Bank|Credit Card)$/.test(p.type) || (/loan/i.test(p.type) && p.group === 'Liability'));
     const primary = endpoints.length === 1 ? endpoints[0] : null;
     const categories = [...new Set(postings.filter(p => !endpoints.includes(p)).map(p => p.account))];
-    return { id, postings, primary, categories, date: postings[0].date, day: postings[0].day, description: primary?.description || postings[0].description, existingTransfer: endpoints.length > 1, amount: primary ? Math.abs(primary.debit - primary.credit) : null, direction: primary ? (primary.debit > primary.credit ? 'in' : 'out') : null };
+    return { id, postings, primary, categories, memos:[...new Set(postings.map(p=>p.metadata.memo).filter(Boolean))], date: postings[0].date, day: postings[0].day, description: primary?.description || postings[0].description, existingTransfer: endpoints.length > 1, amount: primary ? Math.abs(primary.debit - primary.credit) : null, direction: primary ? (primary.debit > primary.credit ? 'in' : 'out') : null };
   });
   return { transactions, ledgerRows: rows.length, categories: [...new Set(transactions.flatMap(t => t.categories))].sort(), earliest: transactions.map(t => t.date).sort()[0] || '', latest: transactions.map(t => t.date).sort().at(-1) || '' };
 }
 const accountKey = p => p.accountId || normalize(p.account);
 const paymentSignal = t => /\b(payment|pymt|pmt|epay|transfer|xfer|autopay|thank you)\b/i.test(t.description);
-export function proposals(transactions, rules, windowDays = 5) {
+export function proposals(transactions, rules, windowDays = 5, business = null) {
   const buckets = new Map();
   for (const t of transactions) if (t.primary && t.amount > 0) { if (!buckets.has(t.amount)) buckets.set(t.amount, []); buckets.get(t.amount).push(t); }
   const transferOptions = new Map();
@@ -66,11 +63,18 @@ export function proposals(transactions, rules, windowDays = 5) {
       if (candidates.length === 1 && transferOptions.get(partner.id)?.length === 1) return { ...base, kind: 'Transfer candidate', proposed: `Match ${partner.primary.account}`, partner: { id: partner.id, account: partner.primary.account, date: partner.date }, reason: `Equal amount, opposite account movements, payment wording, ${Math.abs(partner.day - t.day)} day(s) apart. Confirm both existing records in Wave.` };
       return { ...base, kind: 'Ambiguous transfer', reason: `${candidates.length} possible counterpart(s); cannot choose a unique pair.` };
     }
-    const rule = ruleFor(t.description, rules);
-    const merchantKey = rule?.name || normalize(t.description);
-    const refunds = (buckets.get(t.amount) || []).filter(other => other.id !== t.id && accountKey(other.primary) === accountKey(t.primary) && other.direction !== t.direction && Math.abs(other.day - t.day) <= 60 && (ruleFor(other.description, rules)?.name || normalize(other.description)) === merchantKey);
+    const rule = ruleFor(t.description, rules, t, business);
+    // Refund identity ignores outgoing-only category/account restrictions, but
+    // remains confined to rules for the current business and same bank account.
+    const identityRules = rules.filter(r=>!r.business || r.business===business).map(r=>({name:r.name,aliases:r.aliases,category:r.category,matchMode:r.matchMode,excludeAliases:r.excludeAliases}));
+    const merchantKey = ruleFor(t.description,identityRules)?.name || normalize(t.description);
+    const refunds = (buckets.get(t.amount) || []).filter(other => other.id !== t.id && accountKey(other.primary) === accountKey(t.primary) && other.direction !== t.direction && Math.abs(other.day - t.day) <= 60 && (ruleFor(other.description, identityRules)?.name || normalize(other.description)) === merchantKey);
     if (refunds.length) return { ...base, kind: 'Possible refund', reason: `${refunds.length} equal-amount opposite movement(s) on the same account and merchant within 60 days. Needs review; not a transfer.` };
     if (t.direction === 'in') return { ...base, kind: 'Credit / incoming', reason: 'Incoming movement. Review payment/refund/income context before categorizing.' };
+    const excluded = nonPurchaseReason(t);
+    if (excluded) return { ...base, kind: 'Manual review', reason: excluded };
+    const matches = matchingRules(t.description,rules,t,business);
+    if (new Set(matches.map(r=>r.category)).size > 1) return { ...base, kind: 'Conflicting merchant rules', reason: matches.map(r=>r.name+': '+r.category).join('; ') };
     if (rule) return { ...base, kind: 'Merchant rule', proposed: rule.category, reason: `Approved alias group: ${rule.name}. Export category ${t.categories.includes(rule.category) ? 'already matches' : 'differs'}; reviewed status is unknown.` };
     return { ...base, reason: 'No approved merchant rule. Use the current category and your knowledge to review.' };
   });

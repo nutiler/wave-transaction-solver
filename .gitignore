@@ -21,3 +21,5 @@ Thumbs.db
 
 # Optional CI template kept local until GitHub workflow access is available
 .github/workflows/tests.yml
+
+local-analysis/
