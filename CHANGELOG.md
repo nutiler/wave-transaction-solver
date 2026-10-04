@@ -84,3 +84,9 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Add per-pair transfer setup with background money-out opening, read-only matching-menu capture, Copy diagnostics, and a local JSON paste checker.
 - Keep existing matching transactions separate from create-transfer options; require exact business/record context and unique counterpart labels, with ID/link checks where available.
 - Add synthetic menu-reader and interface coverage. Automatic transfer linking and reviewed-state changes remain unimplemented pending actual Wave submenu diagnostics.
+
+## 0.9.2
+
+- Detect the transfer matching submenu from its visible section heading, without requiring one exact search placeholder or a single category search on the page.
+- Retain bounded menu markup on incomplete captures, including the first-level transfer menu, so copied diagnostics remain useful for adapting selectors.
+- Avoid double-counting nested option wrappers; withhold multiple visible menus. Add six synthetic DOM regression checks.

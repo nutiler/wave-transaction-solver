@@ -141,3 +141,5 @@ Expand **Transfer review**, open a candidate pair, then expand **Transfer setup 
 The reader collects only the visible category menu. Matching options and create-transfer options are separated. A diagnostic match does not prove a saved transfer, reviewed status, or freshness of the exported pair. These controls do not select a category, link a transfer, create records, or save. Actual Wave markup is still needed to implement deliberate Set transfer safely. Menu captures are temporary and clear when the export/business/working period changes or the page reloads.
 
 Synthetic checks: `/extension/transfer-menu-fixture.html` exercises the real read-only reader against fictional DOM menus. The integration fixture tests Read, Copy, and pasted-report validation with mocked Wave tabs.
+
+The 0.9.2 transfer reader locates the matching-section heading even when search markup differs. If the option selector is unfamiliar, copy the report anyway: bounded menu HTML is retained for inspection. Multiple visible matching menus remain blocked. A read failure or diagnostic match never changes Wave.

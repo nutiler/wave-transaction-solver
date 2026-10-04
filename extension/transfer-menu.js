@@ -7,25 +7,36 @@ export function readTransferMenu(testContext){
  const url=new URL(loc.href),match=url.origin==='https://next.waveapps.com' && url.pathname.match(/^\/([0-9a-f-]{36})\/transactions\/(\d+)\/?$/i);
  const result={format:'wave-solver-transfer-menu',version:1,identity:match?{business:match[1],transaction:match[2]}:null,capturedAt:new Date().toISOString(),matchingGroups:0,createGroups:0,matchingOptions:[],createOptions:[],menuHtml:[],problems:[]};
  if(!match){result.problems.push('Open the exact transaction before reading its menu.');return result;}
- const searches=[...doc.querySelectorAll('input')].filter(e=>visible(e) && /^Search categories[.…]*$/i.test(tidy(e.placeholder || e.getAttribute('aria-label'))));
- if(searches.length!==1){result.problems.push('Open the Category dropdown and its Transfer to Bank, Credit Card, or Loan submenu.');return result;}
  const matchingText='Select Account with Matching Transaction',createText='Select Account to Create Transfer';
- let menu=null;
- for(let e=searches[0].parentElement,i=0;e && e!==doc.body && i<9;e=e.parentElement,i++){
-  if(e.querySelector('textarea,input[type="password"],input[type="date"]'))break;
-  if(tidy(e.textContent).includes(matchingText)){menu=e;break;}
+ const headingNodes=(root,text)=>[...root.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span,p,strong,b,legend')].filter(e=>visible(e) && clean(e)===text).filter(e=>![...e.children].some(c=>visible(c) && clean(c)===text));
+ const searches=[...doc.querySelectorAll('input')].filter(e=>visible(e) && /search\s+categories/i.test(tidy(e.placeholder || e.getAttribute('aria-label'))));
+ const roots=new Set();
+ // The section heading remains visible even when Wave changes the search markup.
+ for(const heading of headingNodes(doc,matchingText)){
+  for(let e=heading.parentElement,i=0;e && e!==doc.body && i<9;e=e.parentElement,i++){
+   if(e.querySelector('textarea,input[type="password"],input[type="date"]'))break;
+   const inputs=[...e.querySelectorAll('input')].filter(visible);
+   if(inputs.length || e.matches('.wv-select__menu,[role="listbox"],[role="menu"]')){roots.add(e);break;}
+  }
  }
- if(!menu){result.problems.push('Matching-transaction submenu not visible. Select Transfer to Bank, Credit Card, or Loan, then read again.');return result;}
- const headings=text=>[...menu.querySelectorAll('h1,h2,h3,h4,h5,div,span,p,strong')].filter(e=>visible(e) && clean(e)===text).filter(e=>![...e.children].some(c=>visible(c) && clean(c)===text));
- const matching=headings(matchingText),create=headings(createText);result.matchingGroups=matching.length;result.createGroups=create.length;
+ // Preserve useful popup markup when the user has only opened the first menu.
+ if(!roots.size){for(const input of searches){for(let e=input.parentElement,i=0;e && e!==doc.body && i<9;e=e.parentElement,i++){
+  if(e.querySelector('textarea,input[type="password"],input[type="date"]'))break;
+  if(e.matches('.wv-select__menu,[role="listbox"],[role="menu"]') || tidy(e.textContent).includes('Transfer to Bank, Credit Card, or Loan')){roots.add(e);break;}
+ }}}
+ const snapshot=e=>{const c=e.cloneNode(true);c.querySelectorAll('script,textarea,input[type="password"]').forEach(n=>n.remove());for(const input of c.querySelectorAll('input'))input.removeAttribute('value');return c.outerHTML.slice(0,30000);};
+ result.menuHtml=[...roots].slice(0,2).map(snapshot);
+ result.searchControls=searches.slice(0,4).map(e=>({tag:e.tagName,type:e.type,placeholder:e.placeholder,ariaLabel:e.getAttribute('aria-label'),class:e.className}));
+ if(roots.size!==1){result.problems.push(roots.size?'Multiple transfer menus are visible. Close extra menus and read again.':'No matching submenu was detected. Leave the matching-transaction submenu open in the money-out transaction tab.');return result;}
+ const menu=[...roots][0],matching=headingNodes(menu,matchingText),create=headingNodes(menu,createText);result.matchingGroups=matching.length;result.createGroups=create.length;
  const follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
- const options=[...menu.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,.wv-list__item,.wv-dropdown__item')].filter(visible);
+ const nodes=[...menu.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,.wv-list__item,.wv-dropdown__item,.wv-select__option')].filter(visible);
+ const options=nodes.filter(e=>!nodes.some(child=>child!==e && e.contains(child) && clean(child)===clean(e)));
  for(const e of options){const text=clean(e);if(!text || text.includes(matchingText) || text.includes(createText))continue;
   const item={text,tag:e.tagName,role:e.getAttribute('role'),transactionId:e.getAttribute('data-transaction-id') || e.querySelector('[data-transaction-id]')?.getAttribute('data-transaction-id') || null,href:e.getAttribute('href') || e.querySelector('a[href]')?.getAttribute('href') || null,html:e.outerHTML.slice(0,6000)};
   if(matching.length===1 && follows(matching[0],e) && (!create.length || create.every(h=>follows(e,h))))result.matchingOptions.push(item);
   else if(create.length===1 && follows(create[0],e))result.createOptions.push(item);
  }
- const clone=menu.cloneNode(true);clone.querySelectorAll('script,textarea,input[type="password"]').forEach(e=>e.remove());for(const input of clone.querySelectorAll('input')){input.removeAttribute('value');}result.menuHtml=[clone.outerHTML.slice(0,30000)];
  if(matching.length!==1)result.problems.push('Could not identify one matching-transaction section.');
  if(!result.matchingOptions.length)result.problems.push('No recognizable matching options captured. The menu HTML is included for selector inspection.');
  return result;
