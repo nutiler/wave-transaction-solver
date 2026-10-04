@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {checkTransferMenu} from '../extension/transfer-menu.js';
+const business='11111111-1111-1111-1111-111111111111';
+const pair={out:{id:'1000000000000000001'},in:{id:'1000000000000000002',date:'2025-01-02',description:'Payment thank you',primary:{account:'Fictional Card'}}};
+const option={text:'Fictional Card - Jan 2, 2025 - Payment thank you',transactionId:pair.in.id};
+const report=(options=[option])=>({format:'wave-solver-transfer-menu',version:1,identity:{business,transaction:pair.out.id},matchingGroups:1,matchingOptions:options,createOptions:[option],problems:[]});
+test('exact full existing-match label accepts a diagnostic without claiming a saved transfer',()=>{const result=checkTransferMenu(report(),pair,business);assert(result.ready);assert.match(result.message,/No transfer was set or reviewed/);});
+test('create options alone never supply an existing match',()=>assert.equal(checkTransferMenu(report([]),pair,business).ready,false));
+test('wrong business, record and malformed reports are rejected',()=>{for(const r of [null,{}, {...report(),identity:{business:'other',transaction:pair.out.id}},{...report(),identity:{business,transaction:pair.in.id}},{...report(),matchingOptions:'invalid'}])assert.throws(()=>checkTransferMenu(r,pair,business),/Paste diagnostics/);});
+test('duplicates, partial names, other accounts, and wrong counterpart IDs cannot pass',()=>{for(const options of [[option,option],[{...option,text:'Fictional Card - Jan 2, 2025 - Payment…'}],[{...option,text:'Other Card - Jan 2, 2025 - Payment thank you'}],[{...option,transactionId:'1000000000000000003'}],[{...option,transactionId:1000000000000000002}]])assert.equal(checkTransferMenu(report(options),pair,business).ready,false);});
+test('links must identify the exact counterpart in the selected business and Wave origin',()=>{for(const href of ['https://example.com/'+business+'/transactions/'+pair.in.id,'/other/transactions/'+pair.in.id,'/'+business+'/transactions/'+pair.out.id,'javascript:alert(1)'])assert.equal(checkTransferMenu(report([{...option,href}]),pair,business).ready,false);assert(checkTransferMenu(report([{...option,href:'/'+business+'/transactions/'+pair.in.id}]),pair,business).ready);});
+test('incomplete capture, ambiguous sections and reader problems are withheld',()=>{for(const r of [{...report(),matchingGroups:0},{...report(),matchingGroups:2},{...report(),problems:['Unreadable menu']}])assert.equal(checkTransferMenu(r,pair,business).ready,false);});

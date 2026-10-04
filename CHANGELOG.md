@@ -78,3 +78,9 @@ This initial milestone preceded deliberate category Apply and review requests, a
 
 - Make proposal merchant/category headings larger and distinct. Remove the extra judgment checkbox; Accept rule is explicit approval.
 - Add a searchable, deduplicated transfer-review view, paired money-out/in details, ambiguity review, and read-only two-record live verification. Keep transfer creation and linking manual.
+
+## 0.9.1
+
+- Add per-pair transfer setup with background money-out opening, read-only matching-menu capture, Copy diagnostics, and a local JSON paste checker.
+- Keep existing matching transactions separate from create-transfer options; require exact business/record context and unique counterpart labels, with ID/link checks where available.
+- Add synthetic menu-reader and interface coverage. Automatic transfer linking and reviewed-state changes remain unimplemented pending actual Wave submenu diagnostics.

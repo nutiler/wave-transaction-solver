@@ -1,3 +1,4 @@
+import { readTransferMenu } from './transfer-menu.js';
 import { transferPairs } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
 import { validateRule } from './rules.js';
@@ -534,7 +535,7 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
-const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
+const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:async t=>{const expectedBusiness=business;const tabs=(await chrome.tabs.query({url:'https://next.waveapps.com/*'})).filter(tab=>{const i=waveIdentity(tab.url);return i?.business===expectedBusiness && i.transaction===t.id;});const reports=[];for(const tab of tabs){const result=(await chrome.scripting.executeScript({target:{tabId:tab.id},func:readTransferMenu}))[0]?.result;if(result?.identity?.business===expectedBusiness && result.identity.transaction===t.id)reports.push(result);}const open=reports.filter(r=>r.matchingGroups>0);if(open.length>1)throw Error('Multiple matching menus are open for this record. Close the extra menus and read again.');if(open.length===1)return open[0];if(reports.length===1)return reports[0];throw Error('Open the money-out record and its transfer submenu in one Wave tab, then read the menu again.');},read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),

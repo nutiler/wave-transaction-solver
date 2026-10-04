@@ -129,3 +129,15 @@ Open proposal cards have a blue background and border. After acceptance, the nex
 ## Transfer review (0.9.0)
 
 Expand Transfer review to see each reciprocal unique pair once, with both dates, accounts, descriptions, and amounts lined up. Search by account, description, date, or amount; Show more pairs reveals remaining pairs. Check both sides in Wave opens two background records and reads their live fields without applying, reviewing, or linking anything. Changed or unreadable fields require inspection. Equal amounts and payment wording remain candidate evidence, not confirmed purpose. Ambiguous matches are listed separately, and same-account refunds or closed-period counterparts cannot enter the unique-pair list. Live checks are temporary and must be repeated after a fresh export or reload. Inspect money out/in opens the existing single-record live-check workflow for manual handling.
+
+## Transfer menu diagnostics (0.9.1)
+
+Expand **Transfer review**, open a candidate pair, then expand **Transfer setup · menu check and copy/paste**.
+
+1. Click **Open money-out in Wave**. It opens in the background. Switch to that Wave tab and open **Category → Transfer to Bank, Credit Card, or Loan**.
+2. Leave the matching-transaction submenu open and return to the solver. Click **Read transfer menu**.
+3. Click **Copy transfer diagnostics** and paste the report into your support chat. The panel also fills a local paste box; **Check pasted diagnostics** validates the record, business, exact counterpart label, and any available ID/link.
+
+The reader collects only the visible category menu. Matching options and create-transfer options are separated. A diagnostic match does not prove a saved transfer, reviewed status, or freshness of the exported pair. These controls do not select a category, link a transfer, create records, or save. Actual Wave markup is still needed to implement deliberate Set transfer safely. Menu captures are temporary and clear when the export/business/working period changes or the page reloads.
+
+Synthetic checks: `/extension/transfer-menu-fixture.html` exercises the real read-only reader against fictional DOM menus. The integration fixture tests Read, Copy, and pasted-report validation with mocked Wave tabs.

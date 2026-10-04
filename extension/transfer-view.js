@@ -1,11 +1,12 @@
+import { checkTransferMenu } from './transfer-menu.js';
 import { transferPairs,checkTransferRecords } from './transfers.js';
-export function installTransferReview({getState,read,inspect}){
+export function installTransferReview({getState,read,inspect,openMenuRecord,captureMenu}){
  const $=id=>document.getElementById(id),make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
- let context=null,checks=new Map(),generation=0,limit=100;
+ let context=null,checks=new Map(),menus=new Map(),generation=0,limit=100;
  const money=c=>'$'+(c/100).toFixed(2);
  function render(){
   generation++;const s=getState(),key=[s.dataset,s.business,s.workFrom];
-  if(!context || key.some((v,i)=>v!==context[i])){context=key;checks.clear();generation++;limit=100;}
+  if(!context || key.some((v,i)=>v!==context[i])){context=key;checks.clear();menus.clear();generation++;limit=100;}
   const pairs=transferPairs(s.queue),query=$('transferSearch').value.toLowerCase();
   const matches=pairs.filter(p=>(p.out.description+' '+p.in.description+' '+p.out.primary.account+' '+p.in.primary.account+' '+p.out.date+' '+p.in.date+' '+money(p.out.amount)).toLowerCase().includes(query));
   const ambiguous=s.queue.filter(t=>t.kind==='Ambiguous transfer');
@@ -28,6 +29,16 @@ export function installTransferReview({getState,read,inspect}){
    for(const [label,t] of [['Inspect money out',pair.out],['Inspect money in',pair.in]]){const b=make('button',label);b.className='secondary';b.onclick=()=>inspect(t);actions.append(b);}
    card.append(actions,liveResults);
    if(checks.has(pair.key))liveResults.append(make('p',checks.get(pair.key).message+' Recheck for fresh live details.'));
+   const menuPanel=make('details');menuPanel.className='transfer-menu-tools';menuPanel.append(make('summary','Transfer setup · menu check and copy/paste'));
+   menuPanel.append(make('p','Open the money-out record, then in Wave choose Category → Transfer to Bank, Credit Card, or Loan. Leave the matching-transaction submenu open and return here.'));
+   const menuActions=make('div');menuActions.className='bar';const openMenu=make('button','Open money-out in Wave');openMenu.className='secondary';openMenu.disabled=!s.extensionMode || s.sample;openMenu.onclick=async()=>{try{await openMenuRecord(pair.out);}catch(e){menuStatus.textContent=e.message;}};
+   const readMenu=make('button','Read transfer menu'),copy=make('button','Copy transfer diagnostics');readMenu.disabled=!s.extensionMode || s.sample;copy.className='secondary';
+   const menuStatus=make('p'),pre=make('pre'),paste=make('textarea');menuStatus.setAttribute('role','status');paste.rows=5;paste.placeholder='Paste the copied transfer-menu JSON here to check it';paste.setAttribute('aria-label','Paste transfer menu diagnostics');
+   const saved=menus.get(pair.key);if(saved){pre.textContent=JSON.stringify(saved,null,2);paste.value=pre.textContent;}copy.disabled=!saved;
+   readMenu.onclick=async()=>{readMenu.disabled=true;const token=++generation;try{const report=await captureMenu(pair.out);if(generation!==token || getState().dataset!==s.dataset || getState().business!==s.business)return;report.expectedCounterpart={id:pair.in.id,account:pair.in.primary.account,date:pair.in.date,description:pair.in.description,amountCents:pair.in.amount};menus.set(pair.key,report);pre.textContent=JSON.stringify(report,null,2);paste.value=pre.textContent;copy.disabled=false;menuStatus.textContent=checkTransferMenu(report,pair,s.business).message;}catch(e){menuStatus.textContent=e.message;}finally{readMenu.disabled=false;}};
+   copy.onclick=async()=>{try{await navigator.clipboard.writeText(pre.textContent);menuStatus.textContent='Transfer diagnostics copied. Paste them into this chat or the check box below.';}catch{menuPanel.open=true;const range=document.createRange();range.selectNodeContents(pre);const selected=window.getSelection();selected.removeAllRanges();selected.addRange(range);menuStatus.textContent='Diagnostics selected. Press Ctrl+C to copy.';}};
+   const checkPaste=make('button','Check pasted diagnostics');checkPaste.className='secondary';checkPaste.onclick=()=>{try{if(paste.value.length>1000000)throw Error('Paste a transfer diagnostic report under 1 MB.');const report=JSON.parse(paste.value);menuStatus.textContent=checkTransferMenu(report,pair,s.business).message;}catch(e){menuStatus.textContent=e.message;}};
+   menuActions.append(openMenu,readMenu,copy);menuPanel.append(menuActions,menuStatus,pre,paste,checkPaste);card.append(menuPanel);
    card.append(make('p','In Wave, use Transfer to Bank, Credit Card, or Loan → Select Account with Matching Transaction. Choose the existing opposite record. This checker does not link, save, or create transactions.'));
    $('transferRows').append(card);
   }
