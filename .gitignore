@@ -18,3 +18,6 @@ wave-solver-draft*.json
 .env*
 Thumbs.db
 .DS_Store
+
+# Optional CI template kept local until GitHub workflow access is available
+.github/workflows/tests.yml
