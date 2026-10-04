@@ -29,3 +29,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.1
 
 - Check review availability after selecting the category and wait briefly for it to enable. If Review remains disabled, save and verify the category while reporting reviewed status separately.
+
+## 0.7.2
+
+- Navigate the Personal Expense or Withdrawal submenu for Equity category names. Search within the category popup and match exact account text while excluding menu icons and unrelated page controls.

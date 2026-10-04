@@ -62,7 +62,7 @@ export function readWavePage(testContext) {
         // A shared layout row is not a field wrapper. Never borrow its neighbor's input.
         if (fieldLabels.some(other => container.contains(other) && tidy(other.textContent).toLowerCase() !== labelText.toLowerCase())) break;
         result.fieldContexts[labelText] = [...container.querySelectorAll('*')].filter(el => visible(el) && !['INPUT', 'TEXTAREA'].includes(el.tagName)).slice(0, 16).map(el => ({ tag: el.tagName, role: el.getAttribute('role'), class: String(el.className || '').slice(0, 180), tabindex: el.getAttribute('tabindex'), ariaLabel: el.getAttribute('aria-label'), text: el.children.length ? undefined : tidy(el.textContent).slice(0, 180) }));
-        let controls = [...container.querySelectorAll(selector)].filter(visible);
+        let controls = [...container.querySelectorAll(selector)].filter(el => visible(el) && !/^Search categories[.…]*$/i.test(tidy(el.placeholder || el.getAttribute('aria-label'))));
         // Prefer a native value to decorative currency/calendar buttons.
         const native = controls.filter(el => ['INPUT', 'SELECT'].includes(el.tagName));
         if (native.length === 1) { values.add(valueOf(native[0], labelText)); break; }

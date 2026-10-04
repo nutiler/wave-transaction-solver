@@ -1,7 +1,7 @@
 import { compareLive } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
-export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories }) {
+export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
   if (sample || !business) throw new Error('Select a real Wave business and export first.');
   if (!transaction || transaction.kind !== 'Merchant rule' || transaction.direction !== 'out' || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
   if (!categories.includes(transaction.proposed)) throw new Error('Collect the exact category name from Chart of Accounts first.');
@@ -14,7 +14,9 @@ export function prepareCategoryEdit(transaction, snapshot, { business, sample, s
   }
   if (!entry || entry.category !== transaction.proposed || !entry.requestReviewAfterMatch) throw new Error('Tick this transaction’s Plan checkbox, or import its unchanged draft plan.');
   if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction, snapshot).checks.some(c => c.state !== 'Match')) throw new Error('All live fields must match the export before Apply.');
-  return { business, id: transaction.id, category: entry.category, expected: { ...snapshot.fields } };
+  const groups = (categoryGroups || []).filter(group => group.accounts.some(account => account.name === entry.category));
+  const categoryPath = groups.length === 1 && groups[0].name === 'Equity' ? ['Personal Expense or Withdrawal'] : [];
+  return { business, id: transaction.id, category: entry.category, categoryPath, expected: { ...snapshot.fields } };
 }
 
 export function verifyCategoryResult(transaction, snapshot, business, category) {
@@ -107,17 +109,67 @@ export async function editWaveTransaction(request, testContext) {
         if (options.length !== 1) throw new Error('Exact category is missing or ambiguous.');
         category.value = options[0].value; category.dispatchEvent(new Event('change', { bubbles: true }));
       } else {
-        category.click();
-        let options = [];
-        for (let i = 0; i < 20; i++) {
-          identity();
-          const matches = [...doc.querySelectorAll('[role="option"],li,button,[role="menuitem"],.wv-dropdown__menu__item,.wv-select__option,.wv-select__menu__option')].filter(el => visible(el) && tidy(el.textContent) === tidy(request.category));
-          options = matches.filter(el => !matches.some(other => other !== el && el.contains(other)));
-          if (options.length) break;
-          await wait(100);
+        const openSearch = [...doc.querySelectorAll('input')].filter(el => visible(el) && /^Search categories[.…]*$/i.test(tidy(el.placeholder || el.getAttribute('aria-label'))));
+        if (openSearch.length > 1) throw new Error('Multiple category menus are open.');
+        if (!openSearch.length) category.click();
+        const optionText = el => {
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node => node.remove());
+          return tidy(clone.textContent);
+        };
+        function menuScopes() {
+          const scopes = new Set([category]);
+          const search = [...doc.querySelectorAll('input')].filter(el => visible(el) && /^Search categories[.…]*$/i.test(tidy(el.placeholder || el.getAttribute('aria-label'))));
+          if (search.length > 1) throw new Error('Multiple category search menus are visible.');
+          if (search.length === 1) {
+            const otherFields = ['Date','Description','Account','Type','Amount'].map(name => control(root(), name));
+            for (let el = search[0].parentElement, i = 0; el && el !== doc.body && i < 8; el = el.parentElement, i++) {
+              if (otherFields.some(field => el.contains(field))) break;
+              scopes.add(el);
+            }
+          }
+          return [...scopes];
         }
-        if (options.length !== 1 || !enabled(options[0])) throw new Error('Exact category option not found. Choose it manually or share the dropdown diagnostics.');
-        // Selecting is allowed only while every original field still matches.
+        function exactOptions(text) {
+          const matches = new Set();
+          for (const scope of menuScopes()) {
+            for (const el of scope.querySelectorAll('[role="option"],li,button,[role="menuitem"],div,span')) {
+              if (visible(el) && !el.closest('.wv-select__label') && optionText(el) === tidy(text)) matches.add(el);
+            }
+          }
+          return [...matches].filter(el => ![...matches].some(other => other !== el && el.contains(other)));
+        }
+        async function waitOptions(text) {
+          for (let i = 0; i < 20; i++) {
+            assertFields(request.expected.category);
+            const options = exactOptions(text);
+            if (options.length) return options;
+            await wait(100);
+          }
+          return [];
+        }
+        const path = request.categoryPath || [];
+        if (path.length > 1 || path.some(name => name !== 'Personal Expense or Withdrawal')) throw new Error('Unsupported category navigation path.');
+        // Equity categories live behind Wave's personal-expense submenu.
+        let options = await waitOptions(request.category);
+        if (!options.length && path.length) {
+          const branches = await waitOptions(path[0]);
+          if (branches.length !== 1 || !enabled(branches[0])) throw new Error('Cannot identify the Personal Expense or Withdrawal submenu. Copy diagnostics.');
+          assertFields(request.expected.category); branches[0].click();
+          await wait(150);
+          options = await waitOptions(request.category);
+        }
+        if (!options.length) {
+          const searches = [...doc.querySelectorAll('input')].filter(el => visible(el) && /^Search categories[.…]*$/i.test(tidy(el.placeholder || el.getAttribute('aria-label'))));
+          if (searches.length === 1) {
+            assertFields(request.expected.category);
+            const input = searches[0];
+            const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, 'value').set;
+            setter.call(input, request.category); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
+            options = await waitOptions(request.category);
+          }
+        }
+        if (options.length !== 1 || !enabled(options[0])) throw new Error('Exact category option not found in the category menu. Copy diagnostics so its markup can be checked.');
         assertFields(request.expected.category); options[0].click();
       }
       let ready = false;

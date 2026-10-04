@@ -85,3 +85,5 @@ Click Apply to recheck the record, select the exact category, request reviewed s
 Apply attempts are saved locally before editing starts. After a possible Save, the button stays disabled even after an extension reload. **Recheck saved result** performs a read-only verification and never repeats Save. If category selection fails before Save, cancel the unsaved Wave dialog and read the original record again before retrying. Clearing the imported session preserves these attempt records.
 
 The old CSV remains a historical snapshot. After a verified category save, that record is removed from the draft shortlist; the live table compares against the expected saved value. Import a fresh export for subsequent bookkeeping work.
+
+Equity categories such as personal groceries are selected through Wave’s **Personal Expense or Withdrawal** submenu. The solver searches inside the category popup when needed and matches the exact account name, excluding icon text.

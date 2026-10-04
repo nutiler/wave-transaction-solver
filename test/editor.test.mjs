@@ -40,3 +40,9 @@ test('Saved verification needs every field and explicit reviewed evidence', () =
     assert.equal(result.categoryVerified,false); assert.equal(result.reviewedVerified,false);
   }
 });
+
+test('Equity merchant categories route through the personal-expense submenu', () => {
+  const equity = {name:'Equity',accounts:[{name:'Personal Groceries'}]};
+  assert.deepEqual(prepareCategoryEdit(transaction,snapshot,{...options,categoryGroups:[equity]}).categoryPath,['Personal Expense or Withdrawal']);
+  assert.deepEqual(prepareCategoryEdit(transaction,snapshot,{...options,categoryGroups:[{...equity,name:'Expenses'}]}).categoryPath,[]);
+});

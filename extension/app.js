@@ -348,7 +348,7 @@ function renderLive(snapshot) {
 }
 $('diagnosticToggle').onclick = () => { $('diagnostics').hidden = !$('diagnostics').hidden; };
 function currentEditRequest(snapshot = lastLiveSnapshot) {
-  return prepareCategoryEdit(chosen, snapshot, { business, sample: sampleMode, shortlist, queue, loadedPlan, categories: categoryNames(catalog, []) });
+  return prepareCategoryEdit(chosen, snapshot, { business, sample: sampleMode, shortlist, queue, loadedPlan, categories: categoryNames(catalog, []), categoryGroups: catalog?.groups });
 }
 function updateApply() {
   const supported = chosen?.kind === 'Merchant rule' && !sampleMode;
