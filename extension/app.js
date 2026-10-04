@@ -12,7 +12,7 @@ const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
-let catalog = null, chartTab = null;
+let catalog = null, chartTab = null, chartCollecting = false;
 let csvText = '', importedAt = '', restoring = true, saveChain = Promise.resolve();
 let exportPages = {};
 try { exportPages = (await import('./settings.local.js')).exportPages || {}; } catch { /* Optional, private configuration. */ }
@@ -35,6 +35,8 @@ function updateSteps() {
   stepStatus('live',liveStepLabel,liveStepLabel==='Fields match');
   stepStatus('plan',shortlist.size ? `${shortlist.size} records in draft` : 'Choose proposals');
   $('openExport').disabled = !extensionMode || !exportUrlFor(business, exportPages);
+  $('readChart').classList.toggle('secondary', !chartTab);
+  $('readChart').disabled = chartCollecting || !extensionMode || !business || !chartTab;
 }
 const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch'];
 const draftIds = ['ruleName', 'aliases', 'category'];
@@ -79,6 +81,7 @@ async function handleChartOpen() {
     const url = `https://next.waveapps.com/${business}/accounting/charts`;
     const existing = (await chrome.tabs.query({ url: 'https://next.waveapps.com/*' })).find(tab => tab.url === url);
     const tab = existing || await openBackgroundTab(chrome.tabs,url); chartTab = tab.id;
+    updateSteps();
     await rememberSession();
     $('chartStatus').textContent = 'Chart of Accounts opened in a background tab. Click Collect all five tabs when it has loaded.';
   } catch (e) { error(e.message); $('chartStatus').textContent = e.message; }
@@ -104,6 +107,8 @@ async function refreshTabs() {
     $('connection').textContent = `Automatically selected your only open Wave business: ${business}. Confirm your CSV belongs to this business.`;
     await rememberSession();
   }
+  if (business) chartTab = tabs.find(tab => tab.url === `https://next.waveapps.com/${business}/accounting/charts`)?.id || null;
+  updateSteps();
   if (business) { const option = [...$('waveTabs').options].find(o => o.dataset.business === business); if (option) $('waveTabs').value = option.value; }
 }
 const handle = (fn, statusId) => async event => {
@@ -125,7 +130,8 @@ $('readChart').onclick = handle(async () => {
   if (!extensionMode || !business || !chartTab) throw new Error('Use Open Chart of Accounts first.');
   const collectingBusiness = business, tab = await chrome.tabs.get(chartTab);
   if (new URL(tab.url).pathname !== `/${collectingBusiness}/accounting/charts` || new URL(tab.url).origin !== 'https://next.waveapps.com') throw new Error('The chart tab is no longer on the selected business’s Chart of Accounts.');
-  $('readChart').disabled = true; $('chartStatus').textContent = 'Collecting Assets, Liabilities & Credit Cards, Income, Expenses, and Equity…';
+  $('chartCopyStatus').textContent = '';
+  chartCollecting = true; $('readChart').disabled = true; $('chartStatus').textContent = 'Collecting Assets, Liabilities & Credit Cards, Income, Expenses, and Equity…';
   try {
     const results = await chrome.scripting.executeScript({ target: { tabId: chartTab }, func: readWaveChart, args: [collectingBusiness] });
     const snapshot = results[0]?.result;
@@ -135,12 +141,11 @@ $('readChart').onclick = handle(async () => {
     const charts = (await chrome.storage.local.get('solverCharts')).solverCharts || {};
     charts[collectingBusiness] = snapshot; await chrome.storage.local.set({ solverCharts: charts }); catalog = snapshot;
     renderCatalog(); renderCategories();
-    updateSteps();
     $('chartStatus').textContent = `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} exact account names collected across all five tabs. Available in the merchant-rule Category field.`;
   } catch (e) {
     const problems = $('chartDiagnostics').textContent;
     throw new Error(`${e.message}${problems ? ' Expand Collection diagnostics to see what the reader found.' : ''}`);
-  } finally { $('readChart').disabled = false; }
+  } finally { chartCollecting = false; updateSteps(); }
 }, 'chartStatus');
 $('refresh').onclick = handle(refreshTabs);
 $('connect').onclick = handle(async () => {
@@ -276,7 +281,7 @@ function select(t, scroll = true) {
   $('counterpart').hidden = !t.partner;
   $('open').disabled = !extensionMode || sampleMode; $('read').disabled = !extensionMode || sampleMode;
   $('counterpart').disabled = !extensionMode || sampleMode;
-  $('comparison').replaceChildren(); $('diagnostics').hidden = true; $('diagnosticToggle').hidden = true;
+  $('comparison').replaceChildren(); $('diagnostics').hidden = true; $('diagnosticToggle').hidden = true; $('copyDiagnostics').hidden = true; $('liveCopyStatus').textContent = '';
   $('liveStatus').textContent = !extensionMode ? 'Live checks require the installed Chrome extension.' : sampleMode ? 'Fictional samples cannot be opened in Wave.' : !business ? 'First select your Wave tab and click Use selected business in section 1 above. Then open this transaction.' : 'Not checked. Live state must be compared with this export.';
   if (scroll) $('live').scrollIntoView({ behavior: 'smooth' });
   rememberSoon();
@@ -332,9 +337,33 @@ function renderLive(snapshot) {
   const body = make('tbody');
   for (const c of result.checks) { const row = make('tr'), state = make('td'); state.append(make('span', c.state, `status ${c.state}`)); row.append(make('td', c.field), make('td', c.exported), make('td', c.live), state); body.append(row); }
   table.append(body); $('comparison').replaceChildren(table);
-  $('diagnostics').textContent = JSON.stringify({ problems: snapshot.problems, fieldContexts: snapshot.fieldContexts, readableControls: snapshot.controls, capturedAt: snapshot.capturedAt }, null, 2); $('diagnosticToggle').hidden = false;
+  $('diagnostics').textContent = JSON.stringify({ problems: snapshot.problems, fieldContexts: snapshot.fieldContexts, readableControls: snapshot.controls, capturedAt: snapshot.capturedAt }, null, 2); $('diagnosticToggle').hidden = false; $('copyDiagnostics').hidden = false; $('liveCopyStatus').textContent = '';
 }
 $('diagnosticToggle').onclick = () => { $('diagnostics').hidden = !$('diagnostics').hidden; };
+async function copyDiagnostics(sourceId, statusId) {
+  const text = $(sourceId).textContent;
+  if (!text.trim()) { $(statusId).textContent = 'No diagnostics to copy yet.'; return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    $(statusId).textContent = 'Copied to clipboard.';
+  } catch {
+    $(sourceId).hidden = false;
+    const range = document.createRange(); range.selectNodeContents($(sourceId));
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    $(statusId).textContent = 'Clipboard access unavailable. Diagnostics selected; press Ctrl+C to copy.';
+  }
+}
+$('copyDiagnostics').onclick = () => copyDiagnostics('diagnostics', 'liveCopyStatus');
+$('copyChartDiagnostics').onclick = () => copyDiagnostics('chartDiagnostics', 'chartCopyStatus');
+if (extensionMode) {
+  chrome.tabs.onRemoved.addListener(tabId => {
+    if (tabId === chartTab) { chartTab = null; updateSteps(); }
+  });
+  chrome.tabs.onUpdated.addListener((tabId, change) => {
+    if (tabId === chartTab && change.url && change.url !== 'https://next.waveapps.com/' + business + '/accounting/charts') { chartTab = null; updateSteps(); }
+  });
+}
+
 function sampleCSV() {
   const h = ['Transaction ID', 'Transaction Date', 'Account Name', 'Transaction Description', 'Debit Amount (Two Column Approach)', 'Credit Amount (Two Column Approach)', 'Account Group', 'Account Type', 'Account ID'];
   const r = [
