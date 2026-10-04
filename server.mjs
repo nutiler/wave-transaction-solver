@@ -1,0 +1,16 @@
+import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/core.js': ['core.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+const extensionFiles = { 'app.html': 'text/html', 'app.js': 'text/javascript', 'app.css': 'text/css', 'model.js': 'text/javascript', 'csv.js': 'text/javascript', 'live-reader.js': 'text/javascript', 'chart-reader.js': 'text/javascript', 'catalog.js': 'text/javascript', 'session.js': 'text/javascript', 'workflow.js': 'text/javascript', 'history.js': 'text/javascript', 'plan.js': 'text/javascript', 'reader-fixture.html': 'text/html', 'reader-fixture.js': 'text/javascript' };
+const port = Number(process.env.PORT || 4317);
+http.createServer(async (req, res) => {
+  const extensionName = req.url?.startsWith('/extension/') ? req.url.slice('/extension/'.length) : '';
+  const isExtension = Object.hasOwn(extensionFiles, extensionName);
+  const file = isExtension ? [extensionName, extensionFiles[extensionName]] : files[req.url];
+  if (req.method !== 'GET' || !file) { res.writeHead(404); res.end('Not found'); return; }
+  try {
+    const body = await readFile(new URL(`./${isExtension ? 'extension' : 'public'}/${file[0]}`, import.meta.url));
+    res.writeHead(200, { 'Content-Type': `${file[1]}; charset=utf-8`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" });
+    res.end(body);
+  } catch { res.writeHead(500); res.end('Unable to load application'); }
+}).listen(port, '127.0.0.1', () => console.log(`Transaction organizer: http://127.0.0.1:${port}`));

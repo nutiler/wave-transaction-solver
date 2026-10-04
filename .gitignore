@@ -1,0 +1,20 @@
+node_modules/
+*.csv
+*.env
+*.log
+
+# Private accounting exports, session plans, screenshots, and local configuration
+*.CSV
+*.zip
+*.xlsx
+*.xls
+*.pdf
+*.png
+*.jpg
+*.jpeg
+wave-solver-draft*.json
+*.local.js
+*.local.json
+.env*
+Thumbs.db
+.DS_Store
