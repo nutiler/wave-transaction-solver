@@ -69,3 +69,17 @@ test('Verification blocks other businesses, cancelled selections and unfinished 
   const tabs={get:async()=>({id:9,url:'https://next.waveapps.com/'+business+'/transactions',status:'complete'}),update:async()=>updates++};
   await assert.rejects(()=>reopenSavedTransaction(tabs,9,business,'1',()=>true,async()=>{}),/did not finish opening/); assert.equal(updates,1);
 });
+
+test('working period excludes completed years and withholds cross-boundary transfer plans',async()=>{
+ const {workingQueue}=await import('../extension/workflow.js');
+ const old={id:'old',date:'2024-12-31',kind:'Merchant rule'};
+ const newSide={id:'new',date:'2025-01-01',kind:'Transfer candidate',proposed:'Transfer',partner:old};
+ const current={id:'current',date:'2025-01-02',kind:'Merchant rule'};
+ const source=[old,newSide,current];
+ const active=workingQueue(source);
+ assert.deepEqual(active.map(t=>t.id),['new','current']);
+ assert.equal(active[0].kind,'Manual review');assert.equal(active[0].partner,null);assert.equal(active[0].proposed,'');
+ assert.equal(newSide.partner,old);assert.equal(source.length,3);
+ assert.equal(workingQueue(source,'2024-12-31')[1].partner,old);
+ assert.throws(()=>workingQueue(source,'2025-02-30'));
+});

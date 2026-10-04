@@ -8,7 +8,7 @@ import { actionable, buildPlan, validatePlan } from './plan.js';
 import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession } from './session.js';
-import { businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
+import { workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -45,7 +45,7 @@ function updateSteps() {
   $('readChart').classList.toggle('secondary', !chartTab);
   $('readChart').disabled = chartCollecting || !extensionMode || !business || !chartTab;
 }
-const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter'];
+const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter', 'workFrom'];
 const draftIds = ['ruleName', 'aliases', 'category'];
 function rememberSession() {
   if (restoring) return Promise.resolve();
@@ -208,15 +208,17 @@ $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!
 function clearImported() { proposalPack=null; proposalDecisions={}; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
+const workFrom = () => $('workFrom').value || '2025-01-01';
+$('workFrom').oninput = handle(()=>analyze(true));
 function analyze(preserveDraft = false) {
   if (!dataset) return;
   const previous = preserveDraft ? [...shortlist] : [];
   shortlist.clear(); $('planText').hidden = true;
-  queue = proposals(dataset.transactions, rules, 5, business).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  queue = workingQueue(proposals(dataset.transactions, rules, 5, business), workFrom()).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   for (const id of previous) { const t=queue.find(t=>t.id===id); if(t && actionable(t)) {shortlist.add(id);if(t.partner)shortlist.add(t.partner.id);} }
   $('queue').hidden = false;
   $('counts').textContent = `${queue.filter(t => t.kind === 'Merchant rule').length} merchant suggestions · ${new Set(queue.filter(t => t.kind === 'Transfer candidate').map(t => [t.id, t.partner.id].sort().join(':'))).size} transfer pairs`;
-  if (chosen) { chosen = queue.find(t => t.id === chosen.id); select(chosen); }
+  if (chosen) { chosen = queue.find(t => t.id === chosen.id); if(chosen)select(chosen);else {liveGeneration++;lastLiveSnapshot=null;liveStepLabel='Not checked';$('live').hidden=true;updateApply();} }
   renderQueue();
   renderHistory(); renderPlan(); validateLoadedPlan();
   void proposalReview.render();
@@ -225,7 +227,7 @@ function analyze(preserveDraft = false) {
 function renderQueue() {
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
   const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
-  $('queueInfo').textContent = `Showing ${Math.min(list.length, 150)} of ${list.length.toLocaleString()} matches. Both sides of each transfer pair are listed. This is historical data; live reviewed status is unknown.`;
+  $('queueInfo').textContent = `Showing ${Math.min(list.length, 150)} of ${list.length.toLocaleString()} matches from ${workFrom()}. Transactions before that date are treated as completed and excluded from the working queue and draft. Both sides of in-period transfer pairs are listed. Current-period reviewed status still needs a live check.`;
   $('rows').replaceChildren();
   for (const t of list.slice(0, 150)) {
     const tr = make('tr'), date = make('td', t.date); date.append(make('small', t.id));
@@ -287,7 +289,7 @@ function validateLoadedPlan() {
   if (!loadedPlan) return;
   if (!dataset || !business) { $('planValidation').append(make('p', 'Import a fresh real export and choose the same Wave business to compare this plan.')); return; }
   try {
-    const results = validatePlan(loadedPlan, dataset.transactions, business), stale = results.filter(r => r.state === 'Stale');
+    const results = validatePlan(loadedPlan, dataset.transactions.filter(t=>t.date>=workFrom()), business), stale = results.filter(r => r.state === 'Stale');
     $('planValidation').append(make('p', `${results.length} planned action(s): ${stale.length} stale, ${results.length - stale.length} unchanged in the export. All still require live Wave validation.`));
     for (const r of stale.slice(0, 30)) $('planValidation').append(make('p', r.problems.join('; ')));
   } catch (e) { $('planValidation').append(make('p', e.message)); }
@@ -530,7 +532,7 @@ async function restoreSession() {
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
 const proposalReview=installProposalReview({
-  getState:()=>({dataset,business,sample:sampleMode,csvText,rules,pack:proposalPack,decisions:proposalDecisions}),
+  getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
   imported:async pack=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; await rememberSession(); updateSteps(); },
   accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true);await rememberSession(); },

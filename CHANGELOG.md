@@ -61,3 +61,7 @@ This initial milestone preceded deliberate category Apply and review requests, a
 ## 0.8.1
 
 - Move accepted proposals out of the review list and provide a shortcut to Merchant rules → Current rules. Saved rules, decisions, and drafts retain their existing persistence.
+
+## 0.8.2
+
+- Start the saved bookkeeping queue on January 1, 2025; retain earlier completed periods as historical rule evidence only. Withhold cross-boundary transfers and exclude older selections and plans from the working period.

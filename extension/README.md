@@ -117,3 +117,7 @@ Outputs are written only to a directory named `local-analysis`, which is ignored
 The conditional proposed-session-plan format is deliberately unsupported by Apply or draft import until rules are approved and individual records are planned. Only the approved-policy draft uses the normal draft format, and every entry still requires live validation.
 
 Synthetic browser checks: `/extension/proposal-fixture.html` tests evidence review, source mismatch, acceptance, rejection, and session round trips. Its **Seed fictional integration session** and **Open integration preview** controls use isolated local data and mocked Chrome bindings. They never access Wave. Do not load fixture files as your extension entry page.
+
+## Completed accounting periods (0.8.2)
+
+**Bookkeeping starts** defaults to January 1, 2025 because earlier periods are complete. The date is saved with the session. Earlier records remain in the imported history and proposal evidence, but cannot enter the working queue, draft, or live selection. Previously shortlisted older records are removed from the working draft. Imported older plans report their excluded entries as stale. Transfers crossing the cutoff require manual review and cannot bring a completed-period counterpart into the draft. Current-period reviewed status still requires live confirmation. This local scope does not change any Wave review flags.

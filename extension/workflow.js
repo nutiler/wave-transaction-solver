@@ -78,3 +78,9 @@ export async function reopenSavedTransaction(tabs, tabId, business, id, isCurren
   }
   throw new Error('Wave did not finish opening the saved transaction. Use Recheck saved result; Save will not be repeated.');
 }
+
+// Keep full-history pairing evidence, but never plan a closed-period counterpart.
+export function workingQueue(queue, from = '2025-01-01') {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(Date.parse(from)) || new Date(from).toISOString().slice(0,10)!==from) throw Error('Choose a valid bookkeeping start date.');
+  return queue.filter(t=>t.date>=from).map(t=>t.partner && t.partner.date<from ? {...t,kind:'Manual review',proposed:'',partner:null,reason:'The matching counterpart is before the bookkeeping start date. Earlier periods are complete; review this boundary movement separately.'} : t);
+}
