@@ -65,3 +65,7 @@ This initial milestone preceded deliberate category Apply and review requests, a
 ## 0.8.2
 
 - Start the saved bookkeeping queue on January 1, 2025; retain earlier completed periods as historical rule evidence only. Withhold cross-boundary transfers and exclude older selections and plans from the working period.
+
+## 0.8.3
+
+- Keep the viewport in place when accepting proposals, without opening or scrolling to a selected live transaction. Persist and display the imported rule-pack filename alongside the already-saved pack and decisions.

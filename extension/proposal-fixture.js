@@ -14,12 +14,12 @@ for(let n=1;n<=6;n++){
 const csvText=[headers,...rows].map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n');
 const dataset=importAccounting(csvText),hash=await sourceHash(csvText);
 const pack=analyzeHistory(dataset,{business,groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:6,ledgerRows:12}).pack;
-let state={dataset,business,csvText,sample:false,rules:[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}],pack,decisions:{}};
+let state={dataset,business,csvText,sample:false,rules:[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}],pack,decisions:{},packFileName:'synthetic-proposals.json'};
 const output=document.getElementById('fixtureStatus');
-const save=async()=>saveSession({version:1,business,csvText,sourceName:'Fictional integration test.csv',sample:false,shortlist:['1000000000000000005'],proposalPack:state.pack,proposalDecisions:state.decisions});
+const save=async()=>saveSession({version:1,business,csvText,sourceName:'Fictional integration test.csv',sample:false,shortlist:['1000000000000000005'],proposalPack:state.pack,proposalDecisions:state.decisions,proposalFileName:state.packFileName});
 const view=installProposalReview({
  getState:()=>state,categories:()=>dataset.categories,
- imported:async p=>{state.pack=p;state.decisions={};await save();},
+ imported:async (p,fileName)=>{state.pack=p;state.packFileName=fileName;state.decisions={};await save();},
  accepted:async result=>{state.rules=result.rules;state.decisions=result.decisions;await save();output.textContent='Accepted locally. Existing rule preserved: '+state.rules.some(r=>r.name==='Existing fixture rule');},
  rejected:async decisions=>{state.decisions=decisions;await save();output.textContent='Rejected locally; existing rule count '+state.rules.length;}
 });

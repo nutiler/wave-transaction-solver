@@ -15,7 +15,7 @@ const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
-let proposalPack = null, proposalDecisions = {};
+let proposalPack = null, proposalDecisions = {}, proposalFileName = "";
 let catalog = null, chartTab = null, chartCollecting = false;
 let csvText = '', importedAt = '', restoring = true, saveChain = Promise.resolve();
 let exportPages = {};
@@ -49,7 +49,7 @@ const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartS
 const draftIds = ['ruleName', 'aliases', 'category'];
 function rememberSession() {
   if (restoring) return Promise.resolve();
-  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, proposalPack, proposalDecisions, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
+  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, proposalPack, proposalDecisions, proposalFileName, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
   saveChain = saveChain.catch(()=>{}).then(()=>saveSession(snapshot));
   return saveChain;
 }
@@ -205,12 +205,12 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { proposalPack=null; proposalDecisions={}; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); void proposalReview.render(); }
+function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
 const workFrom = () => $('workFrom').value || '2025-01-01';
 $('workFrom').oninput = handle(()=>analyze(true));
-function analyze(preserveDraft = false) {
+function analyze(preserveDraft = false, renderProposals = true) {
   if (!dataset) return;
   const previous = preserveDraft ? [...shortlist] : [];
   shortlist.clear(); $('planText').hidden = true;
@@ -218,10 +218,10 @@ function analyze(preserveDraft = false) {
   for (const id of previous) { const t=queue.find(t=>t.id===id); if(t && actionable(t)) {shortlist.add(id);if(t.partner)shortlist.add(t.partner.id);} }
   $('queue').hidden = false;
   $('counts').textContent = `${queue.filter(t => t.kind === 'Merchant rule').length} merchant suggestions · ${new Set(queue.filter(t => t.kind === 'Transfer candidate').map(t => [t.id, t.partner.id].sort().join(':'))).size} transfer pairs`;
-  if (chosen) { chosen = queue.find(t => t.id === chosen.id); if(chosen)select(chosen);else {liveGeneration++;lastLiveSnapshot=null;liveStepLabel='Not checked';$('live').hidden=true;updateApply();} }
+  if (chosen) { chosen = queue.find(t => t.id === chosen.id); if(chosen)select(chosen, false);else {liveGeneration++;lastLiveSnapshot=null;liveStepLabel='Not checked';$('live').hidden=true;updateApply();} }
   renderQueue();
   renderHistory(); renderPlan(); validateLoadedPlan();
-  void proposalReview.render();
+  if(renderProposals)void proposalReview.render();
   rememberSoon();
 }
 function renderQueue() {
@@ -296,7 +296,7 @@ function validateLoadedPlan() {
 }
 function select(t, scroll = true) {
   liveGeneration++;
-  liveStepLabel = 'Not checked'; $('fold-live').open = true; updateSteps();
+  liveStepLabel = 'Not checked'; if(scroll)$('fold-live').open = true; updateSteps();
   lastLiveSnapshot = null;
   chosen = t; $('applyStatus').textContent = ''; updateApply(); $('live').hidden = false; $('selected').textContent = `${t.date} · ${t.description} · ID ${t.id}. ${t.kind}: ${t.proposed || t.reason}`;
   $('counterpart').hidden = !t.partner;
@@ -515,7 +515,7 @@ async function restoreSession() {
     if (saved.chosenId) { const transaction = queue.find(t=>t.id===saved.chosenId); if (transaction) select(transaction, false); }
   }
   loadedPlan = saved.loadedPlan || null;
-  proposalPack = saved.proposalPack || null; proposalDecisions = saved.proposalDecisions || {};
+  proposalPack = saved.proposalPack || null; proposalDecisions = saved.proposalDecisions || {}; proposalFileName = saved.proposalFileName || (proposalPack ? "proposed-rule-pack.local.json" : "");
   for (const id of draftIds) if (typeof saved.draft?.[id] === 'string') $(id).value = saved.draft[id];
   await loadCatalog();
   if (extensionMode && business) {
@@ -532,10 +532,10 @@ async function restoreSession() {
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
 const proposalReview=installProposalReview({
-  getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions}),
+  getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
-  imported:async pack=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; await rememberSession(); updateSteps(); },
-  accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true);await rememberSession(); },
+  imported:async (pack,fileName)=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; proposalFileName=fileName || "proposed-rule-pack.local.json"; await rememberSession(); updateSteps(); },
+  accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false);await rememberSession(); },
   rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
 });
 renderRules();
