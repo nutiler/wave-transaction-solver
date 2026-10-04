@@ -33,3 +33,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.2
 
 - Navigate the Personal Expense or Withdrawal submenu for Equity category names. Search within the category popup and match exact account text while excluding menu icons and unrelated page controls.
+
+## 0.7.3
+
+- Click Wave’s inner category toggle instead of its outer selected-value wrapper. Handle submenu links and capture category search popup markup in failure diagnostics.

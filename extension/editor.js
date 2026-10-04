@@ -111,7 +111,13 @@ export async function editWaveTransaction(request, testContext) {
       } else {
         const openSearch = [...doc.querySelectorAll('input')].filter(el => visible(el) && /^Search categories[.…]*$/i.test(tidy(el.placeholder || el.getAttribute('aria-label'))));
         if (openSearch.length > 1) throw new Error('Multiple category menus are open.');
-        if (!openSearch.length) category.click();
+        if (!openSearch.length) {
+          const toggles = [...category.querySelectorAll('.wv-select__toggle')].filter(visible);
+          if (toggles.length > 1) throw new Error('Multiple category toggle controls are visible.');
+          const toggle = toggles[0] || category;
+          if (!enabled(toggle)) throw new Error('The category toggle is disabled.');
+          assertFields(request.expected.category); toggle.click();
+        }
         const optionText = el => {
           const clone = el.cloneNode(true);
           clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node => node.remove());
@@ -133,7 +139,7 @@ export async function editWaveTransaction(request, testContext) {
         function exactOptions(text) {
           const matches = new Set();
           for (const scope of menuScopes()) {
-            for (const el of scope.querySelectorAll('[role="option"],li,button,[role="menuitem"],div,span')) {
+            for (const el of scope.querySelectorAll('[role="option"],li,button,a,[role="menuitem"],div,span')) {
               if (visible(el) && !el.closest('.wv-select__label') && optionText(el) === tidy(text)) matches.add(el);
             }
           }
@@ -197,6 +203,6 @@ export async function editWaveTransaction(request, testContext) {
     for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
     return { saveAttempted, reviewRequested, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    return { saveAttempted, stage, problem: error.message, categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+    return { saveAttempted, stage, problem: error.message, categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }

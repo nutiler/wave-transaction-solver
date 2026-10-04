@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false } = {}) {
+function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -23,9 +23,11 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
     const wrapper = category.parentElement; category.remove();
     const control = document.createElement('div'); control.className = 'wv-select'; control.tabIndex = 0;
     const label = document.createElement('span'); label.className = 'wv-select__label'; label.textContent = original.category; control.append(label); wrapper.append(control);
-    control.onclick = event => {
+    const toggle = document.createElement('div'); toggle.className = 'wv-select__input wv-select__toggle';
+    toggle.append(label); control.append(toggle);
+    (innerToggleOnly ? toggle : control).onclick = event => {
       if (event.target.closest('input')) return;
-      control.querySelector('.menu')?.remove();
+      document.querySelector('.menu')?.remove();
       const list = document.createElement('div'); list.className = 'menu';
       const search = document.createElement('input'); search.placeholder = 'Search categories...'; list.append(search);
       function showOptions() {
@@ -38,11 +40,11 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
         }
       }
       if (personalSubmenu) {
-        const branch = document.createElement('div'); branch.textContent = 'Personal Expense or Withdrawal'; list.append(branch);
-        branch.onclick = event => { event.stopPropagation(); branch.remove(); showOptions(); };
+        const branch = document.createElement('a'); branch.href='#'; branch.textContent = 'Personal Expense or Withdrawal'; list.append(branch);
+        branch.onclick = event => { event.preventDefault(); event.stopPropagation(); branch.remove(); showOptions(); };
       } else if (!searchRequired) showOptions();
       search.oninput = () => { if (search.value === request.category) showOptions(); };
-      control.append(list);
+      (portal ? mount : control).append(list);
     };
     if (distractor) { const outside=document.createElement('button'); outside.textContent=request.category; outside.onclick=()=>{ selected='WRONG OUTSIDE MENU'; }; dialog.append(outside); }
 
@@ -68,10 +70,11 @@ document.getElementById('run').onclick = async () => {
   await check('Personal category submenu opens before selecting the exact account', { custom:true,personalSubmenu:true }, (r,s) => !r.problem && s.selected === request.category && s.saves === 1, {...request,categoryPath:['Personal Expense or Withdrawal']});
   await check('Category search reveals an exact hidden option', { custom:true,searchRequired:true }, (r,s) => !r.problem && s.selected === request.category && s.saves === 1);
   await check('Same category text outside the menu is ignored', { custom:true,distractor:true }, (r,s) => !r.problem && s.selected === request.category && s.saves === 1);
+  await check('Wave inner toggle opens a separate popup and selects its personal submenu', { custom:true,innerToggleOnly:true,portal:true,personalSubmenu:true }, (r,s) => !r.problem && s.selected === request.category && s.saves === 1, {...request,categoryPath:['Personal Expense or Withdrawal']});
   await check('Changed amount is blocked before any edit', { original:{...expected,amount:'99.00'} }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0 && s.selected === expected.category);
   await check('Changed transaction identity is blocked', {}, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0, {...request,id:'1000000000000000002'});
   await check('Missing category does not click Save', { custom:true,missing:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Ambiguous category does not click Save', { custom:true,duplicate:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Wave validation error reports unverified save, without retry', { validationError:true }, (r,s) => r.saveAttempted && !!r.problem && s.saves === 1);
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 13 editor checks passed';
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 14 editor checks passed';
 };
