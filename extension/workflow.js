@@ -38,3 +38,43 @@ export async function waitForLiveSnapshot(read, isCurrent, wait = ms=>new Promis
   if (!last) throw new Error('Wave did not return transaction details. Try Read live details again.');
   return last;
 }
+
+// Read-only navigation after a possible save. Never issues an editing action.
+export async function reopenSavedTransaction(tabs, tabId, business, id, isCurrent, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
+  const url = 'https://next.waveapps.com/' + business + '/transactions/' + id;
+  if (businessFromUrl(url) !== business || !/^\d+$/.test(id || '')) throw new Error('Invalid saved-record identity.');
+  const guard = () => { if (!isCurrent()) throw new Error('Selection changed during saved-result verification.'); };
+  const checkBusiness = tab => {
+    for (const value of [tab.url, tab.pendingUrl].filter(Boolean)) {
+      if (businessFromUrl(value) !== business) throw new Error('The Wave tab changed businesses. Reopen the intended record before verifying.');
+    }
+  };
+  guard();
+  let tab = null;
+  if (tabId !== null) { try { tab = await tabs.get(tabId); } catch { /* A closed test tab is replaced in the solver window. */ } }
+  let fresh = !tab;
+  if (fresh) { guard(); tab = await openBackgroundTab(tabs, url); }
+  else {
+    checkBusiness(tab);
+    // Save can still be navigating back to the list. Let it settle first.
+    for (let i=0; (tab.status === 'loading' || tab.pendingUrl) && i<50; i++) {
+      guard(); await wait(100);
+      try { tab = await tabs.get(tab.id); } catch { guard(); tab = await openBackgroundTab(tabs,url); fresh = true; break; }
+      checkBusiness(tab);
+    }
+    if (!fresh) {
+      guard();
+      if (tab.status === 'loading' || tab.pendingUrl) throw new Error('Wave is still finishing its navigation. Try Recheck saved result again shortly.');
+      if (tab.url === url) await tabs.reload(tab.id);
+      else await tabs.update(tab.id, { url, active: false });
+      // Do not reload after update: it can cancel the transaction navigation.
+    }
+  }
+  const targetId = tab.id;
+  for (let i=0; i<100; i++) {
+    guard(); await wait(100);
+    tab = await tabs.get(targetId); checkBusiness(tab);
+    if (tab.url === url && tab.status === 'complete' && !tab.pendingUrl) return tab;
+  }
+  throw new Error('Wave did not finish opening the saved transaction. Use Recheck saved result; Save will not be repeated.');
+}

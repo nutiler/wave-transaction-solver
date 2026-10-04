@@ -87,3 +87,5 @@ Apply attempts are saved locally before editing starts. After a possible Save, t
 The old CSV remains a historical snapshot. After a verified category save, that record is removed from the draft shortlist; the live table compares against the expected saved value. Import a fresh export for subsequent bookkeeping work.
 
 Equity categories such as personal groceries are selected through Wave’s **Personal Expense or Withdrawal** submenu. The solver searches inside the category popup when needed and matches the exact account name, excluding icon text.
+
+After Save, Wave may close the dialog and return to the list. Verification waits for that redirect, then opens the exact saved ID and checks a freshly loaded record. **Recheck saved result** can also replace a closed test tab without pressing Save again.

@@ -37,3 +37,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.3
 
 - Click Wave’s inner category toggle instead of its outer selected-value wrapper. Handle submenu links and capture category search popup markup in failure diagnostics.
+
+## 0.7.4
+
+- Wait for Save redirects to settle, then reopen the exact saved transaction without an immediate reload cancelling the navigation. Recover closed test tabs for read-only rechecks and keep uncertain saves blocked from repeating.

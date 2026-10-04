@@ -6,7 +6,7 @@ import { actionable, buildPlan, validatePlan } from './plan.js';
 import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession } from './session.js';
-import { businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor } from './workflow.js';
+import { businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -370,20 +370,11 @@ async function storeEditReceipt(key, receipt) {
   await chrome.storage.local.set({ solverEditReceipts: editReceipts });
 }
 async function reloadForVerification(tabId, expectedBusiness, id) {
-  const tab = await chrome.tabs.get(tabId);
-  const identity = waveIdentity(tab.url);
-  if (identity?.business !== expectedBusiness) throw new Error('The Wave tab changed businesses. Reopen the intended record before verifying.');
-  await chrome.tabs.update(tabId, { url: 'https://next.waveapps.com/' + expectedBusiness + '/transactions/' + id, active: false });
-  // Force a new document, rather than accepting unsaved values from the old dialog.
-  await chrome.tabs.reload(tabId);
-  let loaded = false;
-  for (let i = 0; i < 100; i++) {
-    const current = await chrome.tabs.get(tabId);
-    if (current.status === 'complete') { loaded = true; break; }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  if (!loaded) throw new Error('Wave has not finished reloading. Use Recheck saved result when it is ready.');
-  const snapshot = await waitForLiveSnapshot(() => captureLive(tabId, expectedBusiness, id), () => business === expectedBusiness && chosen?.id === id);
+  const current = () => business === expectedBusiness && chosen?.id === id;
+  const reopened = await reopenSavedTransaction(chrome.tabs, tabId, expectedBusiness, id, current);
+  if (!current()) throw new Error('Selection changed during saved-result verification.');
+  liveTab = reopened.id; await rememberSession();
+  const snapshot = await waitForLiveSnapshot(() => captureLive(reopened.id, expectedBusiness, id), current);
   if (!snapshot) throw new Error('The selection changed during verification.');
   return snapshot;
 }
@@ -404,7 +395,7 @@ $('apply').onclick = handle(async () => {
   if (applying || editReceipts[receiptKey()]?.saveAttempted) throw new Error('This record already has an Apply attempt. Use Recheck saved result.');
   const transaction = chosen, expectedBusiness = business, tabId = liveTab, key = receiptKey();
   currentEditRequest();
-  applying = true; document.querySelector('main').inert = true; $('apply').disabled = true;
+  applying = true; liveGeneration++; document.querySelector('main').inert = true; $('apply').disabled = true;
   let attempted = false;
   try {
     $('applyStatus').textContent = 'Rechecking the live transaction…';
@@ -424,6 +415,7 @@ $('apply').onclick = handle(async () => {
     $('applyStatus').textContent = 'Reloading Wave to verify saved values…';
     await verifyReceipt(key, tabId, transaction, expectedBusiness);
   } catch (e) {
+    if (attempted && editReceipts[key]?.saveAttempted) e = new Error('Save may have completed. Verification did not finish: ' + e.message);
     if (attempted) await storeEditReceipt(key, { ...editReceipts[key], message: e.message + (editReceipts[key]?.saveAttempted ? ' Use Recheck saved result; this attempt will not run again.' : ' Save was not clicked. Cancel the Wave dialog and read it again before retrying.') });
     throw e;
   } finally {
@@ -431,8 +423,8 @@ $('apply').onclick = handle(async () => {
   }
 }, 'applyStatus');
 $('verifyApply').onclick = handle(async () => {
-  if (applying || !editReceipts[receiptKey()]?.saveAttempted || !liveTab) throw new Error('Reopen this transaction in Wave before checking its saved result.');
-  applying = true; document.querySelector('main').inert = true;
+  if (applying || !editReceipts[receiptKey()]?.saveAttempted || !business || !chosen) throw new Error('Select the attempted transaction before checking its saved result.');
+  applying = true; liveGeneration++; document.querySelector('main').inert = true;
   try { await verifyReceipt(receiptKey(), liveTab, chosen, business); }
   finally { applying = false; document.querySelector('main').inert = false; updateApply(); }
 }, 'applyStatus');
