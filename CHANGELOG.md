@@ -69,3 +69,7 @@ This initial milestone preceded deliberate category Apply and review requests, a
 ## 0.8.3
 
 - Keep the viewport in place when accepting proposals, without opening or scrolling to a selected live transaction. Persist and display the imported rule-pack filename alongside the already-saved pack and decisions.
+
+## 0.8.4
+
+- Highlight open rule proposals in blue. Accepting removes the current proposal and opens the next pending proposal in the filtered list, keeping the page viewport in place and showing the next card at the top of the proposal panel.

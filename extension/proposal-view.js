@@ -6,7 +6,7 @@ export function installProposalReview({ getState, categories, imported, accepted
   const $=id=>document.getElementById(id);
   const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
   const loadedFile=make('p');loadedFile.id='proposalLoadedFile';$('proposalFile').closest('label').after(loadedFile);
-  let generation=0;
+  let generation=0, renderedPack=null;
   const status=message=>$('proposalStatus').textContent=message;
   async function check(pack) {
     const s=getState();
@@ -16,13 +16,14 @@ export function installProposalReview({ getState, categories, imported, accepted
     if(s.csvText!==current.csvText || s.business!==current.business)throw Error('Session changed while checking the proposal pack.');
     return validateRulePack(pack,{business:s.business,hash,categories:categories()});
   }
-  async function render() {
+  async function render(openId = null) {
     const current=++generation,s=getState(),pack=s.pack;
+    const opened=renderedPack===pack ? new Set([...$("proposalRows").querySelectorAll(".proposal-card[open]")].map(card=>card.dataset.proposalId)) : new Set();
     loadedFile.textContent=pack ? 'Loaded rule pack: '+(s.packFileName || 'proposed-rule-pack.local.json')+' — saved locally; no need to choose it again.' : 'No rule pack loaded.';
     if(!pack){$('proposalRows').replaceChildren();status('Choose a local proposed-rule-pack.local.json. Import previews proposals; it does not enable them.');$('proposalCoverage').textContent='';return;}
     try { await check(pack); } catch(e){if(generation===current){$('proposalRows').replaceChildren();status(e.message);$('proposalCoverage').textContent='Pack retained for reference; acceptance is disabled until its exact business and CSV are restored.';}return;}
     if(generation!==current)return;
-    $('proposalRows').replaceChildren();
+    $('proposalRows').replaceChildren();renderedPack=pack;
     const decisions=s.decisions || {},filter=$('proposalFilter').value,search=$('proposalSearch').value.toLowerCase();
     const strong=pack.proposals.filter(p=>p.tier==='strong_proposal');
     const list=pack.proposals.filter(p=>decisions[p.id]!=='accepted' && (!filter || p.tier===filter) && (p.rule.name+' '+p.rule.category+' '+p.reason).toLowerCase().includes(search)).sort((a,b)=>(b.evidence.eligibleChange || 0)-(a.evidence.eligibleChange || 0)||(b.evidence.eligible || 0)-(a.evidence.eligible || 0));
@@ -39,7 +40,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     }
     if(!list.length) $('proposalRows').append(make('p','No proposals remain in this view. Accepted rules are saved under Merchant rules.'));
     for(const p of list) {
-      const detail=make('details');detail.className='proposal-card';
+      const detail=make('details');detail.className='proposal-card';detail.dataset.proposalId=p.id;detail.open=openId ? p.id===openId : opened.has(p.id);
       detail.append(make('summary',p.rule.name+' → '+p.rule.category+' · '+(decisions[p.id] || p.tier.replaceAll('_',' '))));
       detail.append(make('p',p.reason),make('p','Purpose evidence: '+(p.purposeEvidence || 'Not supplied')));
       if(p.sources?.length){const sources=make('p','Provider sources: ');for(const url of p.sources){const a=make('a',new URL(url).hostname);a.href=url;a.target='_blank';a.rel='noopener noreferrer';sources.append(a,make('span',' '));}detail.append(sources);}
@@ -64,7 +65,7 @@ export function installProposalReview({ getState, categories, imported, accepted
           label.append(checkBox,make('span','I have checked the purchase purpose and accept this scope.'));
           yes.disabled=true;checkBox.onchange=()=>{yes.disabled=!checkBox.checked || getState().decisions?.[p.id]==='accepted';};bar.append(label);
         }
-        yes.onclick=async()=>{const position={left:window.scrollX,top:window.scrollY,behavior:'instant'};yes.disabled=true;try {await check(pack);const live=getState();if(live.pack!==pack)throw Error('Proposal pack changed. Review the current pack before accepting.');const result=acceptProposal(pack,p.id,live.rules,live.decisions);await accepted(result);await render();await new Promise(resolve=>requestAnimationFrame(()=>{window.scrollTo(position);resolve();}));}catch(e){status(e.message);yes.disabled=false;}};
+        yes.onclick=async()=>{const position={left:window.scrollX,top:window.scrollY,behavior:'instant'};const index=list.indexOf(p);const pending=c=>c.tier!=='existing_approved' && decisions[c.id]!=='rejected';const next=list.slice(index+1).find(pending) || list.slice(0,index).find(pending);yes.disabled=true;try {await check(pack);const live=getState();if(live.pack!==pack)throw Error('Proposal pack changed. Review the current pack before accepting.');const result=acceptProposal(pack,p.id,live.rules,live.decisions);await accepted(result);await render(next?.id);await new Promise(resolve=>requestAnimationFrame(()=>{const panel=$('proposalRows'),card=[...panel.querySelectorAll('.proposal-card')].find(c=>c.dataset.proposalId===next?.id);if(card){panel.scrollTop+=card.getBoundingClientRect().top-panel.getBoundingClientRect().top;card.querySelector('summary').focus({preventScroll:true});}window.scrollTo(position);resolve();}));}catch(e){status(e.message);yes.disabled=false;}};
         no.disabled=decisions[p.id]==='rejected' || decisions[p.id]==='accepted';
         no.onclick=async()=>{try{await check(pack);if(getState().pack!==pack)throw Error('Proposal pack changed.');await rejected({...getState().decisions,[p.id]:'rejected'});await render();}catch(e){status(e.message);}};
         bar.append(yes,no);
