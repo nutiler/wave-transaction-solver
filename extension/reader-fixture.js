@@ -30,6 +30,9 @@ check('Absent modal is unknown', '<p>No transaction dialog</p>', s => { equal(Ob
 check('Transaction-list URL is not an individual record', modal(), s => { equal(s.identity.transaction,null); equal(Object.keys(s.fields).length,0); }, url.split('/transactions/')[0] + '/transactions?status=NOT_VERIFIED');
 check('Other origins are rejected', modal(), s => { equal(s.identity,null); equal(Object.keys(s.fields).length,0); }, 'https://example.com/11111111-1111-1111-1111-111111111111/transactions/1000000000000000001');
 check('Mark-as-reviewed action checkbox is not saved status', modal(nativeFields + '<label><input type="checkbox" checked>Mark as reviewed</label>'), s => equal(s.reviewed,'Unknown'));
+check('Wave green Reviewed confirmation is recognized without its SVG title', modal(nativeFields + '<button><svg><title>checkmark icon</title></svg>Reviewed</button>'), s => { equal(s.reviewed,'Reviewed'); equal(s.controls.includes('Reviewed'),true); });
+check('Conflicting Reviewed confirmation and unchecked status remain unknown', modal(nativeFields + '<button>Reviewed</button><label><input type="checkbox">Reviewed</label>'), s=>equal(s.reviewed,'Unknown'));
+check('Reviewed text in notes is not confirmation', modal(nativeFields + '<textarea>Reviewed</textarea>'), s=>equal(s.reviewed,'Unknown'));
 check('Explicit reviewed state is readable', modal(nativeFields + '<label><input type="checkbox" checked>Reviewed</label>'), s => equal(s.reviewed,'Reviewed'));
 check('Password and notes excluded', '<input type="password" value="do-not-read">' + modal(nativeFields + '<textarea aria-label="Notes">private notes excluded</textarea>'), s => { equal(JSON.stringify(s).includes('do-not-read'),false); equal(JSON.stringify(s).includes('private notes'),false); });
 check('Modal fallback with generic heading', `<section><div>Edit transaction</div>${nativeFields}<button>Save</button></section>`, s => equal(s.fields.amount,'2.01'));

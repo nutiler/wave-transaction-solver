@@ -23,7 +23,7 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   const result = compareLive({ ...transaction, categories: [category] }, snapshot);
   const categoryVerified = snapshot.identity?.business === business && !snapshot.problems?.length && result.checks.every(c => c.state === 'Match');
   const controls = snapshot.controls || [];
-  const inverse = controls.filter(name => /^(Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
+  const inverse = controls.filter(name => /^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
   const mark = controls.filter(name => /^Mark (as )?reviewed$/i.test(name));
   const reviewedVerified = categoryVerified && (snapshot.reviewed === 'Reviewed' || (inverse.length === 1 && mark.length === 0));
   const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : 'Saved result could not be verified. Inspect Wave; Apply will not repeat this attempt.';
@@ -35,7 +35,7 @@ export function resetAttemptReceipt(transaction, snapshot, business, receipt, re
   if (!transaction || transaction.kind !== 'Merchant rule' || transaction.direction !== 'out' || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary) throw new Error('Reset supports only the original single-category merchant purchase.');
   if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction,snapshot).checks.some(check=>check.state !== 'Match')) throw new Error('The freshly loaded Wave record must match all original export fields before resetting.');
   if (transaction.categories[0] === receipt.category) throw new Error('The original category already equals the previous target. Review this transaction manually before starting another attempt.');
-  if (snapshot.reviewed === 'Reviewed' || (snapshot.controls || []).some(name=>/^(Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name))) throw new Error('Wave still indicates this record is reviewed. Restore its original state before resetting.');
+  if (snapshot.reviewed === 'Reviewed' || (snapshot.controls || []).some(name=>/^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name))) throw new Error('Wave still indicates this record is reviewed. Restore its original state before resetting.');
   const { previousAttempts = [], ...previous } = receipt;
   return { category: transaction.proposed, saveAttempted:false, categoryVerified:false, reviewedVerified:false, resetAt, previousAttempts:[...previousAttempts,{...previous, resetAt}], message:'Previous attempt reset after a fresh original-record check. Re-planned; nothing changed in Wave.' };
 }
@@ -101,14 +101,18 @@ export async function editWaveTransaction(request, testContext) {
     }
     return dialog;
   }
-  const buttons = (dialog, names) => [...dialog.querySelectorAll('button,[role="button"]')].filter(el => visible(el) && names.includes(tidy(el.textContent || el.getAttribute('aria-label'))));
+  const buttons = (dialog, names) => [...dialog.querySelectorAll('button,[role="button"]')].filter(el => {
+    if (!visible(el)) return false;
+    const clone = el.cloneNode(true); clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
+    return names.includes(tidy(clone.textContent || el.getAttribute('aria-label')).replace(/^[✓✔]\s*/, ''));
+  });
   function enabled(el) { return !el.disabled && el.getAttribute('aria-disabled') !== 'true'; }
   try {
     if (!request || !/^[0-9a-f-]{36}$/i.test(request.business || '') || !/^\d+$/.test(request.id || '') || !tidy(request.category) || !request.expected) throw new Error('Invalid edit request.');
     let dialog = assertFields(request.expected.category);
     if (buttons(dialog, ['Save']).length !== 1) throw new Error('Cannot identify one Save button.');
     const review = buttons(dialog, ['Mark as reviewed', 'Mark reviewed']);
-    const alreadyReviewed = buttons(dialog, ['Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
+    const alreadyReviewed = buttons(dialog, ['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
     reviewRequested = alreadyReviewed.length === 1;
     if (tidy(request.expected.category) !== tidy(request.category)) {

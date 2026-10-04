@@ -77,10 +77,21 @@ export function readWavePage(testContext) {
     return '';
   }
   for (const name of names) result.fields[name.toLowerCase()] = field(name);
-  result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(el => tidy(el.textContent || el.getAttribute('aria-label'))).filter(text => /^(Save|Cancel|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));
+  const buttonText = el => {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
+    return tidy(clone.textContent || el.getAttribute('aria-label')).replace(/^[✓✔]\s*/, '');
+  };
+  result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(buttonText).filter(text => /^(Save|Cancel|Reviewed|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));
   // Do not infer reviewed status from the list filter, bold font or suggestion dots.
   // An action checkbox saying "Mark as reviewed" is not proof of saved state.
   const reviewed = [...root.querySelectorAll('[role="checkbox"],input[type="checkbox"]')].filter(el => visible(el) && /^(reviewed|transaction reviewed)$/i.test(tidy(el.getAttribute('aria-label') || el.labels?.[0]?.textContent)));
   if (reviewed.length === 1) result.reviewed = (reviewed[0].checked ?? reviewed[0].getAttribute('aria-checked') === 'true') ? 'Reviewed' : 'Not reviewed';
+  const confirmations = result.controls.filter(text=>/^Reviewed$/i.test(text));
+  if (confirmations.length === 1) {
+    if (result.reviewed === 'Not reviewed' || result.controls.some(text=>/^Mark (as )?reviewed$/i.test(text))) {
+      result.reviewed = 'Unknown'; result.problems.push('Conflicting reviewed indicators in the edit dialog.');
+    } else { result.reviewed = 'Reviewed'; result.reviewedEvidence = 'Edit dialog Reviewed confirmation'; }
+  } else if (confirmations.length > 1) { result.reviewed = 'Unknown'; result.problems.push('Multiple Reviewed confirmation controls.'); }
   return result;
 }

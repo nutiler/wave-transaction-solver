@@ -59,3 +59,10 @@ test('Reset keeps locks for saved targets, changed records, wrong businesses or 
   assert.throws(()=>resetAttemptReceipt(transaction,snapshot,business,{...receipt,saveAttempted:false}));
   assert.throws(()=>resetAttemptReceipt(transaction,snapshot,business,{...receipt,category:'Uncategorized Expense'}));
 });
+
+test('Wave Reviewed confirmation verifies the saved result and blocks resetting a reviewed record',()=>{
+  const saved={...snapshot,fields:{...snapshot.fields,category:'Personal Groceries'},controls:['Reviewed','Save']};
+  assert.equal(verifyCategoryResult(transaction,saved,business,'Personal Groceries').reviewedVerified,true);
+  assert.equal(verifyCategoryResult(transaction,{...saved,controls:['Reviewed','Mark as reviewed']},business,'Personal Groceries').reviewedVerified,false);
+  assert.throws(()=>resetAttemptReceipt(transaction,{...snapshot,controls:['Reviewed']},business,{saveAttempted:true,category:'Personal Groceries'}));
+});

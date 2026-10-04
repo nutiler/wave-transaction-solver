@@ -93,3 +93,5 @@ After Save, Wave may close the dialog and return to the list. Verification waits
 ## Retry after a manual restoration
 
 If you manually restore the original category and unreviewed state in Wave, select **Reset attempt and re-plan**. It loads the saved record again and requires every original export field to match. It preserves the previous attempt locally, adds the transaction back to the draft, and unlocks Apply. Reset does not click Save or change Wave. A still-reviewed record, changed amount, different transaction, or saved target category keeps the attempt locked.
+
+The saved-state reader recognizes Wave’s green **Reviewed** confirmation in the Edit transaction panel. Recheck saved result uses that confirmation after reloading the record; it does not press the Reviewed button again.

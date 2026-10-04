@@ -45,3 +45,7 @@ Wave category updates, transfer matching, and marking transactions reviewed are 
 ## 0.7.5
 
 - Add an explicit Reset attempt and re-plan action after manual restoration. Recheck original fields, preserve attempt history, and unlock a new deliberate Apply without changing Wave.
+
+## 0.7.6
+
+- Recognize Wave’s Reviewed confirmation button in the edit dialog, excluding checkmark icon text. Verify saved review state, preserve already-reviewed records, and reject contradictory confirmation indicators.
