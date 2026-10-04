@@ -1,0 +1,76 @@
+# Dandelion's Wave Transaction Solver — read-only test
+
+## Install in Chrome
+
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked** and choose this folder:
+
+   `wave-solver/extension`
+
+3. Open your business's **Transactions** page at `next.waveapps.com`. Click Chrome's Extensions button, then **Dandelion's Wave Transaction Solver**. Pin it if you want easier access.
+
+No Node server is needed to run the extension. The earlier localhost application is separate.
+
+## Reloading after an update
+
+The solver now saves the working session locally in IndexedDB, including the imported CSV. Selected business, transaction, filters, draft shortlist, unfinished rule form, and chart names return after a reload. Existing matching Wave tabs are reconnected. Import a fresh CSV for new bookkeeping work; the restored export is labeled with its original import time. Clear imported session removes the saved CSV and draft plan while preserving rules, selected business, and chart names. No additional permissions are required.
+
+Reload the extension at chrome://extensions. Its existing solver tab refreshes automatically. Clicking the extension icon also reuses and refreshes the existing solver tab. When upgrading from 0.3.1 or earlier, select the business and import once after installing this version because earlier versions did not save the session.
+
+## Export shortcut and compact steps
+
+Expand **2. Import your session export** and click **Open Wave data export**. Copy settings.example.js to settings.local.js and configure your business UUID and export-page URL. This private file stays out of Git. The shortcut opens that accounting.waveapps.com page in a background tab without extra host permissions. Switch to Wave and request **Export all transactions as CSV**; Wave emails the ZIP. Extract it and import accounting.csv. Requesting the export remains a manual action on Wave. The shortcut is bound to the supplied business so it cannot silently open the wrong company’s export.
+
+Click any step header to expand or collapse it. Business selection, collected chart names, CSV import, and saved rules show completion badges and fold when completed. Other headers show proposal, live-check, and draft status. Open/closed choices persist with the session. Inspecting a transaction opens its live-check section, and preparing a merchant rule opens the rule section.
+
+## First session
+
+1. In the solver tab, select your Wave transaction tab and click **Use selected business**. Confirm the CSV belongs to that business: Wave's accounting export does not include a business identifier.
+2. A single business among your open Wave tabs is selected automatically. Multiple businesses require selecting the intended business. Import your latest `accounting.csv`. IDs are kept as text so their 19 digits remain intact. Ledger postings are grouped by ID, not treated as separate purchases.
+3. Search for a transaction from your export. Click **Inspect**, then **Open this transaction in Wave**.
+4. The transaction opens in a background tab, keeping the solver in front. Its live check starts after 1.5 seconds and retries briefly while Wave loads. Read live details remains available to retry manually. If the dialog does not open from the URL, open the transaction manually in the dedicated test tab. Selecting another transaction cancels the pending check.
+5. Inspect the Export / Live Wave comparison. Missing fields remain **Unknown**; truncated or changed values are reported as **Different**. The NOT_VERIFIED URL filter is never treated as evidence of a transaction's reviewed state.
+6. Test a transaction you previously corrected in Wave. An older CSV should report its changed category. A fresh CSV may identify it as an existing multi-account record. The extension does not overwrite either state.
+
+The first live check is a feasibility test of the DOM reader. Wave's exact markup has not yet been inspected through this extension. If fields are unknown, click **Show field diagnostics** and share the diagnostics plus a screenshot of the dialog for an adapter adjustment. No passwords or cookies are read.
+
+## Collect exact account and category names
+
+Select your business in section 1. Click **Open Chart of Accounts** to load it in a background tab, wait for Wave to load, then click **Collect all five tabs** from the solver. The collector clicks only Assets, Liabilities & Credit Cards, Income, Expenses, and Equity navigation tabs. It checks selected-tab state and reads every recognized account-name row before accepting the names. Wave’s tab counters omit some built-in accounts inconsistently; the collector treats the counter as a lower bound and shows it separately from the number of collected names. Wave’s account-name cells exclude add-account buttons and empty-section messages. Account editing controls are never clicked.
+
+Complete collections are saved locally per business and shown in searchable groups. All collected account names join the Category suggestions in the merchant-rule form, including names not present in your export. They are Chart of Accounts names; transfers, splits, and context-specific transaction options still require their own handling. A failed or partial collection does not replace the previously saved chart. Expand **Collection diagnostics** if Wave's markup is not recognized. Live compatibility still needs checking on your account.
+
+## Analysis
+
+### Historical rule suggestions
+
+After importing, the history table lists exact repeated descriptions with at least three outgoing transactions not already covered by your merchant rules. It shows the category distribution and unresolved count. **Prepare rule** fills the rule form but does not save it. Mixed historical categories leave the proposed category blank for your decision. No history is treated as proof that transactions were reviewed. Descriptors are not shortened automatically, to avoid merging unrelated merchants.
+
+### Draft session plans
+
+Use individual **Plan** checkboxes to shortlist merchant proposals or transfer pairs. Either side of a transfer includes both records, and each pair appears once in the downloadable JSON draft. The plan contains expected IDs, original categories, account details, dates, descriptions, amounts, and export modification dates. It is explicitly unexecuted and requires live validation. There is no plan execution endpoint.
+
+Choose the Wave business before downloading a real plan. You can later import that plan and a fresh accounting export to see which records changed or disappeared. An unchanged export comparison still does not establish live reviewed status or authorize automatic edits. Rule changes, business changes, and new CSV imports clear the shortlist. Reloading restores the CSV, shortlist, filters, selected business and transaction, and unfinished rule form. Live comparisons are not restored as current evidence. Clear imported session removes the saved CSV and draft plan. Downloaded plans contain financial details and remain wherever you save them.
+
+Fictional samples can produce clearly marked sample plans for interface testing, but those plans are rejected against real Wave records.
+
+- Starter fuel rules use the exact category **Equipment Fuel — Diesel, Gas, Machinery Fuel**, with Chevron and 7-Eleven/7-11/711/7-Elev aliases. First matching rule wins. You can add or replace named merchant families; a custom category must exist in the imported export or collected Chart of Accounts.
+- Transfer candidates require equal amounts, opposite debit/credit account movements, different accounts, dates within five days, and payment/transfer wording. Both sides must have a unique reciprocal candidate. This is a proposal, not confirmation.
+- Equal-amount opposite movements on the same account with the same recognized merchant within 60 days are shown as possible refunds. Less obvious refunds remain for manual classification.
+- Transactions already containing multiple bank/card/loan postings are left for live inspection. Split transactions, exchange-rate differences, missing counterparts, same-day duplicates, and loans with other account types may need manual review.
+- No reviewed status is present in accounting.csv. All proposals are historical candidates, not a live unreviewed queue.
+- The table renders the first 150 matches; all imported transactions are analyzed. Search, dates, and action filters narrow the view.
+
+## Privacy and scope
+
+The extension requests access only to `https://next.waveapps.com/*`, plus script execution and local extension storage. It reads visible transaction fields only when **Read live details** is clicked. It uses no private API, cookies, authentication tokens, external services, or AI upload. The export stays in the solver tab's memory; closing or reloading clears it. Only merchant rules persist in local extension storage. No sync storage is used.
+
+**This release has no Apply action.** It never clicks Save, changes a category, matches transfers, or marks anything reviewed. It can navigate a dedicated Wave test tab when you explicitly click Open. The original working tab is preserved. Reusing the test tab navigates away from its current transaction; keep that tab for inspection rather than manual unsaved edits.
+
+The export's reviewed status and currency context are incomplete. A successful field comparison does not authorize an edit or establish that a transaction is unreviewed.
+
+## Development checks
+
+From the parent project directory, run `node --test`. Tests cover CSV parsing, grouping, full-precision IDs, payment pairing, ambiguous matches, refunds, existing multi-account records, merchant alias boundaries, comparison failures, and the read-only reader contract.
+
+For mock DOM checks, run the local server and visit `/extension/reader-fixture.html`. The harness tests native labels, custom dropdowns, calendar/currency decorations, duplicate controls and dialogs, hidden dialogs, unknown review state, and absence of mutations. It supplies a fictional URL to the reader with local mock DOM data. This tests reader behavior, not compatibility with Wave's live markup.

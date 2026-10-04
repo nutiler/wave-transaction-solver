@@ -1,0 +1,389 @@
+import { defaultRules, importAccounting, proposals, waveIdentity, compareLive, normalize } from './model.js';
+import { readWavePage } from './live-reader.js';
+import { historySuggestions } from './history.js';
+import { actionable, buildPlan, validatePlan } from './plan.js';
+import { readWaveChart } from './chart-reader.js';
+import { validateCatalog, categoryNames } from './catalog.js';
+import { loadSession, saveSession } from './session.js';
+import { businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor } from './workflow.js';
+const $ = id => document.getElementById(id);
+const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
+const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
+const shortlist = new Set();
+let sourceName = '', loadedPlan = null;
+let catalog = null, chartTab = null;
+let csvText = '', importedAt = '', restoring = true, saveChain = Promise.resolve();
+let exportPages = {};
+try { exportPages = (await import('./settings.local.js')).exportPages || {}; } catch { /* Optional, private configuration. */ }
+let liveGeneration = 0;
+let exportTab = null, liveStepLabel = 'Not checked';
+const stepKeys = ['setup','chart','import','merchant','history','queue','live','plan'];
+const stepComplete = new Map();
+function stepStatus(key, text, complete = false, foldOnComplete = false) {
+  const badge = $(`step-${key}-status`); badge.textContent = `${complete ? '✓ ' : ''}${text}`; badge.classList.toggle('complete',complete);
+  if (foldOnComplete && complete && !stepComplete.get(key)) $(`fold-${key}`).open = false;
+  stepComplete.set(key,complete);
+}
+function updateSteps() {
+  stepStatus('setup',business ? 'Business selected' : 'Choose business',!!business,true);
+  stepStatus('chart',catalog ? `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} names saved` : 'Collect names',!!catalog,true);
+  stepStatus('import',dataset ? `${sampleMode ? 'Sample · ' : ''}${dataset.transactions.length.toLocaleString()} transactions loaded` : 'Import CSV',!!dataset,true);
+  stepStatus('merchant',`${rules.length} rules saved`,rules.length>0,true);
+  stepStatus('history','Optional suggestions');
+  stepStatus('queue',dataset ? `${queue.length.toLocaleString()} proposals to inspect` : 'Import CSV first');
+  stepStatus('live',liveStepLabel,liveStepLabel==='Fields match');
+  stepStatus('plan',shortlist.size ? `${shortlist.size} records in draft` : 'Choose proposals');
+  $('openExport').disabled = !extensionMode || !exportUrlFor(business, exportPages);
+}
+const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch'];
+const draftIds = ['ruleName', 'aliases', 'category'];
+function rememberSession() {
+  if (restoring) return Promise.resolve();
+  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
+  saveChain = saveChain.catch(()=>{}).then(()=>saveSession(snapshot));
+  return saveChain;
+}
+function rememberSoon() { void rememberSession().catch(e => { $('sessionStatus').textContent = `Session could not be saved locally: ${e.message}`; }); }
+async function loadCatalog() {
+  catalog = null;
+  if (extensionMode && business) {
+    const savedChart = (await chrome.storage.local.get('solverCharts')).solverCharts?.[business];
+    if (savedChart) { try { catalog = validateCatalog(savedChart, business); } catch { /* Incomplete collections are not restored. */ } }
+  }
+  $('chartStatus').textContent = catalog ? `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} names loaded for this business. Collected ${catalog.capturedAt}.` : 'No chart collected for this business.';
+  renderCatalog(); renderCategories();
+  updateSteps();
+}
+function renderCategories() {
+  $('categories').replaceChildren(...categoryNames(sampleMode ? null : catalog, dataset?.categories || []).map(name => { const option = make('option'); option.value = name; return option; }));
+}
+function renderCatalog() {
+  $('chartNames').replaceChildren();
+  if (!catalog) return;
+  const query = $('chartSearch').value.toLowerCase();
+  for (const group of catalog.groups) {
+    const accounts = group.accounts.filter(a => `${a.name} ${a.number || ''}`.toLowerCase().includes(query));
+    const details = make('details'), summary = make('summary', `${group.name} · ${accounts.length} of ${group.accounts.length} names · Wave tab count ${group.expected}`); details.open = !!query;
+    details.append(summary);
+    for (const account of accounts) { const line = make('p', account.name); if (account.number) line.append(make('small', ` · Account number ${account.number}`)); details.append(line); }
+    $('chartNames').append(details);
+  }
+}
+$('chartSearch').oninput = renderCatalog;
+$('openChart').onclick = handleChartOpen;
+async function handleChartOpen() {
+  try {
+    error();
+    if (!extensionMode || !business) throw new Error('Choose your Wave business in section 1 first.');
+    const url = `https://next.waveapps.com/${business}/accounting/charts`;
+    const existing = (await chrome.tabs.query({ url: 'https://next.waveapps.com/*' })).find(tab => tab.url === url);
+    const tab = existing || await openBackgroundTab(chrome.tabs,url); chartTab = tab.id;
+    await rememberSession();
+    $('chartStatus').textContent = 'Chart of Accounts opened in a background tab. Click Collect all five tabs when it has loaded.';
+  } catch (e) { error(e.message); $('chartStatus').textContent = e.message; }
+}
+function error(message = '') { $('error').textContent = message; }
+if (extensionMode) {
+  try { const saved = (await chrome.storage.local.get('solverRules')).solverRules; if (Array.isArray(saved) && saved.every(r => typeof r.name === 'string' && typeof r.category === 'string' && Array.isArray(r.aliases) && r.aliases.length && r.aliases.every(a => typeof a === 'string' && a.trim()))) rules = saved; } catch { error('Saved rules could not be read. Using the starter fuel rules.'); }
+} else $('connection').textContent = 'Browser preview: Wave connections require loading the Chrome extension.';
+async function refreshTabs() {
+  $('waveTabs').replaceChildren();
+  if (!extensionMode) { $('waveTabs').append(make('option', 'Install the extension to select a Wave tab')); return; }
+  const tabs = await chrome.tabs.query({ url: 'https://next.waveapps.com/*' });
+  for (const tab of tabs) {
+    const tabBusiness = businessFromUrl(tab.url); if (!tabBusiness) continue;
+    const option = make('option', `${tab.title || 'Wave'} · ${tabBusiness}`); option.value = String(tab.id); option.dataset.business = tabBusiness; $('waveTabs').append(option);
+  }
+  if (!$('waveTabs').options.length) { const option = make('option', 'Open your Wave Transactions page, then refresh'); option.value = ''; $('waveTabs').append(option); }
+  const launchTab = new URL(location.href).searchParams.get('waveTab');
+  if (launchTab && [...$('waveTabs').options].some(o => o.value === launchTab)) $('waveTabs').value = launchTab;
+  if (!business && onlyBusiness(tabs)) {
+    business = onlyBusiness(tabs); await loadCatalog();
+    chartTab = tabs.find(tab=>tab.url===`https://next.waveapps.com/${business}/accounting/charts`)?.id || null;
+    $('connection').textContent = `Automatically selected your only open Wave business: ${business}. Confirm your CSV belongs to this business.`;
+    await rememberSession();
+  }
+  if (business) { const option = [...$('waveTabs').options].find(o => o.dataset.business === business); if (option) $('waveTabs').value = option.value; }
+}
+const handle = (fn, statusId) => async event => {
+  try { error(); await fn(event); }
+  catch (e) {
+    const message = e.message || String(e);
+    error(message);
+    if (statusId) $(statusId).textContent = `Could not complete this step: ${message}`;
+  }
+};
+$('openExport').onclick = handle(async () => {
+  const url=exportUrlFor(business, exportPages);
+  if (!extensionMode || !url) throw new Error('Configure an export-page link for the selected business in settings.local.js.');
+  if (exportTab) { try { await chrome.tabs.get(exportTab); } catch { exportTab=null; } }
+  const tab=await openBackgroundTab(chrome.tabs,url,exportTab); exportTab=tab.id;
+  $('exportStatus').textContent = 'Wave’s export page is open in a background tab. Switch to that tab to request the CSV export; Wave will email the ZIP.';
+}, 'exportStatus');
+$('readChart').onclick = handle(async () => {
+  if (!extensionMode || !business || !chartTab) throw new Error('Use Open Chart of Accounts first.');
+  const collectingBusiness = business, tab = await chrome.tabs.get(chartTab);
+  if (new URL(tab.url).pathname !== `/${collectingBusiness}/accounting/charts` || new URL(tab.url).origin !== 'https://next.waveapps.com') throw new Error('The chart tab is no longer on the selected business’s Chart of Accounts.');
+  $('readChart').disabled = true; $('chartStatus').textContent = 'Collecting Assets, Liabilities & Credit Cards, Income, Expenses, and Equity…';
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId: chartTab }, func: readWaveChart, args: [collectingBusiness] });
+    const snapshot = results[0]?.result;
+    if (!snapshot || business !== collectingBusiness) throw new Error('The selected business changed during collection.');
+    $('chartDiagnostics').textContent = JSON.stringify(snapshot, null, 2); $('chartDebug').hidden = false;
+    validateCatalog(snapshot, collectingBusiness);
+    const charts = (await chrome.storage.local.get('solverCharts')).solverCharts || {};
+    charts[collectingBusiness] = snapshot; await chrome.storage.local.set({ solverCharts: charts }); catalog = snapshot;
+    renderCatalog(); renderCategories();
+    updateSteps();
+    $('chartStatus').textContent = `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} exact account names collected across all five tabs. Available in the merchant-rule Category field.`;
+  } catch (e) {
+    const problems = $('chartDiagnostics').textContent;
+    throw new Error(`${e.message}${problems ? ' Expand Collection diagnostics to see what the reader found.' : ''}`);
+  } finally { $('readChart').disabled = false; }
+}, 'chartStatus');
+$('refresh').onclick = handle(refreshTabs);
+$('connect').onclick = handle(async () => {
+  if (!extensionMode || !$('waveTabs').value) throw new Error('Open Wave in Chrome and refresh the tabs first.');
+  const tab = await chrome.tabs.get(Number($('waveTabs').value)), nextBusiness = businessFromUrl(tab.url);
+  if (!nextBusiness) throw new Error('The selected tab is no longer on a Wave business page.');
+  if (business && business !== nextBusiness) clearImported();
+  liveGeneration++;
+  business = nextBusiness; liveTab = null; $('connection').textContent = `Selected business: ${business}. Confirm your imported CSV belongs to this business.`; $('liveStatus').textContent = ''; $('comparison').replaceChildren();
+  chartTab = null; $('chartDebug').hidden = true;
+  await loadCatalog();
+  shortlist.clear(); renderQueue(); renderPlan(); validateLoadedPlan();
+  await rememberSession();
+});
+function renderRules() {
+  $('rules').replaceChildren();
+  rules.forEach((r, i) => {
+    const row = make('div', undefined, 'rule'), detail = make('div'); detail.append(make('strong', r.name), make('small', r.aliases.join(', ')));
+    const remove = make('button', 'Remove', 'secondary'); remove.setAttribute('aria-label', `Remove ${r.name} rule`);
+    remove.onclick = handle(async () => { rules.splice(i, 1); await persistRules(); renderRules(); analyze(); });
+    row.append(detail, make('span', r.category), remove); $('rules').append(row);
+  });
+  updateSteps();
+}
+async function persistRules() { if (extensionMode) await chrome.storage.local.set({ solverRules: rules }); }
+$('ruleForm').onsubmit = handle(async event => {
+  event.preventDefault();
+  const name = $('ruleName').value.trim(), category = $('category').value.trim(), aliases = $('aliases').value.split(',').map(a => a.trim()).filter(Boolean);
+  if (!name || !category || !aliases.length) throw new Error('Enter a merchant family, aliases, and category.');
+  if ((dataset || catalog) && !categoryNames(sampleMode ? null : catalog, dataset?.categories || []).includes(category)) throw new Error('Choose an exact name from your export or collected Chart of Accounts.');
+  const rule = { name, aliases, category }, i = rules.findIndex(r => r.name.toLowerCase() === name.toLowerCase());
+  if (i >= 0) rules[i] = rule; else rules.push(rule);
+  await persistRules(); renderRules(); analyze(); $('ruleName').value = ''; $('aliases').value = '';
+  $('fold-merchant').open = false;
+});
+function imported(text, name, isSample = false) {
+  const next = importAccounting(text); dataset = next; sampleMode = isSample; chosen = null; liveTab = null;
+  sourceName = name; csvText = text; importedAt = new Date().toISOString(); shortlist.clear(); $('planText').hidden = true;
+  $('live').hidden = true; $('comparison').replaceChildren(); $('liveStatus').textContent = '';
+  $('importStatus').textContent = `${name} · ${dataset.transactions.length.toLocaleString()} transactions · ${dataset.ledgerRows.toLocaleString()} ledger rows · ${dataset.earliest} to ${dataset.latest}. Reviewed status is not in the export.`;
+  renderCategories();
+  analyze();
+  $('fold-import').open = false;
+}
+$('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
+function clearImported() { dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); }
+$('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
+$('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
+function analyze() {
+  if (!dataset) return;
+  shortlist.clear(); $('planText').hidden = true;
+  queue = proposals(dataset.transactions, rules).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  $('queue').hidden = false;
+  $('counts').textContent = `${queue.filter(t => t.kind === 'Merchant rule').length} merchant suggestions · ${new Set(queue.filter(t => t.kind === 'Transfer candidate').map(t => [t.id, t.partner.id].sort().join(':'))).size} transfer pairs`;
+  if (chosen) { chosen = queue.find(t => t.id === chosen.id); select(chosen); }
+  renderQueue();
+  renderHistory(); renderPlan(); validateLoadedPlan();
+  rememberSoon();
+}
+function renderQueue() {
+  const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
+  const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
+  $('queueInfo').textContent = `Showing ${Math.min(list.length, 150)} of ${list.length.toLocaleString()} matches. Both sides of each transfer pair are listed. This is historical data; live reviewed status is unknown.`;
+  $('rows').replaceChildren();
+  for (const t of list.slice(0, 150)) {
+    const tr = make('tr'), date = make('td', t.date); date.append(make('small', t.id));
+    const desc = make('td', t.description); desc.append(make('small', t.primary?.account || 'Multiple/no bank postings'));
+    const current = make('td', t.categories.join(' + ') || 'Multiple bank/card postings');
+    const action = make('td'); action.append(make('strong', t.kind), make('p', t.proposed), make('small', t.reason));
+    const button = make('button', 'Inspect', 'secondary'); button.setAttribute('aria-label', `Inspect transaction ${t.id}`); button.onclick = () => select(t);
+    const cell = make('td');
+    if (actionable(t)) {
+      const label = make('label', undefined, 'plan-choice'), check = make('input'); check.type = 'checkbox'; check.checked = shortlist.has(t.id); check.setAttribute('aria-label', `Plan transaction ${t.id}`);
+      check.onchange = () => {
+        const ids = t.partner ? [t.id, t.partner.id] : [t.id];
+        for (const id of ids) { if (check.checked) shortlist.add(id); else shortlist.delete(id); }
+        $('planText').hidden = true; renderQueue(); renderPlan(); rememberSoon();
+      };
+      label.append(check, make('span', 'Plan')); cell.append(label);
+    }
+    cell.append(button);
+    tr.append(date, desc, make('td', t.amount === null ? '—' : `${t.direction === 'out' ? 'Out' : 'In'} ${(t.amount / 100).toFixed(2)}`), current, action, cell); $('rows').append(tr);
+  }
+}
+for (const id of ['search', 'kind', 'from', 'through']) $(id).oninput = renderQueue;
+function renderHistory() {
+  if (!dataset) return;
+  $('history').hidden = false;
+  const query = $('historySearch').value.toLowerCase();
+  const items = historySuggestions(dataset.transactions, rules).filter(g => `${g.merchant} ${g.distribution.map(c => c.category).join(' ')}`.toLowerCase().includes(query));
+  $('historyInfo').textContent = `Showing ${Math.min(items.length, 30)} of ${items.length} repeated descriptions not already covered by your rules.`;
+  $('historyRows').replaceChildren();
+  for (const g of items.slice(0, 30)) {
+    const row = make('tr'), merchant = make('td', g.merchant); merchant.append(make('small', `Latest: ${g.latest}. ${g.accounts.length} account(s).`));
+    const categories = make('td', g.distribution.length ? g.distribution.map(c => `${c.category}: ${c.count}`).join('; ') : 'No established expense category');
+    categories.append(make('small', `${g.unresolved} uncategorized or not a single expense category. ${g.mixed ? 'Conflicting history: choose a category yourself.' : g.known < 3 ? 'Fewer than three categorized examples: choose a category yourself.' : 'Suggestion only: confirm the purchase purpose.'}`));
+    const action = make('td'), prepare = make('button', g.category ? 'Prepare rule' : 'Choose rule', 'secondary'); prepare.setAttribute('aria-label', `Prepare rule for ${g.merchant}`);
+    prepare.onclick = () => { $('ruleName').value = g.merchant.slice(0, 100); $('aliases').value = normalize(g.merchant).slice(0, 400); $('category').value = g.category; $('fold-merchant').open = true; $('ruleForm').scrollIntoView({ behavior: 'smooth' }); $('ruleName').focus(); };
+    action.append(prepare); row.append(merchant, make('td', String(g.count)), categories, action); $('historyRows').append(row);
+  }
+}
+$('historySearch').oninput = renderHistory;
+function renderPlan() {
+  $('plan').hidden = !dataset;
+  const pairs = new Set(queue.filter(t => shortlist.has(t.id) && t.partner).map(t => [t.id, t.partner.id].sort().join(':'))).size;
+  const singles = queue.filter(t => shortlist.has(t.id) && !t.partner).length;
+  $('planStatus').textContent = `${singles} merchant proposal(s) and ${pairs} transfer pair(s) shortlisted. ${shortlist.size} records. Nothing executed.`;
+  $('downloadPlan').disabled = !shortlist.size;
+  updateSteps();
+}
+$('clearPlan').onclick = () => { shortlist.clear(); $('planText').hidden = true; renderQueue(); renderPlan(); };
+$('downloadPlan').onclick = handle(() => {
+  const plan = buildPlan(queue, shortlist, { business, sourceName, sample: sampleMode });
+  const text = JSON.stringify(plan, null, 2); $('planText').value = text; $('planText').hidden = false;
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const anchor = make('a'); anchor.href = url; anchor.download = sampleMode ? 'fictional-solver-draft.json' : 'wave-solver-draft.json'; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('planFile').onchange = handle(async () => { const file = $('planFile').files[0]; if (!file) return; if (file.size > 20 * 1024 * 1024) throw new Error('Choose a plan under 20 MB.'); loadedPlan = JSON.parse(await file.text()); validateLoadedPlan(); await rememberSession(); });
+function validateLoadedPlan() {
+  $('planValidation').replaceChildren();
+  if (!loadedPlan) return;
+  if (!dataset || !business) { $('planValidation').append(make('p', 'Import a fresh real export and choose the same Wave business to compare this plan.')); return; }
+  try {
+    const results = validatePlan(loadedPlan, dataset.transactions, business), stale = results.filter(r => r.state === 'Stale');
+    $('planValidation').append(make('p', `${results.length} planned action(s): ${stale.length} stale, ${results.length - stale.length} unchanged in the export. All still require live Wave validation.`));
+    for (const r of stale.slice(0, 30)) $('planValidation').append(make('p', r.problems.join('; ')));
+  } catch (e) { $('planValidation').append(make('p', e.message)); }
+}
+function select(t, scroll = true) {
+  liveGeneration++;
+  liveStepLabel = 'Not checked'; $('fold-live').open = true; updateSteps();
+  chosen = t; $('live').hidden = false; $('selected').textContent = `${t.date} · ${t.description} · ID ${t.id}. ${t.kind}: ${t.proposed || t.reason}`;
+  $('counterpart').hidden = !t.partner;
+  $('open').disabled = !extensionMode || sampleMode; $('read').disabled = !extensionMode || sampleMode;
+  $('counterpart').disabled = !extensionMode || sampleMode;
+  $('comparison').replaceChildren(); $('diagnostics').hidden = true; $('diagnosticToggle').hidden = true;
+  $('liveStatus').textContent = !extensionMode ? 'Live checks require the installed Chrome extension.' : sampleMode ? 'Fictional samples cannot be opened in Wave.' : !business ? 'First select your Wave tab and click Use selected business in section 1 above. Then open this transaction.' : 'Not checked. Live state must be compared with this export.';
+  if (scroll) $('live').scrollIntoView({ behavior: 'smooth' });
+  rememberSoon();
+}
+async function openRecord(id) {
+  if (!extensionMode) throw new Error('Open the solver from Chrome’s Extensions menu, rather than the localhost preview.');
+  if (!business) throw new Error('In section 1, select your Wave tab and click Use selected business. Then return here and click Open this transaction in Wave.');
+  if (sampleMode || !/^\d+$/.test(id)) throw new Error('Sample records cannot be opened in Wave.');
+  const generation = ++liveGeneration, expectedBusiness = business;
+  const selectionCurrent = () => liveGeneration === generation && business === expectedBusiness && chosen?.id === id;
+  // Dedicated test tab keeps the user’s original Wave working tab untouched.
+  const url = `https://next.waveapps.com/${business}/transactions/${id}`;
+  if (liveTab) {
+    try { const existing = await chrome.tabs.get(liveTab); if (waveIdentity(existing.url)?.business !== business) liveTab = null; } catch { liveTab = null; }
+  }
+  if (!selectionCurrent()) return;
+  const openedTab = await openBackgroundTab(chrome.tabs,url,liveTab);
+  if (!selectionCurrent()) return;
+  liveTab = openedTab.id;
+  const targetTab = liveTab;
+  await rememberSession();
+  if (!selectionCurrent()) return;
+  $('liveStatus').textContent = 'Wave opened in the background. Waiting for transaction details…';
+  const current = () => liveGeneration === generation && business === expectedBusiness && chosen?.id === id && liveTab === targetTab;
+  try {
+    const snapshot = await waitForLiveSnapshot(()=>captureLive(targetTab,expectedBusiness,id),current);
+    if (snapshot && current()) renderLive(snapshot);
+  } catch(e) { if(current()) { error(e.message); $('liveStatus').textContent = `${e.message} You can retry with Read live details.`; } }
+}
+$('open').onclick = handle(() => openRecord(chosen.id), 'liveStatus');
+$('counterpart').onclick = handle(() => { const target = queue.find(t => t.id === chosen.partner.id); select(target); return openRecord(target.id); }, 'liveStatus');
+$('read').onclick = handle(async () => {
+  const generation = ++liveGeneration, selectedId = chosen?.id, expectedBusiness = business;
+  if (!business || !liveTab) throw new Error('Use Open this transaction in Wave first.');
+  const snapshot = await captureLive(liveTab,expectedBusiness,selectedId);
+  if (generation === liveGeneration && chosen?.id === selectedId && business === expectedBusiness) renderLive(snapshot);
+}, 'liveStatus');
+async function captureLive(tabId,expectedBusiness,selectedId) {
+  const tab = await chrome.tabs.get(tabId), identity = waveIdentity(tab.url);
+  if (!identity || identity.business !== expectedBusiness || identity.transaction !== selectedId) throw new Error('The Wave test tab is not on the selected transaction. Reopen the selected ID.');
+  const results = await chrome.scripting.executeScript({ target: { tabId: tabId }, func: readWavePage });
+  const snapshot = results[0]?.result;
+  if (!snapshot) throw new Error('Wave returned no readable details. Wait for the dialog and try again.');
+  if (snapshot.identity?.business !== expectedBusiness || snapshot.identity?.transaction !== selectedId) throw new Error('Wave navigated during the check. No match confirmed.');
+  return snapshot;
+}
+function renderLive(snapshot) {
+  const result = compareLive(chosen, snapshot);
+  liveStepLabel = result.state === 'Export and visible fields match' ? 'Fields match' : 'Inspect results'; updateSteps();
+  $('liveStatus').textContent = `${result.state}. Reviewed status: ${result.reviewed}. Read only; nothing saved.`;
+  const table = make('table'), head = make('thead'), heading = make('tr');
+  for (const label of ['Field', 'Export', 'Live Wave', 'Result']) heading.append(make('th', label)); head.append(heading); table.append(head);
+  const body = make('tbody');
+  for (const c of result.checks) { const row = make('tr'), state = make('td'); state.append(make('span', c.state, `status ${c.state}`)); row.append(make('td', c.field), make('td', c.exported), make('td', c.live), state); body.append(row); }
+  table.append(body); $('comparison').replaceChildren(table);
+  $('diagnostics').textContent = JSON.stringify({ problems: snapshot.problems, fieldContexts: snapshot.fieldContexts, readableControls: snapshot.controls, capturedAt: snapshot.capturedAt }, null, 2); $('diagnosticToggle').hidden = false;
+}
+$('diagnosticToggle').onclick = () => { $('diagnostics').hidden = !$('diagnostics').hidden; };
+function sampleCSV() {
+  const h = ['Transaction ID', 'Transaction Date', 'Account Name', 'Transaction Description', 'Debit Amount (Two Column Approach)', 'Credit Amount (Two Column Approach)', 'Account Group', 'Account Type', 'Account ID'];
+  const r = [
+    ['1000000000000000001','2026-10-02','Sample Checking','Chevron #001','','64.20','Asset','Cash and Bank','bank'],
+    ['1000000000000000001','2026-10-02','Equipment Fuel — Diesel, Gas, Machinery Fuel','Chevron #001','64.20','','Expense','Expense','fuel'],
+    ['1000000000000000002','2026-10-02','Sample Checking','Card payment','','228.82','Asset','Cash and Bank','bank'],
+    ['1000000000000000002','2026-10-02','Uncategorized Expense','Card payment','228.82','','Expense','Expense','ue'],
+    ['1000000000000000003','2026-10-01','Sample Credit Card','Payment','228.82','','Liability','Credit Card','card'],
+    ['1000000000000000003','2026-10-01','Uncategorized Income','Payment','','228.82','Income','Income','ui'],
+    ['1000000000000000004','2026-10-01','Sample Credit Card','7-Elev STORE','','22.10','Liability','Credit Card','card'],
+    ['1000000000000000004','2026-10-01','Uncategorized Expense','7-Elev STORE','22.10','','Expense','Expense','ue'],
+    ...['5','6','7'].flatMap(n => [[`100000000000000000${n}`,'2026-09-20','Sample Checking','Office Depot','','15.00','Asset','Cash and Bank','bank'],[`100000000000000000${n}`,'2026-09-20','Office Expenses','Office Depot','15.00','','Expense','Expense','office']])
+  ];
+  return [h,...r].map(row => row.map(v => `"${v.replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+async function restoreSession() {
+  const saved = await loadSession();
+  if (!saved) return;
+  business = saved.business;
+  for (const id of filterIds) if (typeof saved.filters?.[id] === 'string') $(id).value = saved.filters[id];
+  if (saved.csvText) {
+    imported(saved.csvText, saved.sourceName, saved.sample);
+    importedAt = saved.importedAt || '';
+    $('importStatus').textContent += ` Restored local export, imported ${importedAt || 'previously'}. Import a fresh export when starting new bookkeeping work.`;
+    // Only restore draft proposals still supported by the current rules.
+    for (const id of saved.shortlist || []) { const t = queue.find(t=>t.id===id); if (t && actionable(t)) { shortlist.add(id); if(t.partner) shortlist.add(t.partner.id); } }
+    if (saved.chosenId) { const transaction = queue.find(t=>t.id===saved.chosenId); if (transaction) select(transaction, false); }
+  }
+  loadedPlan = saved.loadedPlan || null;
+  for (const id of draftIds) if (typeof saved.draft?.[id] === 'string') $(id).value = saved.draft[id];
+  await loadCatalog();
+  if (extensionMode && business) {
+    const tabs = await chrome.tabs.query({ url: 'https://next.waveapps.com/*' });
+    chartTab = tabs.find(tab => tab.url === `https://next.waveapps.com/${business}/accounting/charts`)?.id || null;
+    liveTab = chosen && !sampleMode ? tabs.find(tab=>{ const identity=waveIdentity(tab.url); return identity?.business===business && identity?.transaction===chosen.id; })?.id || null : null;
+    $('connection').textContent = `Restored business: ${business}.`;
+    if (chosen) $('liveStatus').textContent = liveTab ? 'Wave tab reconnected. Click Read live details for a fresh check.' : 'Selection restored. Click Open this transaction in Wave for a fresh check.';
+  }
+  renderQueue(); renderPlan(); validateLoadedPlan();
+  $('sessionStatus').textContent = 'Previous session restored locally. Live comparisons require a fresh check.';
+  updateSteps();
+  for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
+}
+renderRules();
+try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
+restoring = false;
+await refreshTabs();
+updateSteps();
+for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
+for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
+for (const id of ['clearPlan', 'ruleForm', 'planFile', 'historyRows']) $(id).addEventListener(id === 'ruleForm' ? 'submit' : id === 'planFile' ? 'change' : 'click', ()=>setTimeout(rememberSoon,0));
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) rememberSoon(); });
