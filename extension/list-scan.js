@@ -20,16 +20,23 @@ export function waveListScan(request,testContext){
  const collect=()=>{
   const tables=[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).filter(el=>{const text=clean(el);return /Description/i.test(text) && /Category/i.test(text) && /Amount/i.test(text);});
   const owners=tables.filter(el=>!tables.some(other=>other!==el && el.contains(other)));if(owners.length!==1){if(owners.length>1)throw Error('Multiple transaction tables are visible.');return null;}
-  const table=owners[0],headers=[...table.querySelectorAll('thead th,[role="columnheader"]')].map(clean);
+  const table=owners[0],headerRow=table.querySelector('thead tr,[role="row"]:has([role="columnheader"])');
+  const headers=headerRow?[...headerRow.children].map(clean):[...table.querySelectorAll('[role="columnheader"]')].map(clean);
   const index=name=>headers.findIndex(h=>h.toLowerCase()===name.toLowerCase());
-  const rows=[...table.querySelectorAll('tbody tr,[role="rowgroup"] [role="row"],tr.wv-table__row')].filter(visible),occurrences=new Map();
-  if(!state.report.tableDiagnostics)state.report.tableDiagnostics={headers,headerHtml:table.querySelector('thead')?.outerHTML.slice(0,5000) || '',rowSamples:rows.slice(0,3).map(row=>row.outerHTML.slice(0,7000))};
-  state.report.filterChipObserved=[...doc.querySelectorAll('button,span,a,div')].some(el=>visible(el) && el.children.length===0 && /^(Not Reviewed|Not Verified)$/i.test(tidy(el.textContent)));
+  if(['Date','Description','Account','Category','Amount'].some(name=>index(name)<0))throw Error('Transaction column headers are not readable.');
+  const dataRows=root=>[...root.querySelectorAll('tbody tr,[role="rowgroup"] [role="row"],tr.wv-table__row')].filter(row=>visible(row) && !row.closest('thead') && !row.querySelector('[role="columnheader"]'));
+  const shape=row=>{const cells=[...row.children];return cells.length>=headers.length && date(clean(cells[index('Date')])) && amount(clean(cells[index('Amount')]))!==null;};
+  let root=table;
+  // Wave may render the sticky header and transaction body in separate sibling tables.
+  if(!dataRows(root).some(shape))for(let parent=table.parentElement;parent;parent=parent.parentElement){if(dataRows(parent).some(shape)){root=parent;break;}if(parent===doc.body)break;}
+  const rows=dataRows(root),occurrences=new Map();
+  state.report.tableDiagnostics={headers,headerHtml:table.querySelector('thead')?.outerHTML.slice(0,5000) || '',rowSamples:rows.slice(0,3).map(row=>row.outerHTML.slice(0,7000)),nearbyTables:[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).slice(0,4).map(t=>({class:t.className,rows:t.querySelectorAll('tr,[role="row"]').length,rowSamples:[...t.querySelectorAll('tr,[role="row"]')].filter(row=>!row.closest('thead')).slice(0,2).map(row=>row.outerHTML.slice(0,7000)),html:t.outerHTML.slice(0,3500)}))};
+  state.report.filterChipObserved=[...doc.querySelectorAll('button,span,a,div')].some(el=>visible(el) && /^(Not Reviewed|Not Verified)$/i.test(clean(el)));
   for(const row of rows){
    const cells=[...row.querySelectorAll(':scope > td,:scope > [role="cell"],:scope > [role="gridcell"]')];if(!cells.length)continue;
    const get=(name,fallback)=>clean(cells[index(name)>=0?index(name):fallback]);
    const r={id:null,identity:'unresolved',date:date(get('Date',1)),description:get('Description',2),account:get('Account',3),category:get('Category',4),amountText:get('Amount',5),amountCents:amount(get('Amount',5)),reviewed:'Unknown',reviewEvidence:null,sourceFilter:'NOT_VERIFIED'};
-   if(!r.date || !r.description || r.amountCents===null){problems.add('Some visible rows could not be parsed; inspect table diagnostics.');continue;}
+   if(!r.date || !r.description || r.amountCents===null){problems.add('Some visible rows could not be parsed; inspect table diagnostics.');if(state.report.rowDiagnostics.length<5)state.report.rowDiagnostics.push({problem:'Unreadable row fields',html:row.outerHTML.slice(0,9000)});continue;}
    r.uncategorized=/^Uncategorized(?: Expense| Income)?$/i.test(r.category);
    const ids=new Set();for(const el of [row,...row.querySelectorAll('[data-transaction-id],a[href]')]){
     const raw=el.getAttribute('data-transaction-id');if(raw && /^\d+$/.test(raw))ids.add(raw);
@@ -46,7 +53,7 @@ export function waveListScan(request,testContext){
    if(!r.id && state.report.rowDiagnostics.length<5 && !state.report.rowDiagnostics.some(d=>d.key===rowKey))state.report.rowDiagnostics.push({key:rowKey,html:row.outerHTML.slice(0,9000)});
   }
   const total=tidy(doc.body.textContent).match(/Showing\s+\d[\d,]*(?:\s*[-–]\s*\d[\d,]*)?\s+(?:of|out of)\s+(\d[\d,]*)\s+transactions/i);if(total)state.report.expectedTotal=Number(total[1].replace(/,/g,''));
-  return table;
+  return rows.find(shape)?.closest('table') || table;
  };
  const scrollOwner=table=>{for(let el=table.parentElement;el && el!==doc.body;el=el.parentElement){if(/auto|scroll/.test(style(el).overflowY) && el.clientHeight>=100 && el.scrollHeight>el.clientHeight+2)return el;}return doc.scrollingElement || doc.documentElement;};
  const named=el=>tidy(el.getAttribute('aria-label') || clean(el));
