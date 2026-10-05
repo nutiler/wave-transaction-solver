@@ -269,3 +269,15 @@ Known expense readiness (0.17.3): when no known expenses remain, the runner disp
 ### History review checks (0.18.0)
 
 `node --test` covers bank-reference boundaries, personal categories, 2023–2024 weighting, account scopes, conflicting batch choices, payments/refunds and atomic preparation. `/extension/history-fixture.html` uses fictional data to check multiple approvals produce one save, failures preserve the selection, accepted rows disappear, and reload restores current rules. The integration preview exercises the same history module in the full app.
+
+## Guided bookkeeping (0.19.0)
+
+Usage shows one stage at a time in this order: **Set up → Collect → Review rules → Run approved work → Review the rest**. Use the step bar to revisit any stage, or use Previous/Continue to work in sequence. Your current stage is saved with your CSV, rules, proposal pack and draft. Existing sessions choose their first missing setup/scan step. Stage navigation never collects, accepts rules, selects transactions or runs edits automatically.
+
+Setup keeps saved business/export/category panels collapsed; bookkeeping dates and clearing the session live under **Session options**. Collection opens its main action and requires a completed count-confirmed scan for the guided Continue button. You can still visit Rules directly to work on history without a live scan. Scan filters, downloads, matching shortcuts and collection scope live under **More scan options**; detailed rows expand under **Collected transactions**.
+
+Rule approvals stay explicit. Current rules retain their own panel; **Add or edit a custom rule** is optional and opens automatically from Prepare individually. Run work opens transfers first, or expenses when no pending transfer candidates remain. Inspect reveals the individual-check stage, while Prepare known expenses reveals the expense runner. Partial scans, candidate counts and saved rules are not treated as verified bookkeeping. Collect again after runs to check what remains.
+
+Debug tools stay separate and preserve the current Usage stage when you return. The fictional workspace fixture checks stage navigation, deep links and desktop/mobile overflow without touching Wave.
+
+Each stage uses one expanded working panel at a time. Saved panel choices restore with the saved stage, and choosing a business opens the CSV importer when that is the next missing setup requirement. Existing captures offer **Refresh Not Reviewed transactions** so it is clear that you are checking Wave again.

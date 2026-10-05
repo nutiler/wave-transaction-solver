@@ -1,3 +1,4 @@
+import {showUsageSection} from './workspace-ui.js';
 import { workingQueue } from './workflow.js';
 import { sourceHash, validateRulePack, acceptProposals, ruleCoverage } from './rule-pack.js';
 import { proposals } from './model.js';
@@ -73,7 +74,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     $('proposalCoverage').textContent='Approved rules from '+(s.workFrom || '2025-01-01')+': '+actual.covered+' records / '+money(actual.coveredCents)+'. Conflicting matches withheld: '+actual.conflicts+'.'+(potential?' Full-history potential after the strong proposals are approved: '+potential.covered+' / '+money(potential.coveredCents)+'. '+potential.changes+' proposed category changes; '+potential.confirmations+' already match.':'')+' These counts are not an unreviewed backlog.';
     if(Object.values(decisions).includes('accepted') && $('fold-merchant')) {
       const currentRules=make('button','View current rules');currentRules.className='secondary';
-      currentRules.onclick=()=>{const section=$('fold-merchant');section.open=true;section.scrollIntoView({block:'start'});};
+      currentRules.onclick=()=>{showUsageSection('fold-merchant');const section=$('fold-merchant');section.open=true;section.scrollIntoView({block:'start'});};
       $('proposalRows').append(currentRules);
     }
     if(!list.length) $('proposalRows').append(make('p','No proposals remain in this view. Accepted rules are saved under Merchant rules.'));

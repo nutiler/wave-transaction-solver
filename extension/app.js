@@ -1,5 +1,5 @@
 import {suggestionCandidates,waveSuggestionAction,installSuggestionReview} from './suggestions.js';
-import {installWorkspace,showWorkspace} from './workspace-ui.js';
+import {installWorkspace,showUsageSection} from './workspace-ui.js';
 import {installLiveList,liveMerchantAudit} from './list-view.js';
 import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
@@ -19,7 +19,7 @@ import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusines
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
-let suggestionReview=null,liveListReport=()=>null;
+let workspace=null,suggestionReview=null,liveListReport=()=>null;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
@@ -54,12 +54,13 @@ function updateSteps() {
   $('openExport').disabled = !extensionMode || !exportUrlFor(business, exportPages);
   $('readChart').classList.toggle('secondary', !chartTab);
   $('readChart').disabled = chartCollecting || !extensionMode || !business || !chartTab;
+  workspace?.refresh();
 }
 const filterIds = ['search', 'kind', 'from', 'through', 'historySearch', 'chartSearch', 'proposalSearch', 'proposalFilter', 'workFrom', 'transferSearch'];
 const draftIds = ['ruleName', 'aliases', 'category'];
 function rememberSession() {
   if (restoring) return Promise.resolve();
-  const snapshot = { version: 1, business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, proposalPack, proposalDecisions, proposalFileName, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
+  const snapshot = { version: 1, workflowStage:workspace?.current(), usagePanels:Object.fromEntries([...document.querySelectorAll('#usageWorkspace .workflow-group section>.step')].map(panel=>[panel.id,panel.open])), business, csvText, sourceName, importedAt, sample: sampleMode, chosenId: chosen?.id || null, liveTab, chartTab, shortlist: [...shortlist], loadedPlan, proposalPack, proposalDecisions, proposalFileName, folds: Object.fromEntries(stepKeys.map(key=>[key,$(`fold-${key}`).open])), filters: Object.fromEntries(filterIds.map(id => [id, $(id).value])), draft: Object.fromEntries(draftIds.map(id => [id,$(id).value])) };
   saveChain = saveChain.catch(()=>{}).then(()=>saveSession(snapshot));
   return saveChain;
 }
@@ -265,7 +266,7 @@ function renderQueue() {
   }
 }
 for (const id of ['search', 'kind', 'from', 'through']) $(id).oninput = renderQueue;
-const historyReview=installHistoryReview({getState:()=>({dataset,rules,business,pack:proposalPack?.business===business?proposalPack:null,report:liveListReport(),from:workFrom(),categories:categoryNames(sampleMode?null:catalog,dataset?.categories || [])}),accept:async next=>{if(applying || listCollecting)throw Error('Finish the active transaction run first.');if(extensionMode)await chrome.storage.local.set({solverRules:next});rules=next;renderRules();analyze(true);},prepare:(g,category)=>{$('ruleName').value=g.merchant.slice(0,100);$('aliases').value=g.aliases.join(', ').slice(0,400);$('category').value=category;$('fold-merchant').open=true;$('ruleForm').scrollIntoView({behavior:'smooth'});$('ruleName').focus();rememberSoon();}});
+const historyReview=installHistoryReview({getState:()=>({dataset,rules,business,pack:proposalPack?.business===business?proposalPack:null,report:liveListReport(),from:workFrom(),categories:categoryNames(sampleMode?null:catalog,dataset?.categories || [])}),accept:async next=>{if(applying || listCollecting)throw Error('Finish the active transaction run first.');if(extensionMode)await chrome.storage.local.set({solverRules:next});rules=next;renderRules();analyze(true);},prepare:(g,category)=>{$('ruleName').value=g.merchant.slice(0,100);$('aliases').value=g.aliases.join(', ').slice(0,400);$('category').value=category;showUsageSection('fold-merchant');$('customRule').open=true;$('ruleForm').scrollIntoView({behavior:'smooth'});$('ruleName').focus();rememberSoon();}});
 function renderHistory(){historyReview.render();}
 function renderPlan() {
   $('plan').hidden = !dataset;
@@ -295,7 +296,7 @@ function validateLoadedPlan() {
   } catch (e) { $('planValidation').append(make('p', e.message)); }
 }
 function select(t, scroll = true) {
-  showWorkspace('usage');
+  if(scroll)showUsageSection('fold-live');
   liveGeneration++;
   liveStepLabel = 'Not checked'; if(scroll)$('fold-live').open = true; updateSteps();
   lastLiveSnapshot = null;
@@ -531,6 +532,7 @@ async function restoreSession() {
   $('sessionStatus').textContent = 'Previous session restored locally. Live comparisons require a fresh check.';
   updateSteps();
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
+  await listReview.ready;for(const panel of document.querySelectorAll('#usageWorkspace .workflow-group section>.step'))if(typeof saved.usagePanels?.[panel.id]==='boolean')panel.open=saved.usagePanels[panel.id];workspace?.restore(saved.workflowStage);
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
 if(extensionMode){
@@ -544,7 +546,7 @@ async function captureTransferMenu(t){
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
 const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
-const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();workspace?.refresh();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();workspace?.refresh();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 liveListReport=listReview.report;
 suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:runWaveSuggestion,recheck:t=>runWaveSuggestion(t,'recheck'),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
@@ -555,7 +557,7 @@ const proposalReview=installProposalReview({
   accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false); },
   rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
 });
-installWorkspace();
+workspace=installWorkspace({getState:()=>({business,dataset,report:liveListReport(),rules,busy:applying || listCollecting,expenseMatches:expenseCandidates(queue,allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(queue).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:rememberSoon});
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
@@ -563,6 +565,7 @@ await refreshTabs();
 await proposalReview.render();transferReview.render();
 updateSteps();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
+for(const id of ['liveList','waveSuggestions','expenseBatch'])$(id).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
 for (const id of ['clearPlan', 'ruleForm', 'planFile']) $(id).addEventListener(id === 'ruleForm' ? 'submit' : id === 'planFile' ? 'change' : 'click', ()=>setTimeout(rememberSoon,0));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) rememberSoon(); });
