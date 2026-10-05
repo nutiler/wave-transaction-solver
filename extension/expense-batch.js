@@ -4,6 +4,16 @@ export function expenseCandidates(queue){return queue.filter(t=>t.kind==='Mercha
 export function prepareExpenseBatch(t,snapshot,options){
  if(!expenseCandidates([t]).length || options.sample || !options.business)throw Error('Only approved-rule single-category purchases can run.');
  const target=verifyCategoryResult(t,snapshot,options.business,t.proposed);
+ if(!target.reviewedVerified){
+  const actions=(snapshot?.controls || []).filter(c=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(c));
+  const checkbox=snapshot?.reviewCheckbox;
+  if(actions.length+(typeof checkbox?.checked==='boolean'?1:0)!==1){
+   const updates=(snapshot?.controls || []).includes('Review updates');
+   const error=Error(updates?'Wave shows Review updates instead of a reviewed-state control. Resolve its suggested updates manually; this expense was not edited.':'Cannot identify one reviewed-state control. This expense was not edited. Copy expense diagnostics.');error.diagnostics={snapshot,reviewDiagnostics:snapshot?.reviewDiagnostics || []};throw error;
+  }
+  if(target.categoryVerified && (checkbox?.disabled || snapshot?.reviewActions?.some(a=>/^Mark (as )?reviewed$/i.test(a.name) && a.disabled))){const error=Error('The review control is disabled. This expense was not edited.');error.diagnostics={snapshot};throw error;}
+ }
+
  if(target.categoryVerified){
   return {state:target.reviewedVerified?'completed':'review',request:{business:options.business,id:t.id,category:snapshot.fields.category,expected:{...snapshot.fields},reviewOnly:true}};
  }
@@ -44,4 +54,11 @@ export function installExpenseBatch({getState,receipt,apply,inspect}){
   if(completed.length){const d=make('details');d.append(make('summary',completed.length+' completed expenses'));for(const t of completed.slice(0,completedLimit)){const item=make('details');item.append(make('summary',t.description+' · '+money(t.amount)+' · '+t.proposed),make('pre',JSON.stringify(receipt(t),null,2)));d.append(item);}if(completed.length>completedLimit){const more=make('button','Show more completed expenses');more.onclick=()=>{completedLimit+=100;render();};d.append(more);}rows.append(d);}
  }
  search.oninput=()=>{limit=100;render();};return {render};
+}
+
+// Editor preflight returns before any category, review, or Save click.
+export function recoverStoppedExpenseReceipt(receipt){
+ if(receipt?.stage!=='expense-edit' || !receipt.saveAttempted || !receipt.originalSnapshot?.identity?.transaction || receipt.editOutcome?.stage!=='preflight' || receipt.editOutcome.saveAttempted!==false || !receipt.editOutcome.problem)return receipt;
+ const {previousAttempts=[],...previous}=receipt;
+ return {...receipt,saveAttempted:false,reviewAttempted:false,stage:'expense-preflight',previousAttempts:[...previousAttempts,previous],message:receipt.editOutcome.problem+' Stopped before editing; moved to Needs attention. Use Retry expense preflight after inspecting the Wave dialog.'};
 }

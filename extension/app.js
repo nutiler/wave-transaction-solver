@@ -1,4 +1,4 @@
-import {expenseCandidates,prepareExpenseBatch,installExpenseBatch} from './expense-batch.js';
+import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
 import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt,classifyTransferState } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
@@ -537,6 +537,11 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
+if(extensionMode){
+ const restored=Object.fromEntries(Object.entries(editReceipts).map(([key,r])=>[key,recoverStoppedExpenseReceipt(r)]));
+ if(Object.entries(restored).some(([key,r])=>r!==editReceipts[key])){await chrome.storage.local.set({solverEditReceipts:restored});editReceipts=restored;}
+}
+
 async function captureTransferMenu(t){
  const expectedBusiness=business;
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
@@ -684,7 +689,11 @@ async function runExpenseBatch(t,mode='run'){
   if(!outcome)throw Error('No expense edit result returned. Use Recheck saved expense.');
   // Retain the persisted lock even when a returned result is incomplete.
   await saveReceipt({editOutcome:outcome,reviewAttempted:editReceipts[key].reviewAttempted || !!outcome.reviewRequested,message:outcome.problem || 'Save requested. Verifying expense…'});
-  if(outcome.problem)throw Error(outcome.problem);
+  if(outcome.problem){
+   const recovered=recoverStoppedExpenseReceipt(editReceipts[key]);
+   if(recovered!==editReceipts[key]){await storeEditReceipt(key,recovered);return {...recovered,needsAttention:true};}
+   throw Error(outcome.problem);
+  }
   snapshot=await readFresh();let result=verifyCategoryResult(t,snapshot,expectedBusiness,target);
   await saveReceipt({...result,snapshot,verifiedAt:new Date().toISOString()});
   if(!result.categoryVerified)throw Error(result.message);

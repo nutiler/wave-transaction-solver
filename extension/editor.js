@@ -105,15 +105,20 @@ export async function editWaveTransaction(request, testContext) {
   const buttons = (dialog, names) => [...dialog.querySelectorAll('button,[role="button"]')].filter(el => {
     if (!visible(el)) return false;
     const clone = el.cloneNode(true); clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
-    return names.includes(tidy(clone.textContent || el.getAttribute('aria-label')).replace(/^[✓✔]\s*/, ''));
+    return names.includes((tidy(clone.textContent) || tidy(el.getAttribute('aria-label'))).replace(/^[✓✔]\s*/, ''));
   });
+  function reviewControls(dialog){
+    const boxes=[...dialog.querySelectorAll('input[type="checkbox"],[role="checkbox"]')].filter(el=>visible(el) && /^(Reviewed|Transaction reviewed)$/i.test(tidy(el.getAttribute('aria-label') || el.labels?.[0]?.textContent)));
+    const checked=el=>el.tagName==='INPUT'?el.checked:el.getAttribute('aria-checked')==='true'?true:el.getAttribute('aria-checked')==='false'?false:null;
+    if(boxes.some(el=>checked(el)===null))throw Error('Reviewed checkbox has no explicit state.');
+    return {mark:[...buttons(dialog,['Mark as reviewed','Mark reviewed']),...boxes.filter(el=>checked(el)===false)],confirmed:[...buttons(dialog,['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']),...boxes.filter(el=>checked(el)===true)]};
+  }
   function enabled(el) { return !el.disabled && el.getAttribute('aria-disabled') !== 'true'; }
   try {
     if (!request || !/^[0-9a-f-]{36}$/i.test(request.business || '') || !/^\d+$/.test(request.id || '') || !tidy(request.category) || !request.expected) throw new Error('Invalid edit request.');
     let dialog = assertFields(request.expected.category);
     if (buttons(dialog, ['Save']).length !== 1) throw new Error('Cannot identify one Save button.');
-    const review = buttons(dialog, ['Mark as reviewed', 'Mark reviewed']);
-    const alreadyReviewed = buttons(dialog, ['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
+    const {mark:review,confirmed:alreadyReviewed}=reviewControls(dialog);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
     reviewRequested = alreadyReviewed.length === 1;
     if (request.openTransferMenu) {
@@ -253,11 +258,11 @@ export async function editWaveTransaction(request, testContext) {
     }
     dialog = assertFields(request.category);
     stage = 'review';
-    let mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
+    let mark = reviewControls(dialog).mark;
     // Wave may keep Review disabled while the purchase is uncategorized or loading.
     for (let i = 0; mark.length === 1 && !enabled(mark[0]) && i < 15; i++) {
       await wait(100); dialog = assertFields(request.category);
-      mark = buttons(dialog, ['Mark as reviewed','Mark reviewed']);
+      mark = reviewControls(dialog).mark;
     }
     if (mark.length === 1 && enabled(mark[0])) {
       // Some Wave layouts use this as a save-and-review action.
@@ -273,6 +278,6 @@ export async function editWaveTransaction(request, testContext) {
     for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
     return { saveAttempted, reviewRequested, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    return { saveAttempted, stage, problem: error.message, selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+    return { saveAttempted, stage, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }

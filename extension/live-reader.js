@@ -85,13 +85,20 @@ export function readWavePage(testContext) {
   const buttonText = el => {
     const clone = el.cloneNode(true);
     clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
-    return tidy(clone.textContent || el.getAttribute('aria-label')).replace(/^[✓✔]\s*/, '');
+    return (tidy(clone.textContent) || tidy(el.getAttribute('aria-label'))).replace(/^[✓✔]\s*/, '');
   };
   result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(buttonText).filter(text => /^(Save|Cancel|Reviewed|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));
   // Do not infer reviewed status from the list filter, bold font or suggestion dots.
   // An action checkbox saying "Mark as reviewed" is not proof of saved state.
   const reviewed = [...root.querySelectorAll('[role="checkbox"],input[type="checkbox"]')].filter(el => visible(el) && /^(reviewed|transaction reviewed)$/i.test(tidy(el.getAttribute('aria-label') || el.labels?.[0]?.textContent)));
-  if (reviewed.length === 1) result.reviewed = (reviewed[0].checked ?? reviewed[0].getAttribute('aria-checked') === 'true') ? 'Reviewed' : 'Not reviewed';
+  if(reviewed.length===1){
+    const box=reviewed[0],checked=box.tagName==='INPUT'?box.checked:box.getAttribute('aria-checked')==='true'?true:box.getAttribute('aria-checked')==='false'?false:null;
+    result.reviewCheckbox={checked,disabled:!!box.disabled || box.getAttribute('aria-disabled')==='true'};
+    if(checked!==null)result.reviewed=checked?'Reviewed':'Not reviewed';else result.problems.push('Reviewed checkbox has no explicit state.');
+  }else if(reviewed.length>1)result.problems.push('Multiple reviewed checkboxes.');
+  result.reviewActions=[...root.querySelectorAll('button,[role="button"]')].filter(visible).map(el=>({name:buttonText(el),disabled:!!el.disabled || el.getAttribute('aria-disabled')==='true'})).filter(a=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(a.name));
+  result.reviewDiagnostics=[...root.querySelectorAll('button,[role="button"],[role="checkbox"],input[type="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,role:el.getAttribute('role'),name:buttonText(el),ariaLabel:el.getAttribute('aria-label'),checked:el.getAttribute('aria-checked'),disabled:!!el.disabled || el.getAttribute('aria-disabled')==='true',html:el.outerHTML.slice(0,1800)}));
+  if(true===result.reviewCheckbox?.checked && result.controls.some(text=>/^Mark (as )?reviewed$/i.test(text))){result.reviewed='Unknown';result.problems.push('Conflicting checkbox and reviewed-action indicators.');}
   const confirmations = result.controls.filter(text=>/^Reviewed$/i.test(text));
   if (confirmations.length === 1) {
     if (result.reviewed === 'Not reviewed' || result.controls.some(text=>/^Mark (as )?reviewed$/i.test(text))) {

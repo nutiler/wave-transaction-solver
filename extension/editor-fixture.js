@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
+function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -56,9 +56,12 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
     if (distractor) { const outside=document.createElement('button'); outside.textContent=request.category; outside.onclick=()=>{ selected='WRONG OUTSIDE MENU'; }; dialog.append(outside); }
 
   }
-  const mark = document.createElement('button'); mark.innerHTML = confirmedReviewed ? '<svg><title>checkmark icon</title></svg>Reviewed' : 'Mark as reviewed'; mark.disabled = reviewDisabled;
+  let mark = document.createElement('button'); mark.innerHTML = confirmedReviewed ? '<svg><title>checkmark icon</title></svg>Reviewed' : 'Mark as reviewed'; mark.disabled = reviewDisabled;
   mark.onclick = () => { reviewed = true; mark.textContent = 'Mark as unreviewed'; if(reviewSave) { saves++; dialog.hidden = true; } };
   const save = document.createElement('button'); save.textContent = 'Save'; save.onclick = () => { saves++; if(!validationError) dialog.hidden = true; };
+  if(checkboxReview!==null){mark=document.createElement('input');mark.type='checkbox';mark.setAttribute('aria-label','Transaction reviewed');mark.checked=checkboxReview;reviewed=checkboxReview;mark.onclick=()=>{reviewed=mark.checked;if(reviewSave){saves++;dialog.hidden=true;}};}
+  if(ariaReview){mark.setAttribute('aria-label','Mark as reviewed');mark.innerHTML='<svg><title>review icon</title></svg>   ';}
+  if(noReview){mark.textContent='Review updates';mark.onclick=()=>{reviewed=true;};}
   dialog.append(mark,save); mount.append(dialog);
   return { document, location: { href: 'https://next.waveapps.com/' + business + '/transactions/' + id }, getComputedStyle, wait: async () => {}, state: () => ({ selected, reviewed, saves }) };
 }
@@ -101,5 +104,9 @@ document.getElementById('run').onclick = async () => {
   await check('Disabled review-only control cannot issue Save',{reviewDisabled:true},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,{...request,category:expected.category,reviewOnly:true});
   await check('Open-menu mode never selects a match or saves',transferFixture,(r,s)=>r.menuOpened && !r.saveAttempted && !s.reviewed && s.saves===0 && s.selected===expected.category,{...request,category:expected.category,openTransferMenu:true});
   await check('Automatic mode opens the category and transfer submenu without editing',{...transferFixture,transferMenu:{label:transfer.label,closed:true}},(r,s)=>r.menuOpened && !r.saveAttempted && s.saves===0 && s.selected===expected.category,{...request,category:expected.category,openTransferMenu:true});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 29 editor checks passed';
+  await check('Explicit unchecked reviewed checkbox can be marked and saved', {checkboxReview:false},(r,s)=>!r.problem && s.reviewed && s.saves===1,{...request,category:expected.category,reviewOnly:true});
+  await check('Checked reviewed checkbox is preserved without clicking Save',{checkboxReview:true},(r,s)=>!r.problem && !r.saveAttempted && s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  await check('Icon-only review button uses its exact accessible label',{ariaReview:true},(r,s)=>!r.problem && s.reviewed && s.saves===1,{...request,category:expected.category,reviewOnly:true});
+  await check('Review updates is never mistaken for mark reviewed',{noReview:true},(r,s)=>!!r.problem && r.stage==='preflight' && !r.saveAttempted && !s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 33 editor checks passed';
 };
