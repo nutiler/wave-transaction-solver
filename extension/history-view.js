@@ -1,3 +1,4 @@
+import {activity,paintActivity} from './activity.js';
 import {historySuggestions,acceptHistoryRules} from './history.js';
 const make=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
 const money=c=>'$'+(c/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -26,6 +27,6 @@ export function installHistoryReview({getState,accept,prepare}) {
     wrap.scrollTop=scroll;more.hidden=matches.length<=limit;update();
   }
   select.onclick=()=>{for(const g of visible)if(chosen.get(g.id))selected.add(g.id);refresh();};clear.onclick=()=>{selected.clear();refresh();};more.onclick=()=>{limit+=40;refresh();};filter.onchange=()=>{limit=40;refresh();};$('historySearch').oninput=()=>{limit=40;refresh();};
-  add.onclick=async()=>{if(busy)return;busy=true;status.textContent='Saving selected rules…';refresh();try{const s=getState();const result=acceptHistoryRules(items,[...selected].map(id=>({id,category:chosen.get(id)})),s.rules,{business:s.business,categories:s.categories,transactions:s.dataset.transactions});await accept(result.rules);selected.clear();status.textContent=result.added.length+' rules added to Current rules in one save. Nothing changed in Wave.';}catch(e){status.textContent='Nothing added: '+e.message;}finally{busy=false;cache=null;refresh();}};
+  add.onclick=async()=>{if(busy)return;busy=true;const task=activity.begin('Adding selected history rules');await paintActivity();status.textContent='Saving selected rules…';refresh();try{const s=getState();const result=acceptHistoryRules(items,[...selected].map(id=>({id,category:chosen.get(id)})),s.rules,{business:s.business,categories:s.categories,transactions:s.dataset.transactions});await accept(result.rules);selected.clear();status.textContent=result.added.length+' rules added to Current rules in one save. Nothing changed in Wave.';}catch(e){status.textContent='Nothing added: '+e.message;}finally{busy=false;cache=null;try{refresh();}finally{task.finish();}}};
   return {render:refresh};
 }

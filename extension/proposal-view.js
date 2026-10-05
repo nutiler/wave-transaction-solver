@@ -1,3 +1,4 @@
+import {activity,paintActivity,withActivity} from './activity.js';
 import {showUsageSection} from './workspace-ui.js';
 import { workingQueue } from './workflow.js';
 import { sourceHash, validateRulePack, acceptProposals, ruleCoverage } from './rule-pack.js';
@@ -25,7 +26,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     if(busy || !ids.length)return;
     nextId ||= visible.find(p=>!ids.includes(p.id) && p.tier!=='existing_approved' && getState().decisions?.[p.id]!=='rejected')?.id;
     const initial=getState(),pack=initial.pack,position={left:window.scrollX,top:window.scrollY,behavior:'instant'},panelScroll=$('proposalRows').scrollTop;
-    busy=true;updateSelection();status('Checking '+ids.length+' selected proposal(s)…');
+    busy=true;updateSelection();const task=activity.begin('Approving selected merchant rules');await paintActivity();status('Checking '+ids.length+' selected proposal(s)…');
     try{
       await check(pack);const live=getState();
       if(live.pack!==pack || live.csvText!==initial.csvText || live.business!==initial.business)throw Error('Session changed. Review the current pack before accepting.');
@@ -35,7 +36,7 @@ export function installProposalReview({ getState, categories, imported, accepted
       for(const id of ids){selected.delete(id);drafts.delete(id);}
       await render(nextId);
       requestAnimationFrame(()=>{const panel=$('proposalRows'),card=[...panel.querySelectorAll('.proposal-card')].find(c=>c.dataset.proposalId===nextId);if(card){panel.scrollTop+=card.getBoundingClientRect().top-panel.getBoundingClientRect().top;card.querySelector('summary').focus({preventScroll:true});}else panel.scrollTop=panelScroll;window.scrollTo(position);});
-    }catch(e){status(e.message);}finally{busy=false;updateSelection();}
+    }catch(e){status(e.message);}finally{busy=false;updateSelection();task.finish();}
   }
   const status=message=>$('proposalStatus').textContent=message;
   async function check(pack) {
@@ -47,7 +48,8 @@ export function installProposalReview({ getState, categories, imported, accepted
     if(s.csvText!==current.csvText || s.business!==current.business)throw Error('Session changed while checking the proposal pack.');
     return validateRulePack(pack,{business:s.business,hash,categories:categories()});
   }
-  async function render(openId = null) {
+  function render(openId=null){return withActivity('Preparing rule proposals',()=>renderContent(openId),{priority:-10});}
+  async function renderContent(openId = null) {
     const current=++generation,s=getState(),pack=s.pack;
     if(selectionPack!==pack || selectionCsv!==s.csvText || selectionBusiness!==s.business){selected.clear();drafts.clear();selectionPack=pack;selectionCsv=s.csvText;selectionBusiness=s.business;}
     visible=[];packValid=false;updateSelection();
@@ -119,7 +121,7 @@ export function installProposalReview({ getState, categories, imported, accepted
         const no=make('button','Reject proposal');no.className='secondary';
         if(p.tier==='needs_judgment')bar.append(make('p','Needs your judgment: Accept rule approves this category for the displayed scope.'));
         no.disabled=decisions[p.id]==='rejected' || decisions[p.id]==='accepted';
-        no.onclick=async()=>{if(busy)return;try{await check(pack);if(getState().pack!==pack)throw Error('Proposal pack changed.');await rejected({...getState().decisions,[p.id]:'rejected'});selected.delete(p.id);await render();}catch(e){status(e.message);}};
+        no.onclick=async()=>{if(busy)return;const task=activity.begin('Rejecting rule proposal');await paintActivity();try{await check(pack);if(getState().pack!==pack)throw Error('Proposal pack changed.');await rejected({...getState().decisions,[p.id]:'rejected'});selected.delete(p.id);await render();}catch(e){status(e.message);}finally{task.finish();}};
         bar.append(no);
         if(decisions[p.id]==='accepted')bar.append(make('p','Approved locally. Remove this rule in Merchant rules to disable it.'));
       }
@@ -130,7 +132,7 @@ export function installProposalReview({ getState, categories, imported, accepted
     }
     updateSelection();
   }
-  $('proposalFile').onchange=async()=>{try{const file=$('proposalFile').files[0];if(!file)return;if(file.size>12*1024*1024)throw Error('Choose a proposal JSON under 12 MB.');const pack=JSON.parse(await file.text());await check(pack);await imported(pack,file.name);await render();}catch(e){status(e.message);}};
+  $('proposalFile').onchange=async()=>{const task=activity.begin('Loading rule proposal pack');await paintActivity();try{const file=$('proposalFile').files[0];if(!file)return;if(file.size>12*1024*1024)throw Error('Choose a proposal JSON under 12 MB.');const pack=JSON.parse(await file.text());await check(pack);await imported(pack,file.name);await render();}catch(e){status(e.message);}finally{task.finish();}};
   $('proposalSearch').oninput=()=>void render();$('proposalFilter').onchange=()=>void render();
   return {render};
 }

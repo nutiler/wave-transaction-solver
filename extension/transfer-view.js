@@ -1,3 +1,4 @@
+import {activity,paintActivity} from './activity.js';
 import {debugSlot,debugLink} from './workspace-ui.js';
 import { checkTransferMenu } from './transfer-menu.js';
 import { transferPairs,checkTransferRecords } from './transfers.js';
@@ -25,7 +26,7 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
   const update=()=>{const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));count.textContent=chosen.length+' selected · '+money(chosen.reduce((sum,p)=>sum+p.out.amount,0));runSelected.disabled=!s.extensionMode || s.sample || !s.business || !chosen.length;};
   selectAll.onclick=()=>{for(const p of matches)if(eligible(p))selected.add(p.key);render();};clear.onclick=()=>{selected.clear();render();};
   runSelected.onclick=async()=>{
-   const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));running=true;stop=false;
+   const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));running=true;stop=false;const task=activity.begin('Running selected transfers',{total:chosen.length,priority:10});await paintActivity();
    const panel=make('div');panel.className='transfer-run-progress';panel.setAttribute('role','status');
    const progress=make('p'),pause=make('button','Stop after current pair');pause.onclick=()=>{stop=true;pause.disabled=true;};panel.append(progress,pause);document.body.append(panel);
    let done=0,skipped=0,attention=0,activePair=null;
@@ -33,13 +34,13 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
     if(stop)break;
     if(getState().dataset!==s.dataset || getState().business!==s.business || getState().workFrom!==s.workFrom)throw Error('Session changed. Run stopped.');
     progress.textContent='Pair '+(done+skipped+attention+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
-    activePair=p;
+    activePair=p;task.update({completed:done+skipped+attention,detail:p.out.primary.account+' → '+p.in.primary.account});
     const result=await applyTransfer(p,'auto');
-    if(result?.needsAttention){attention++;selected.delete(p.key);continue;}
+    if(result?.needsAttention){attention++;selected.delete(p.key);task.update({completed:done+skipped+attention});continue;}
     if(!result?.reviewed)throw Error(result?.message || 'Pair could not be completed.');
-    selected.delete(p.key);if(result.skipped)skipped++;else done++;
+    selected.delete(p.key);if(result.skipped)skipped++;else done++;task.update({completed:done+skipped+attention});
    }batchMessage=done+' pairs completed and reviewed; '+skipped+' already completed pairs skipped; '+attention+' need attention, of '+chosen.length+' selected.'+(stop?' Stopped after the current pair.':'');
-   }catch(e){batchMessage=done+' pairs completed; '+skipped+' already completed pairs skipped; '+attention+' need attention. Run stopped'+(activePair?' at '+money(activePair.out.amount)+' · '+activePair.out.date+' · '+activePair.out.primary.account+' · ID '+activePair.out.id:'')+': '+e.message;}finally{running=false;panel.remove();render();}
+   }catch(e){batchMessage=done+' pairs completed; '+skipped+' already completed pairs skipped; '+attention+' need attention. Run stopped'+(activePair?' at '+money(activePair.out.amount)+' · '+activePair.out.date+' · '+activePair.out.primary.account+' · ID '+activePair.out.id:'')+': '+e.message;}finally{running=false;panel.remove();try{render();}finally{task.finish(batchMessage);}}
   };
   update();batch.append(selectAll,clear,runSelected,count);$('transferRows').append(batch,status);
   const needsAttention=pairs.filter(p=>receipt?.(p)?.stage==='preflight');
@@ -56,11 +57,11 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
    table.append(body);card.append(table,make('p',pair.out.reason));
    const actions=make('div');actions.className='bar';
    const liveResults=make('div');const check=make('button','Check both sides in Wave');check.disabled=!s.extensionMode || s.sample || !s.business;
-   check.onclick=async()=>{const token=++generation;check.disabled=true;liveResults.replaceChildren();const result=make('p','Checking both existing records in background tabs…');liveResults.append(result);try{
+   check.onclick=async()=>{const task=activity.begin('Checking both transfer records');await paintActivity();const token=++generation;check.disabled=true;liveResults.replaceChildren();const result=make('p','Checking both existing records in background tabs…');liveResults.append(result);try{
     const current=()=>generation===token && getState().dataset===s.dataset && getState().business===s.business && getState().workFrom===s.workFrom;
     const verified=await checkTransferRecords(pair,s.business,read,current);if(!verified){result.textContent='Check cancelled because the review context changed. Run it again when ready.';return;}checks.set(pair.key,verified);$('transferStatus').textContent=$('transferStatus').textContent.replace(/\d+ checked this session/,checks.size+' checked this session');result.textContent=verified.message;
     for(const side of verified.sides){const d=make('details');d.append(make('summary',(side.id===pair.out.id?'Money out':'Money in')+': '+(side.matches?'Fields match':'Inspect changes')+' · Reviewed: '+side.reviewed));const ul=make('ul');for(const c of side.checks)ul.append(make('li',c.field+': '+c.state+' · Export: '+c.exported+' · Live: '+c.live));for(const problem of side.problems)ul.append(make('li',problem));d.append(ul);liveResults.append(d);}
-   }catch(e){result.textContent=e.message;}finally{check.disabled=false;}};
+   }catch(e){result.textContent=e.message;}finally{check.disabled=false;task.finish();}};
    actions.append(check);
    for(const [label,t] of [['Inspect money out',pair.out],['Inspect money in',pair.in]]){const b=make('button',label);b.className='secondary';b.onclick=()=>inspect(t);actions.append(b);}
    card.append(actions,liveResults);

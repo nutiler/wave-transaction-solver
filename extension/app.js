@@ -1,3 +1,4 @@
+import {activity,paintActivity,withActivity} from './activity.js';
 import {suggestionCandidates,waveSuggestionAction,installSuggestionReview} from './suggestions.js';
 import {installWorkspace,showUsageSection} from './workspace-ui.js';
 import {installLiveList,liveMerchantAudit} from './list-view.js';
@@ -16,6 +17,11 @@ import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession } from './session.js';
 import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
+const startupActivity=activity.begin('Loading your saved solver session',{priority:20});
+document.querySelector('main').inert=true;
+let startupPending=true;
+window.addEventListener('unhandledrejection',()=>{if(startupPending){startupPending=false;startupActivity.finish('Loading stopped. Check the error below or reload.');document.querySelector('main').inert=false;}},{once:true});
+await paintActivity();
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -132,7 +138,9 @@ async function refreshTabs() {
   if (business) { const option = [...$('waveTabs').options].find(o => o.dataset.business === business); if (option) $('waveTabs').value = option.value; }
 }
 const handle = (fn, statusId) => async event => {
-  try { error(); await fn(event); }
+  if(event?.type==='submit')event.preventDefault();
+  const label=event?.currentTarget?.id==='file'?'Importing and analyzing accounting history':event?.currentTarget?.textContent?.trim().slice(0,90) || 'Updating solver';
+  try { error(); await withActivity(label,()=>fn(event)); }
   catch (e) {
     const message = e.message || String(e);
     error(message);
@@ -545,11 +553,11 @@ async function captureTransferMenu(t){
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
-const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
+const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:(...args)=>withActivity('Checking and saving expense',()=>runExpenseBatch(...args)),inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
 const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();workspace?.refresh();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();workspace?.refresh();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 liveListReport=listReview.report;
-suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:runWaveSuggestion,recheck:t=>runWaveSuggestion(t,'recheck'),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
-const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
+suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:(...args)=>withActivity('Confirming Wave suggestion',()=>runWaveSuggestion(...args)),recheck:t=>withActivity('Rechecking saved suggestion',()=>runWaveSuggestion(t,'recheck')),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:(...args)=>withActivity('Reading transfer menu',()=>captureTransferMenu(...args)),applyTransfer:(...args)=>withActivity('Checking and saving transfer',()=>runTransfer(...args)),receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,queue,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
@@ -561,9 +569,14 @@ workspace=installWorkspace({getState:()=>({business,dataset,report:liveListRepor
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
-await refreshTabs();
-await proposalReview.render();transferReview.render();
-updateSteps();
+try {
+ await refreshTabs();
+ startupActivity.update({detail:'Preparing rules and transaction lists'});
+ await paintActivity();
+ await listReview.ready;
+ await proposalReview.render();transferReview.render();
+ updateSteps();
+} finally {startupPending=false;startupActivity.finish();document.querySelector('main').inert=false;}
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for(const id of ['liveList','waveSuggestions','expenseBatch'])$(id).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);

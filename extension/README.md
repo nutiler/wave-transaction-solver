@@ -281,3 +281,5 @@ Rule approvals stay explicit. Current rules retain their own panel; **Add or edi
 Debug tools stay separate and preserve the current Usage stage when you return. The fictional workspace fixture checks stage navigation, deep links and desktop/mobile overflow without touching Wave.
 
 Each stage uses one expanded working panel at a time. Saved panel choices restore with the saved stage, and choosing a business opens the CSV importer when that is the next missing setup requirement. Existing captures offer **Refresh Not Reviewed transactions** so it is clear that you are checking Wave again.
+
+The persistent activity bar shows Loading/Working while the solver restores, analyzes, collects, checks or saves. Known batch totals show actual processed counts; work without a total uses a moving bar. Ready means the interface is available, not that bookkeeping is complete. Existing Stop controls end a run after its current record.

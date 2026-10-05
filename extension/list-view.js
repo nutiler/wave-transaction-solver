@@ -1,3 +1,4 @@
+import {activity,paintActivity} from './activity.js';
 import {debugSlot,debugLink,showWorkspace,showUsageSection} from './workspace-ui.js';
 import {matchingRules,matchesDescription,nonPurchaseReason} from './rules.js';
 import {expenseCandidates} from './expense-batch.js';
@@ -58,33 +59,33 @@ export function installLiveList({getState,onRunning,onScope,refreshExpenses,refr
   if(r.problems?.length){const d=make('details');d.append(make('summary','Collection diagnostics'),make('pre',JSON.stringify({status:r.status,filterChipObserved:r.filterChipObserved,expectedTotal:r.expectedTotal,problems:r.problems,rowDiagnostics:r.rowDiagnostics,tableDiagnostics:r.tableDiagnostics,countDiagnostics:r.countDiagnostics,totalEvidence:r.totalEvidence,loadMoreClicks:r.loadMoreClicks},null,2)));debugResults.append(d);}
  }
  prepare.onclick=async()=>{
-  if(busy || checkingRules || getState().busy)return;checkingRules=true;render();
+  if(busy || checkingRules || getState().busy)return;checkingRules=true;const task=activity.begin('Preparing known expenses');await paintActivity();render();
   try{
    await refreshRules?.();const s=getState(),r=selectedReport(),audit=liveMerchantAudit(r,s.rules,s.dataset?.transactions,s.queue,s.business,s.workFrom);
    const ids=new Set(audit.rows.filter(row=>row.state==='known').map(row=>row.id));if(!ids.size)throw Error('No approved-rule expenses are ready. Check the rule results.');
    scopes[s.business]=true;applyScope();await persist();view.value='all';ruleView.value='known';limit=100;refreshExpenses();
    ruleNotice.textContent=ids.size+' known expenses prepared. Review the selection below, then click Run selected expenses. Nothing applied yet.';
    showWorkspace('usage');if(showExpenses)showExpenses(ids);
-  }catch(e){ruleNotice.textContent=e.message;}finally{checkingRules=false;render();}
+  }catch(e){ruleNotice.textContent=e.message;}finally{checkingRules=false;render();task.finish();}
  };
  const persist=async()=>{if(getState().extensionMode)await chrome.storage.local.set({solverLiveLists:reports,solverLiveListScopes:scopes});};
  scope.onchange=async()=>{scopes[getState().business]=scope.checked;applyScope();await persist();refreshExpenses();};view.onchange=ruleView.onchange=()=>{limit=100;render();};
- checkRules.onclick=async()=>{checkingRules=true;render();try{await refreshRules?.();refreshExpenses();ruleNotice.textContent='Saved merchant rules reloaded and checked against the scanned list.';}catch(e){ruleNotice.textContent=e.message;}finally{checkingRules=false;render();}};
+ checkRules.onclick=async()=>{checkingRules=true;const task=activity.begin('Checking merchant rules against live transactions');await paintActivity();render();try{await refreshRules?.();refreshExpenses();ruleNotice.textContent='Saved merchant rules reloaded and checked against the scanned list.';}catch(e){ruleNotice.textContent=e.message;}finally{checkingRules=false;render();task.finish();}};
  copyRules.onclick=async()=>{const s=getState();try{await navigator.clipboard.writeText(JSON.stringify({audit:liveMerchantAudit(selectedReport(),s.rules,s.dataset?.transactions,s.queue,s.business,s.workFrom),rules:s.rules},null,2));copyRules.textContent='Copied';}catch{status.textContent='Clipboard unavailable.';}};
  copy.onclick=async()=>{const r=selectedReport();try{await navigator.clipboard.writeText(JSON.stringify({...r,records:undefined},null,2));copy.textContent='Copied';}catch{status.textContent='Clipboard unavailable. Download the collected list to retain diagnostics.';}};
  download.onclick=()=>{const blob=new Blob([JSON.stringify(selectedReport(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=make('a');a.href=url;a.download='wave-live-not-reviewed.local.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
  stop.onclick=async()=>{stop.disabled=true;if(tabId!==null)await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'stop'}]});};
- start.onclick=async()=>{const s=getState(),business=s.business;if(busy || s.busy || !business)return;busy=true;onRunning(true);render();let report=null;
+ start.onclick=async()=>{const s=getState(),business=s.business;if(busy || s.busy || !business)return;busy=true;const task=activity.begin('Collecting Not Reviewed transactions',{priority:10});await paintActivity();onRunning(true);render();let report=null;
   try{
    const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+business+'/transactions?status=NOT_VERIFIED',tabId);tabId=tab.id;
    for(let i=0;i<30;i++){const current=await chrome.tabs.get(tabId);if(current.status==='complete' && current.url==='https://next.waveapps.com/'+business+'/transactions?status=NOT_VERIFIED' && !current.pendingUrl)break;await new Promise(resolve=>setTimeout(resolve,500));}
    if(getState().business!==business)throw Error('Business changed. Collection cancelled.');
    const known=(s.dataset?.transactions || []).filter(t=>t.primary).map(t=>({id:t.id,date:t.date,description:t.description,account:t.primary.account,amountCents:t.amount}));
    report=(await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'start',business,known}]}))[0]?.result;if(!report)throw Error('No list collection response.');
-   while(report.running){reports[business]=report;render();await new Promise(resolve=>setTimeout(resolve,1400));if(getState().business!==business)await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'stop'}]});report=(await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'poll'}]}))[0]?.result;if(!report)throw Error('The collection tab was closed or reloaded. Partial results retained.');}
+   while(report.running){task.update({detail:(report.records?.length || 0)+' transactions read · '+(report.loadMoreClicks || 0)+' pages loaded',completed:report.records?.length || 0,total:report.expectedTotal});reports[business]=report;render();await new Promise(resolve=>setTimeout(resolve,1400));if(getState().business!==business)await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'stop'}]});report=(await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'poll'}]}))[0]?.result;if(!report)throw Error('The collection tab was closed or reloaded. Partial results retained.');}
    reports[business]=report;if(report.completeness==='count-confirmed')scopes[business]=true;await persist();
   }catch(e){if(report){report={...report,running:false,status:'Collection interrupted: '+e.message,completeness:'unconfirmed'};reports[business]=report;await persist();}else status.textContent=e.message;}
-  finally{busy=false;onRunning(false);if(report)render();else{start.disabled=false;stop.disabled=true;stop.hidden=true;}refreshExpenses();}
+  finally{busy=false;onRunning(false);if(report)render();else{start.disabled=false;stop.disabled=true;stop.hidden=true;}try{refreshExpenses();}finally{task.finish(report?.completeness==='count-confirmed'?'Live collection ready.':'Collection stopped; check its completion status.');}}
  };
  const ready=(async()=>{if(getState().extensionMode){const stored=await chrome.storage.local.get(['solverLiveLists','solverLiveListScopes']);reports=stored.solverLiveLists || {};scopes=stored.solverLiveListScopes || {};}render();refreshExpenses();})();
  return {render,ready,report:selectedReport,tab:()=>tabId,collect:async()=>{showUsageSection('liveList');fold.open=true;await start.onclick();}};
