@@ -116,6 +116,33 @@ export async function editWaveTransaction(request, testContext) {
     const alreadyReviewed = buttons(dialog, ['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
     reviewRequested = alreadyReviewed.length === 1;
+    if (request.openTransferMenu) {
+      stage='open transfer menu';
+      const category=control(dialog,'Category');
+      const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
+      const scopes=()=>[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(visible);
+      const isOpen=()=>scopes().some(el=>clean(el).includes('Select Account with Matching Transaction'));
+      if(!isOpen()){
+        if(!scopes().length){const toggles=[...category.querySelectorAll('.wv-select__toggle')].filter(visible);if(toggles.length!==1 || !enabled(toggles[0]))throw Error('Cannot identify the category toggle.');assertFields(request.expected.category);toggles[0].click();}
+        let branches=[];
+        for(let i=0;i<20;i++){
+          assertFields(request.expected.category);
+          const candidates=new Set(scopes().flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el) && clean(el)==='Transfer to Bank, Credit Card, or Loan'));
+          branches=[...candidates].filter(el=>![...candidates].some(other=>other!==el && el.contains(other)));
+          if(branches.length)break;await wait(100);
+        }
+        if(branches.length!==1 || !enabled(branches[0]))throw Error('Cannot identify one transfer submenu.');
+        assertFields(request.expected.category);branches[0].click();
+        for(let i=0;i<20 && !isOpen();i++){assertFields(request.expected.category);await wait(100);}
+      }
+      assertFields(request.expected.category);
+      if(!isOpen())throw Error('The matching-transaction submenu did not open.');
+      return {saveAttempted:false,stage,menuOpened:true};
+    }
+    if(request.reviewOnly){
+      if(tidy(request.expected.category)!==tidy(request.category))throw Error('Review-only requests cannot change the category.');
+      if(alreadyReviewed.length===1)return {saveAttempted:false,reviewRequested:true,stage:'already reviewed'};
+    }
     if (request.transfer) {
       stage = 'existing transfer selection';
       const t=request.transfer;
@@ -238,6 +265,7 @@ export async function editWaveTransaction(request, testContext) {
       for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
       dialog = assertFields(request.category);
     }
+    if(request.reviewOnly && !reviewRequested)throw Error('The review control is unavailable. No Save was clicked.');
     stage = 'save';
     const save = buttons(dialog, ['Save']);
     if (save.length !== 1 || !enabled(save[0])) throw new Error('Save is unavailable. Check the Wave dialog before continuing.');

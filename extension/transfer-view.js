@@ -2,19 +2,49 @@ import { checkTransferMenu } from './transfer-menu.js';
 import { transferPairs,checkTransferRecords } from './transfers.js';
 export function installTransferReview({getState,read,inspect,openMenuRecord,captureMenu,applyTransfer,receipt}){
  const $=id=>document.getElementById(id),make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
- let context=null,checks=new Map(),menus=new Map(),generation=0,limit=100;
+ let selected=new Set(),running=false,stop=false,batchMessage="",context=null,checks=new Map(),menus=new Map(),generation=0,limit=100;
  const money=c=>'$'+(c/100).toFixed(2);
  function render(){
+  if(running)return;
   generation++;const s=getState(),key=[s.dataset,s.business,s.workFrom];
-  if(!context || key.some((v,i)=>v!==context[i])){context=key;checks.clear();menus.clear();generation++;limit=100;}
+  if(!context || key.some((v,i)=>v!==context[i])){context=key;checks.clear();menus.clear();selected.clear();batchMessage="";generation++;limit=100;}
   const pairs=transferPairs(s.queue),query=$('transferSearch').value.toLowerCase();
-  const matches=pairs.filter(p=>(p.out.description+' '+p.in.description+' '+p.out.primary.account+' '+p.in.primary.account+' '+p.out.date+' '+p.in.date+' '+money(p.out.amount)).toLowerCase().includes(query));
+  const completed=pairs.filter(p=>receipt?.(p)?.reviewed),pending=pairs.filter(p=>!receipt?.(p)?.reviewed);
+  const matches=pending.filter(p=>(p.out.description+' '+p.in.description+' '+p.out.primary.account+' '+p.in.primary.account+' '+p.out.date+' '+p.in.date+' '+money(p.out.amount)).toLowerCase().includes(query));
   const ambiguous=s.queue.filter(t=>t.kind==='Ambiguous transfer');
-  $('transferStatus').textContent=pairs.length+' unique candidate pairs; '+checks.size+' checked this session, from '+s.workFrom+'. '+ambiguous.length+' ambiguous transactions. Showing '+Math.min(limit,matches.length)+' of '+matches.length+' matching pairs. Full-history matches are not proof of a live transfer or reviewed status.';
+  $('transferStatus').textContent=pending.length+' pending candidate pairs; '+completed.length+' completed; '+checks.size+' checked this session, from '+s.workFrom+'. '+ambiguous.length+' ambiguous transactions. Showing '+Math.min(limit,matches.length)+' of '+matches.length+' matching pairs. Full-history matches are not proof of a live transfer or reviewed status.';
   $('transferRows').replaceChildren();
+  const batch=make('div');batch.className='bar';
+  const selectAll=make('button','Select matching pairs'),clear=make('button','Clear selection'),runSelected=make('button','Run selected transfers');
+  selectAll.className=clear.className='secondary';
+  const count=make('span'),status=make('p',batchMessage);status.setAttribute('role','status');
+  const eligible=p=>!receipt?.(p)?.saveAttempted || (receipt(p).verified && !Object.values(receipt(p).reviewAttempts || {}).some(a=>a.attempted));
+  for(const p of matches)if(!eligible(p))selected.delete(p.key);
+  const update=()=>{const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));count.textContent=chosen.length+' selected · '+money(chosen.reduce((sum,p)=>sum+p.out.amount,0));runSelected.disabled=!s.extensionMode || s.sample || !s.business || !chosen.length;};
+  selectAll.onclick=()=>{for(const p of matches)if(eligible(p))selected.add(p.key);render();};clear.onclick=()=>{selected.clear();render();};
+  runSelected.onclick=async()=>{
+   const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));running=true;stop=false;
+   const panel=make('div');panel.className='transfer-run-progress';panel.setAttribute('role','status');
+   const progress=make('p'),pause=make('button','Stop after current pair');pause.onclick=()=>{stop=true;pause.disabled=true;};panel.append(progress,pause);document.body.append(panel);
+   let done=0;
+   try{for(const p of chosen){
+    if(stop)break;
+    if(getState().dataset!==s.dataset || getState().business!==s.business || getState().workFrom!==s.workFrom)throw Error('Session changed. Run stopped.');
+    progress.textContent='Pair '+(done+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
+    const result=await applyTransfer(p,'auto');
+    if(!result?.reviewed)throw Error(result?.message || 'Pair could not be completed.');
+    selected.delete(p.key);done++;
+   }batchMessage=done+' of '+chosen.length+' selected pairs completed and reviewed.'+(stop?' Stopped after the current pair.':'');
+   }catch(e){batchMessage=done+' pairs completed. Run stopped: '+e.message;}finally{running=false;panel.remove();render();}
+  };
+  update();batch.append(selectAll,clear,runSelected,count);$('transferRows').append(batch,status);
+  if(completed.length){const d=make('details');d.append(make('summary',completed.length+' completed transfer pairs'));for(const p of completed){const item=make('details');item.append(make('summary',money(p.out.amount)+' · '+p.out.primary.account+' → '+p.in.primary.account+' · Saved and reviewed'),make('pre',JSON.stringify(receipt(p),null,2)));d.append(item);}$('transferRows').append(d);}
+
   if(!matches.length)$('transferRows').append(make('p','No unique transfer pairs in this view.'));
   for(const pair of matches.slice(0,limit)){
    const card=make('details');card.className='transfer-card';card.append(make('summary',money(pair.out.amount)+' · '+pair.out.primary.account+' → '+pair.in.primary.account));
+   const choose=make('input');choose.type='checkbox';choose.checked=selected.has(pair.key);choose.disabled=!eligible(pair);choose.setAttribute('aria-label','Select transfer '+money(pair.out.amount)+' '+pair.out.primary.account+' to '+pair.in.primary.account);choose.onchange=()=>{if(choose.checked)selected.add(pair.key);else selected.delete(pair.key);update();};
+   const choice=make('label',' Include in automatic run ');choice.prepend(choose);card.append(choice);
    const table=make('table'),body=make('tbody');
    for(const [label,t] of [['Money out',pair.out],['Money in',pair.in]]){const tr=make('tr');tr.append(make('th',label),make('td',t.date+' · '+t.primary.account),make('td',t.description),make('td',money(t.amount)));body.append(tr);}
    table.append(body);card.append(table,make('p',pair.out.reason));

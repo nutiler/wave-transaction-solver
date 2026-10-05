@@ -51,7 +51,7 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
       if(!transferMenu.createOnly){const heading=document.createElement('div');heading.textContent='Select Account with Matching Transaction';list.append(heading);}
       const appendOption=()=>{const option=document.createElement('div');option.className='wv-select__menu__option';option.setAttribute('role','menuitemradio');option.textContent=transferMenu.label;if(transferMenu.wrongId)option.dataset.transactionId='1000000000000000003';if(transferMenu.disabled)option.setAttribute('aria-disabled','true');option.onclick=()=>{label.textContent=targetCategory;selected=targetCategory;list.remove();};list.append(option);};
       if(!transferMenu.createOnly){appendOption();if(duplicate)appendOption();}
-      const create=document.createElement('div');create.textContent='Select Account to Create Transfer';list.append(create);appendOption();mount.append(list);
+      const create=document.createElement('div');create.textContent='Select Account to Create Transfer';list.append(create);appendOption();if(transferMenu.closed){const first=document.createElement("div");first.className="wv-select__menu__options";const branch=document.createElement("div");branch.textContent="Transfer to Bank, Credit Card, or Loan";branch.onclick=()=>{first.remove();mount.append(list);};first.append(branch);const toggle=control.querySelector(".wv-select__toggle") || control;toggle.onclick=()=>mount.append(first);}else mount.append(list);
     }
     if (distractor) { const outside=document.createElement('button'); outside.textContent=request.category; outside.onclick=()=>{ selected='WRONG OUTSIDE MENU'; }; dialog.append(outside); }
 
@@ -96,5 +96,10 @@ document.getElementById('run').onclick = async () => {
   await check('Transfer review action that saves never issues a second Save',{...transferFixture,reviewSave:true},(r,s)=>!r.problem && r.saveAttempted && s.reviewed && s.saves===1,transferRequest);
   await check('Full transfer label with expected counterpart date and description is confirmed',{...transferFixture,targetCategory:transfer.label},(r,s)=>!r.problem && s.reviewed && s.saves===1 && s.selected===transfer.label,transferRequest);
   await check('Full transfer label with the wrong counterpart date remains locked',{...transferFixture,targetCategory:transfer.label.replace('Sep 19','Sep 18')},(r,s)=>!!r.problem && r.saveAttempted && s.saves===0,transferRequest);
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 24 editor checks passed';
+  await check('Review-only saves the same category and confirms review',{},(r,s)=>!r.problem && s.reviewed && s.saves===1 && s.selected===expected.category,{...request,category:expected.category,reviewOnly:true});
+  await check('Review-only skips an already-reviewed record',{confirmedReviewed:true},(r,s)=>!r.problem && !r.saveAttempted && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  await check('Disabled review-only control cannot issue Save',{reviewDisabled:true},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  await check('Open-menu mode never selects a match or saves',transferFixture,(r,s)=>r.menuOpened && !r.saveAttempted && !s.reviewed && s.saves===0 && s.selected===expected.category,{...request,category:expected.category,openTransferMenu:true});
+  await check('Automatic mode opens the category and transfer submenu without editing',{...transferFixture,transferMenu:{label:transfer.label,closed:true}},(r,s)=>r.menuOpened && !r.saveAttempted && s.saves===0 && s.selected===expected.category,{...request,category:expected.category,openTransferMenu:true});
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 29 editor checks passed';
 };

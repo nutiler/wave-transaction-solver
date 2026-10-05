@@ -29,3 +29,11 @@ document.getElementById('seedIntegration').onclick=async()=>{state.decisions={};
 document.getElementById('stalePack').onclick=async()=>{state.csvText+='\n';await view.render();};
 document.getElementById('restorePack').onclick=async()=>{state.csvText=csvText;await view.render();};
 document.getElementById('seedFile').onclick=async()=>{const file=new File([JSON.stringify(pack)],'synthetic-proposals.json',{type:'application/json'}),transfer=new DataTransfer();transfer.items.add(file);const input=document.getElementById('proposalFile');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));};
+
+const seedBatch=document.createElement('button');seedBatch.textContent='Seed two fictional transfer pairs';seedBatch.onclick=async()=>{
+ const extra=[];
+ for(const [id,account,accountId,desc,direction,category] of [['1000000000000000009','Fictional Checking','fictional-bank','Card payment','out','Uncategorized Expense'],['1000000000000000010','Fictional Credit Card','fictional-card','Payment thank you','in','Uncategorized Income']]){
+ extra.push([id,'2026-10-01',account,desc,direction==='in'?'87.00':'',direction==='out'?'87.00':'',direction==='in'?'Liability':'Asset',direction==='in'?'Credit Card':'Cash and Bank',accountId]);extra.push([id,'2026-10-01',category,desc,direction==='out'?'87.00':'',direction==='in'?'87.00':'',direction==='out'?'Expense':'Income',direction==='out'?'Expense':'Income','fixture-category']);
+ }
+ await saveSession({version:1,business,csvText:csvText+'\n'+extra.map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n'),sourceName:'Fictional batch test.csv',sample:false,shortlist:[]});output.textContent='Two fictional pairs saved. Open the integration preview.';
+};document.querySelector('main').append(seedBatch);
