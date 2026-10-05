@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.11.2",
-  "description": "Local accounting-export analysis, live checks, and deliberate single-transaction category editing in Wave.",
+  "version": "0.12.0",
+  "description": "Local export analysis and verified batches of approved-rule expenses and existing transfer pairs in Wave.",
   "permissions": [
     "storage",
     "scripting"

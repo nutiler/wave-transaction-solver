@@ -1,3 +1,4 @@
+import {expenseCandidates,prepareExpenseBatch,installExpenseBatch} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
 import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt,classifyTransferState } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
@@ -209,7 +210,7 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); void proposalReview.render(); }
+function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); expenseReview.render(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
 const workFrom = () => $('workFrom').value || '2025-01-01';
@@ -229,6 +230,7 @@ function analyze(preserveDraft = false, renderProposals = true) {
   rememberSoon();
 }
 function renderQueue() {
+  expenseReview.render();
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
   const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
   $('queueInfo').textContent = `Showing ${Math.min(list.length, 150)} of ${list.length.toLocaleString()} matches from ${workFrom()}. Transactions before that date are treated as completed and excluded from the working queue and draft. Both sides of in-period transfer pairs are listed. Current-period reviewed status still needs a live check.`;
@@ -540,6 +542,7 @@ async function captureTransferMenu(t){
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
+const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t)});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
@@ -650,6 +653,54 @@ async function runTransfer(pair,mode=false){
  }catch(e){
   if(!attempted && !recheck && e.diagnostics){await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],saveAttempted:false,stage:'preflight',message:e.message,preflight:e.diagnostics,checkedAt:new Date().toISOString()});return {...editReceipts[key],needsAttention:true};}
   if(attempted || recheck || alreadyLinked){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],reviewed:false,message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
+  throw e;
+ }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
+}
+
+let expenseWorkerTab=null;
+async function runExpenseBatch(t,mode='run'){
+ if(applying || !extensionMode || sampleMode || !business)throw Error('Select your Wave business and real export.');
+ const expectedBusiness=business,data=dataset,from=workFrom(),target=t.proposed,key=business+':'+t.id,previous=editReceipts[key];
+ if(!expenseCandidates(queue).some(record=>record.id===t.id && record.proposed===target))throw Error('The approved expense rule is no longer eligible.');
+ if(previous?.saveAttempted && previous.category!==target)throw Error('The approved target changed since a saved attempt. Inspect the prior result first.');
+ if(mode!=='recheck' && previous?.saveAttempted && (!previous.categoryVerified || previous.reviewAttempted))throw Error('This expense has a locked attempt. Use Recheck saved expense.');
+ if(Object.entries(editReceipts).some(([k,r])=>k.startsWith(expectedBusiness+':transfer:') && r.saveAttempted && r.ids?.includes(t.id)))throw Error('This record has a transfer attempt. Inspect the transfer result.');
+ const current=()=>business===expectedBusiness && dataset===data && workFrom()===from && queue.some(record=>record.id===t.id && record.proposed===target);
+ applying=true;document.querySelector('main').inert=true;let attempted=false;
+ const readFresh=async()=>{const tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,expectedBusiness,t.id,current);expenseWorkerTab=tab.id;const snapshot=await waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);if(!current() || !snapshot)throw Error('Expense context changed.');return snapshot;};
+ const saveReceipt=async extra=>storeEditReceipt(key,{...editReceipts[key],category:target,...extra});
+ try{
+  let snapshot=await readFresh();
+  if(mode==='recheck'){
+   const result=verifyCategoryResult(t,snapshot,expectedBusiness,target);await saveReceipt({...result,snapshot,verifiedAt:new Date().toISOString()});return editReceipts[key];
+  }
+  const prepared=prepareExpenseBatch(t,snapshot,{business:expectedBusiness,sample:false,categories:categoryNames(catalog,dataset.categories),categoryGroups:catalog?.groups});
+  if(prepared.state==='completed'){
+   await saveReceipt({categoryVerified:true,reviewedVerified:true,stage:'completed',snapshot,message:'Approved category and reviewed status already confirmed in Wave. Skipped without editing.'});shortlist.delete(t.id);renderPlan();rememberSoon();return {...editReceipts[key],skipped:true};
+  }
+  if(previous?.saveAttempted && prepared.state==='change')throw Error('Saved category is no longer confirmed. Do not repeat the edit.');
+  await saveReceipt({saveAttempted:true,categoryVerified:prepared.state==='review',reviewedVerified:false,stage:'expense-edit',originalSnapshot:snapshot,reviewAttempted:prepared.state==='review',startedAt:new Date().toISOString(),message:'Expense attempt is not yet verified. Use Recheck saved expense.'});attempted=true;
+  const outcome=(await chrome.scripting.executeScript({target:{tabId:expenseWorkerTab},func:editWaveTransaction,args:[prepared.request]}))[0]?.result;
+  if(!outcome)throw Error('No expense edit result returned. Use Recheck saved expense.');
+  // Retain the persisted lock even when a returned result is incomplete.
+  await saveReceipt({editOutcome:outcome,reviewAttempted:editReceipts[key].reviewAttempted || !!outcome.reviewRequested,message:outcome.problem || 'Save requested. Verifying expense…'});
+  if(outcome.problem)throw Error(outcome.problem);
+  snapshot=await readFresh();let result=verifyCategoryResult(t,snapshot,expectedBusiness,target);
+  await saveReceipt({...result,snapshot,verifiedAt:new Date().toISOString()});
+  if(!result.categoryVerified)throw Error(result.message);
+  if(!result.reviewedVerified){
+   if(editReceipts[key].reviewAttempted)throw Error('Review was attempted but could not be verified. Recheck the saved expense.');
+   await saveReceipt({reviewAttempted:true,message:'Approved category verified. Completing reviewed status…'});
+   const reviewed=(await chrome.scripting.executeScript({target:{tabId:expenseWorkerTab},func:editWaveTransaction,args:[{business:expectedBusiness,id:t.id,category:snapshot.fields.category,expected:snapshot.fields,reviewOnly:true}]}))[0]?.result;
+   if(!reviewed)throw Error('No review result returned. Recheck the saved expense.');
+   await saveReceipt({reviewOutcome:reviewed});if(reviewed.problem)throw Error(reviewed.problem);
+   snapshot=await readFresh();result=verifyCategoryResult(t,snapshot,expectedBusiness,target);await saveReceipt({...result,snapshot,verifiedAt:new Date().toISOString()});
+   if(!result.reviewedVerified)throw Error(result.message);
+  }
+  await saveReceipt({stage:'completed'});shortlist.delete(t.id);renderPlan();rememberSoon();return editReceipts[key];
+ }catch(e){
+  if(!attempted && !previous?.saveAttempted && e.diagnostics){await saveReceipt({saveAttempted:false,stage:'expense-preflight',message:e.message,diagnostics:e.diagnostics,checkedAt:new Date().toISOString()});return {...editReceipts[key],needsAttention:true};}
+  if(attempted || previous?.saveAttempted){await saveReceipt({message:e.message+' Use Recheck saved expense; no automatic retry will occur.'});return editReceipts[key];}
   throw e;
  }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
 }
