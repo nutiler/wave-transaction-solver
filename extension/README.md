@@ -207,3 +207,8 @@ Synthetic list checks are available at the local preview's `/extension/list-fixt
 In **Live Not Reviewed list**, click **Check merchant rules** to reload the current saved approved rules and rebuild suggestions from the imported ledger. The summary shows how many rules were checked and how many scanned rows are known, excluded, or unmatched. Each row shows its matching merchant rule and exact category, or the reason it cannot enter the expense runner. **Merchant rule results** can show only matched known expenses. **Copy rule-check diagnostics** copies the rule scopes and per-row results locally for troubleshooting; treat this as accounting data.
 
 Click **Open known-expense runner**, then **Select matching expenses**, inspect the selection, and **Run selected expenses** to apply the known items. Opening the runner refreshes saved rules and clears an old expense search filter. Rules needing judgment remain proposals until accepted. Transfers, incoming credits, refunds, conflicting rules, split postings, and changed merchant descriptions stay outside the automatic known result. The existing live validation and uncertain-save locks still apply.
+
+
+### Prepare the known expenses in one step
+
+Click the blue **Prepare N known expenses** button in **Live Not Reviewed list**. It reloads saved approved rules, enables linking to this scan, clears the Uncategorized-only display, and opens the expense runner with only the known matched records selected. Review that selection, then click **Run selected expenses**. Preparing does not edit Wave. Existing completed records, preflight attention items, and uncertain saved attempts cannot be selected automatically.
