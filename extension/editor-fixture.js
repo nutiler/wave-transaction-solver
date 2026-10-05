@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false } = {}) {
+function fixture({ custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -46,6 +46,13 @@ function fixture({ custom = false, reviewSave = false, original = expected, miss
       search.oninput = () => { if (search.value === request.category) showOptions(); };
       (portal ? mount : control).append(list);
     };
+    if(transferMenu){
+      const list=document.createElement('div');list.className='wv-select__menu__options';list.setAttribute('role','menu');
+      if(!transferMenu.createOnly){const heading=document.createElement('div');heading.textContent='Select Account with Matching Transaction';list.append(heading);}
+      const appendOption=()=>{const option=document.createElement('div');option.className='wv-select__menu__option';option.setAttribute('role','menuitemradio');option.textContent=transferMenu.label;if(transferMenu.wrongId)option.dataset.transactionId='1000000000000000003';if(transferMenu.disabled)option.setAttribute('aria-disabled','true');option.onclick=()=>{label.textContent=targetCategory;selected=targetCategory;list.remove();};list.append(option);};
+      if(!transferMenu.createOnly){appendOption();if(duplicate)appendOption();}
+      const create=document.createElement('div');create.textContent='Select Account to Create Transfer';list.append(create);appendOption();mount.append(list);
+    }
     if (distractor) { const outside=document.createElement('button'); outside.textContent=request.category; outside.onclick=()=>{ selected='WRONG OUTSIDE MENU'; }; dialog.append(outside); }
 
   }
@@ -77,5 +84,15 @@ document.getElementById('run').onclick = async () => {
   await check('Missing category does not click Save', { custom:true,missing:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Ambiguous category does not click Save', { custom:true,duplicate:true }, (r,s) => !r.saveAttempted && !!r.problem && s.saves === 0);
   await check('Wave validation error reports unverified save, without retry', { validationError:true }, (r,s) => r.saveAttempted && !!r.problem && s.saves === 1);
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 15 editor checks passed';
+  const transfer={id:'1000000000000000002',account:'Fictional Destination Card',date:'2026-09-19',description:'Payment thank you',label:'Transfer to Fictional Destination Card - Sep 19, 2026 - Payment thank you'};
+  const transferRequest={...request,category:'Transfer to '+transfer.account,transfer};
+  const transferFixture={custom:true,targetCategory:transferRequest.category,transferMenu:{label:transfer.label}};
+  await check('Existing transfer selects only the matching group, requests review, and saves once',transferFixture,(r,s)=>!r.problem && r.reviewRequested && s.reviewed && s.saves===1 && s.selected===transferRequest.category,transferRequest);
+  await check('Create-transfer option with the same label cannot be selected',{...transferFixture,transferMenu:{label:transfer.label,createOnly:true}},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0 && s.selected===expected.category,transferRequest);
+  await check('Duplicate existing transfer matches cannot be saved',{...transferFixture,duplicate:true},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,transferRequest);
+  await check('Disabled existing transfer cannot be selected',{...transferFixture,transferMenu:{label:transfer.label,disabled:true}},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,transferRequest);
+  await check('Wrong counterpart transaction ID blocks the edit',{...transferFixture,transferMenu:{label:transfer.label,wrongId:true}},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,transferRequest);
+  await check('Unexpected selected transfer value blocks Save',{...transferFixture,targetCategory:'Unexpected transfer account'},(r,s)=>!!r.problem && r.saveAttempted && s.saves===0,transferRequest);
+  await check('Transfer review action that saves never issues a second Save',{...transferFixture,reviewSave:true},(r,s)=>!r.problem && r.saveAttempted && s.reviewed && s.saves===1,transferRequest);
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 22 editor checks passed';
 };

@@ -96,3 +96,11 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Recognize Wave's menuitemradio options and wv-select__menu__option containers in the existing-match and create-transfer sections.
 - Accept the observed Transfer to prefix on exact counterpart labels; retain checked and disabled menu metadata without treating menu selection as a saved transfer.
 - Add a synthetic reproduction of Wave's radio-menu structure and disabled/prefix boundary tests. Transfer save/review automation remains unimplemented.
+
+## 0.10.0
+
+- Add deliberate Set transfer and request review for one unique in-period pair after reading its existing-match menu.
+- Recheck all fields on both original records, select only the exact existing-match radio entry, and confirm the outgoing transfer category before requesting review and Save. Create-transfer options are never selected.
+- Persist a lock before injection and retain it from the first transfer-selection click onward, including lost responses or unexpected selection results. Recheck saved transfer only reloads/reads both exact records.
+- Verify both saved transfer categories and report each reviewed status independently. Preserve imported rules/session and keep receipts local. Add Copy transfer result for failures and partial verification.
+- Validate synthetic duplicate, disabled, create-only, wrong-ID, changed-value, save-on-review, response-loss, reload/recheck, changed-amount, and incomplete-save paths.

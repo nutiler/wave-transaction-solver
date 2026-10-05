@@ -1,5 +1,5 @@
 import { readTransferMenu } from './transfer-menu.js';
-import { transferPairs } from './transfers.js';
+import { transferPairs,prepareTransferEdit,verifyTransferResult } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
 import { validateRule } from './rules.js';
 import { installProposalReview } from './proposal-view.js';
@@ -535,7 +535,8 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
-const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:async t=>{const expectedBusiness=business;const tabs=(await chrome.tabs.query({url:'https://next.waveapps.com/*'})).filter(tab=>{const i=waveIdentity(tab.url);return i?.business===expectedBusiness && i.transaction===t.id;});const reports=[];for(const tab of tabs){const result=(await chrome.scripting.executeScript({target:{tabId:tab.id},func:readTransferMenu}))[0]?.result;if(result?.identity?.business===expectedBusiness && result.identity.transaction===t.id)reports.push(result);}const open=reports.filter(r=>r.matchingGroups>0);if(open.length>1)throw Error('Multiple matching menus are open for this record. Close the extra menus and read again.');if(open.length===1)return open[0];if(reports.length===1)return reports[0];throw Error('Open the money-out record and its transfer submenu in one Wave tab, then read the menu again.');},read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
+async function captureTransferMenu(t){const expectedBusiness=business;const tabs=(await chrome.tabs.query({url:'https://next.waveapps.com/*'})).filter(tab=>{const i=waveIdentity(tab.url);return i?.business===expectedBusiness && i.transaction===t.id;});const reports=[];for(const tab of tabs){const result=(await chrome.scripting.executeScript({target:{tabId:tab.id},func:readTransferMenu}))[0]?.result;if(result?.identity?.business===expectedBusiness && result.identity.transaction===t.id)reports.push({...result,tabId:tab.id});}const open=reports.filter(r=>r.matchingGroups>0);if(open.length>1)throw Error('Multiple matching menus are open for this record. Close the extra menus and read again.');if(open.length===1)return open[0];if(reports.length===1)return reports[0];throw Error('Open the money-out record and its transfer submenu in one Wave tab, then read the menu again.');}
+const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
@@ -553,3 +554,46 @@ for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberS
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
 for (const id of ['clearPlan', 'ruleForm', 'planFile', 'historyRows']) $(id).addEventListener(id === 'ruleForm' ? 'submit' : id === 'planFile' ? 'change' : 'click', ()=>setTimeout(rememberSoon,0));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) rememberSoon(); });
+
+function transferReceiptKey(pair){return business+':transfer:'+pair.key;}
+async function runTransfer(pair,recheck=false){
+ if(applying || !extensionMode || sampleMode || !business)throw Error('Select a real Wave business and pair first.');
+ const expectedBusiness=business,data=dataset,from=workFrom(),key=transferReceiptKey(pair);
+ if(!transferPairs(queue).some(p=>p.key===pair.key))throw Error('This pair is no longer eligible in the working queue.');
+ const previous=editReceipts[key];
+ if(!recheck && Object.entries(editReceipts).some(([storedKey,r])=>storedKey.startsWith(expectedBusiness+':') && r.saveAttempted && (r.ids?.some(id=>[pair.out.id,pair.in.id].includes(id)) || [expectedBusiness+':'+pair.out.id,expectedBusiness+':'+pair.in.id].includes(storedKey))))throw Error('A transfer save was already attempted for one of these records. Use Recheck saved transfer.');
+ if(recheck && !previous?.saveAttempted)throw Error('No transfer save attempt to recheck.');
+ applying=true;document.querySelector('main').inert=true;liveGeneration++;
+ const current=()=>business===expectedBusiness && dataset===data && workFrom()===from;
+ let tabId=previous?.tabId ?? null,attempted=false;
+ try{
+  if(!recheck){
+   const menu=await captureTransferMenu(pair.out);tabId=menu.tabId;
+   const snapshots={};
+   const incoming=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+pair.in.id);
+   snapshots[pair.in.id]=await waitForLiveSnapshot(()=>captureLive(incoming.id,expectedBusiness,pair.in.id),current);
+   snapshots[pair.out.id]=await captureLive(tabId,expectedBusiness,pair.out.id);
+   if(!current())throw Error('Transfer context changed. Nothing applied.');
+   const freshMenu=(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result;
+   const request=prepareTransferEdit(pair,expectedBusiness,snapshots,freshMenu);
+   await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],tabId,saveAttempted:true,startedAt:new Date().toISOString(),message:'Transfer attempt not yet verified. Use Recheck saved transfer.'});attempted=true;
+   const outcome=(await chrome.scripting.executeScript({target:{tabId},func:editWaveTransaction,args:[request]}))[0]?.result;
+   if(!outcome)throw Error('No transfer result returned. Inspect Wave before continuing.');
+   await storeEditReceipt(key,{...editReceipts[key],...outcome,message:outcome.problem || 'Save requested. Checking both records…'});
+   if(outcome.problem)throw Error(outcome.problem);
+   if(!outcome.saveAttempted)throw Error('Save was not requested. Cancel the Wave dialog before retrying.');
+  }
+  const snapshots={};
+  for(const t of [pair.out,pair.in]){
+   const tab=await reopenSavedTransaction(chrome.tabs,t.id===pair.out.id?tabId:null,expectedBusiness,t.id,current);
+   snapshots[t.id]=await waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);
+  }
+  const result=verifyTransferResult(pair,snapshots,expectedBusiness);
+  await storeEditReceipt(key,{...editReceipts[key],...result,verifiedAt:new Date().toISOString(),snapshots});
+  if(result.verified){shortlist.delete(pair.out.id);shortlist.delete(pair.in.id);renderPlan();rememberSoon();}
+  return editReceipts[key];
+ }catch(e){
+  if(attempted || recheck){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
+  throw e;
+ }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
+}

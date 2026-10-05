@@ -65,7 +65,7 @@ Fictional samples can produce clearly marked sample plans for interface testing,
 
 The extension requests access only to `https://next.waveapps.com/*`, plus script execution and local extension storage. It reads visible transaction fields only when **Read live details** is clicked. It uses no private API, cookies, authentication tokens, external services, or AI upload. The export stays in the solver tab's memory; closing or reloading clears it. Only merchant rules persist in local extension storage. No sync storage is used.
 
-Apply is available for one planned, outgoing merchant purchase with two ledger postings and one category. Transfers and splits still require manual handling. It can navigate a dedicated Wave test tab when you explicitly click Open. The original working tab is preserved. Reusing the test tab navigates away from its current transaction; keep that tab for inspection rather than manual unsaved edits.
+Apply is available for one planned, outgoing merchant purchase with two ledger postings and one category. Unique existing transfer pairs use the separate Transfer review action described below. Splits and ambiguous transfers require manual handling. It can navigate a dedicated Wave test tab when you explicitly click Open. The original working tab is preserved. Reusing the test tab navigates away from its current transaction; keep that tab for inspection rather than manual unsaved edits.
 
 The export's reviewed status and currency context are incomplete. A successful field comparison does not establish that a transaction is unreviewed. Only clicking Apply starts an edit.
 
@@ -138,10 +138,20 @@ Expand **Transfer review**, open a candidate pair, then expand **Transfer setup 
 2. Leave the matching-transaction submenu open and return to the solver. Click **Read transfer menu**.
 3. Click **Copy transfer diagnostics** and paste the report into your support chat. The panel also fills a local paste box; **Check pasted diagnostics** validates the record, business, exact counterpart label, and any available ID/link.
 
-The reader collects only the visible category menu. Matching options and create-transfer options are separated. A diagnostic match does not prove a saved transfer, reviewed status, or freshness of the exported pair. These controls do not select a category, link a transfer, create records, or save. Actual Wave markup is still needed to implement deliberate Set transfer safely. Menu captures are temporary and clear when the export/business/working period changes or the page reloads.
+The reader collects only the visible category menu. Matching options and create-transfer options are separated. A diagnostic match does not prove a saved transfer, reviewed status, or freshness of the exported pair. These controls do not select a category, link a transfer, create records, or save. The separate Set transfer action is documented below; diagnostic reading and copying remain read-only. Menu captures are temporary and clear when the export/business/working period changes or the page reloads.
 
 Synthetic checks: `/extension/transfer-menu-fixture.html` exercises the real read-only reader against fictional DOM menus. The integration fixture tests Read, Copy, and pasted-report validation with mocked Wave tabs.
 
 The 0.9.2 transfer reader locates the matching-section heading even when search markup differs. If the option selector is unfamiliar, copy the report anyway: bounded menu HTML is retained for inspection. Multiple visible matching menus remain blocked. A read failure or diagnostic match never changes Wave.
 
 Version 0.9.3 recognizes Wave's radio-style menu entries and the `Transfer to` label prefix. Captured `checked` metadata describes only the open menu selection; saved transfer and reviewed status still require a fresh record check.
+
+## Set and review an existing transfer (0.10.0)
+
+In **Transfer review**, open a unique pair and inspect its accounts, descriptions, dates, and amount. Under **Transfer setup**, open the money-out transaction in Wave and leave **Category → Transfer to Bank, Credit Card, or Loan** open on its matching-transaction submenu. Return to the solver and click **Read transfer menu**. If one exact existing counterpart is recognized, **Set transfer and request review** becomes available.
+
+Clicking that button authorizes this one pair. The solver checks both original records again, chooses only the existing matching entry, confirms the selected outgoing category, and requests review and Save. It never chooses **Select Account to Create Transfer**, processes ambiguous pairs, or changes completed periods. A second background record is used to check the incoming side; both records are reloaded after the action to verify their saved transfer categories. Reviewed status is reported separately on each side. If Wave reviews only one side, finish the other manually; the solver does not toggle an uncertain state.
+
+An attempt is stored locally before editing. From the first match-selection click onward it stays locked, because selection itself may persist in some Wave layouts. **Recheck saved transfer** reloads and reads both records without repeating selection, Review, or Save. A missing record, altered field, unexpected selected value, or unknown reviewed state prevents a complete success claim. Use **Copy transfer result** to share diagnostics. If a preflight fails before any match click, cancel the Wave dialog and restore the menu before retrying. There is no automatic retry or batch execution.
+
+This workflow is validated against synthetic dialogs modeled on the captured Wave menu and a mocked integration session. The first real pair still needs inspection of the returned saved result; unexpected Wave behavior is withheld and reported. Read-only menu diagnostics alone never approve a transfer or establish saved state.

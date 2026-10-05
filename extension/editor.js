@@ -115,7 +115,34 @@ export async function editWaveTransaction(request, testContext) {
     const alreadyReviewed = buttons(dialog, ['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
     reviewRequested = alreadyReviewed.length === 1;
-    if (tidy(request.expected.category) !== tidy(request.category)) {
+    if (request.transfer) {
+      stage = 'existing transfer selection';
+      const t=request.transfer;
+      if(typeof t.id!=='string' || !/^\d+$/.test(t.id) || t.id===request.id || !tidy(t.account) || !tidy(t.description) || !/^\d{4}-\d{2}-\d{2}$/.test(t.date) || request.expected.type!=='Withdrawal' || request.category!=='Transfer to '+t.account)throw Error('Invalid existing-transfer request.');
+      const normal=text=>tidy(text).replace(/[—–]/g,'-');
+      const date=new Date(t.date+'T00:00:00Z');
+      const dates=[t.date,...['short','long'].map(month=>new Intl.DateTimeFormat('en-US',{month,day:'numeric',year:'numeric',timeZone:'UTC'}).format(date))];
+      const labels=dates.map(d=>normal(t.account+' - '+d+' - '+t.description));
+      if(!labels.includes(normal(t.label).replace(/^Transfer to /i,'')))throw Error('Counterpart label does not identify the expected transaction.');
+      const clean=el=>{const clone=el.cloneNode(true);clone.querySelectorAll('svg,script,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(clone.textContent);};
+      const menus=[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el) && clean(el).includes('Select Account with Matching Transaction'));
+      const scopes=menus.filter(el=>!menus.some(other=>other!==el && el.contains(other)));
+      if(scopes.length!==1)throw Error('Leave one matching-transaction submenu open, then read it again.');
+      const menu=scopes[0];
+      const heading=text=>[...menu.querySelectorAll('div,span,h3,h4,strong')].filter(el=>visible(el) && clean(el)===text).filter(el=>![...el.children].some(child=>visible(child) && clean(child)===text));
+      const matching=heading('Select Account with Matching Transaction'),create=heading('Select Account to Create Transfer');
+      if(matching.length!==1 || create.length>1)throw Error('Transfer menu sections are ambiguous.');
+      const follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
+      const options=[...menu.querySelectorAll('[role="menuitemradio"],.wv-select__menu__option')].filter(el=>visible(el) && follows(matching[0],el) && (!create.length || follows(el,create[0])) && clean(el)===tidy(t.label));
+      if(options.length!==1 || !enabled(options[0]))throw Error('Exact existing matching transaction is missing, disabled, or ambiguous. Create-transfer entries are excluded.');
+      const option=options[0],target=option.getAttribute('data-transaction-id');if(target && target!==t.id)throw Error('The matching option points to a different transaction.');
+      const href=option.getAttribute('href') || option.querySelector('a[href]')?.getAttribute('href');if(href){const u=new URL(href,'https://next.waveapps.com');if(u.origin!=='https://next.waveapps.com' || u.pathname!=='/'+request.business+'/transactions/'+t.id)throw Error('The matching option link identifies another record.');}
+      // Transfer selection itself may persist in some Wave layouts. Lock before clicking.
+      assertFields(request.expected.category);saveAttempted=true;option.click();
+      let ready=false;
+      for(let i=0;i<20;i++){try{dialog=assertFields(request.category);ready=true;break;}catch{await wait(100);}}
+      if(!ready)throw Error('Transfer selection was made but its category could not be confirmed. Inspect Wave before any further action.');
+    } else if (tidy(request.expected.category) !== tidy(request.category)) {
       stage = 'category selection';
       const category = control(dialog, 'Category');
       if (category.tagName === 'SELECT') {
@@ -217,6 +244,6 @@ export async function editWaveTransaction(request, testContext) {
     for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
     return { saveAttempted, reviewRequested, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    return { saveAttempted, stage, problem: error.message, categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+    return { saveAttempted, stage, problem: error.message, selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }

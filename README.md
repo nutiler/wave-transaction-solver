@@ -1,6 +1,6 @@
 # Dandelion's Wave Transaction Solver
 
-A local Chrome extension for organizing Wave accounting transactions from an accounting CSV export. It proposes merchant categories and transfer matches, checks transaction details against Wave, and builds draft session plans. Apply saves one planned merchant category and requests reviewed status after a fresh live check. It reloads Wave to verify saved values and records attempts locally to prevent uncertain saves from being repeated. Transfer matching remains a draft proposal.
+A local Chrome extension for organizing Wave accounting transactions from an accounting CSV export. It proposes merchant categories and transfer matches, checks transaction details against Wave, and builds draft session plans. Apply saves one planned merchant category and requests reviewed status after a fresh live check. It reloads Wave to verify saved values and records attempts locally to prevent uncertain saves from being repeated. Transfer review supports a deliberate Set transfer and request review action for one unique existing pair after its matching submenu is inspected. Both saved categories and reviewed statuses are checked separately.
 
 ## Install
 
