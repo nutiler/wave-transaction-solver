@@ -1,3 +1,4 @@
+import {installLiveList} from './list-view.js';
 import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
 import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt,classifyTransferState } from './transfers.js';
@@ -26,6 +27,7 @@ let exportPages = {};
 try { exportPages = (await import('./settings.local.js')).exportPages || {}; } catch { /* Optional, private configuration. */ }
 let liveGeneration = 0;
 let lastLiveSnapshot = null, applying = false, editReceipts = {};
+let listCollecting=false,allowedExpenseIds=null;
 const receiptKey = () => business + ':' + chosen?.id;
 let exportTab = null, liveStepLabel = 'Not checked';
 const stepKeys = ['setup','chart','import','merchant','proposals','history','queue','transfers','live','plan'];
@@ -210,7 +212,7 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); expenseReview.render(); void proposalReview.render(); }
+function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); listReview.render(); expenseReview.render(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
 const workFrom = () => $('workFrom').value || '2025-01-01';
@@ -230,6 +232,7 @@ function analyze(preserveDraft = false, renderProposals = true) {
   rememberSoon();
 }
 function renderQueue() {
+  listReview.render();
   expenseReview.render();
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
   const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
@@ -417,6 +420,7 @@ async function verifyReceipt(key, tabId, transaction, expectedBusiness) {
   }
 }
 $('apply').onclick = handle(async () => {
+  if (listCollecting) throw Error('Finish or stop the live-list collection before editing transactions.');
   if (applying || editReceipts[receiptKey()]?.saveAttempted) throw new Error('This record already has an Apply attempt. Use Recheck saved result.');
   const transaction = chosen, expectedBusiness = business, tabId = liveTab, key = receiptKey();
   currentEditRequest();
@@ -547,7 +551,8 @@ async function captureTransferMenu(t){
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
-const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t)});
+const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t)});
+const listReview=installLiveList({getState:()=>({business,dataset,extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>expenseReview.render()});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
@@ -572,6 +577,7 @@ function transferReceiptKey(pair){return business+':transfer:'+pair.key;}
 async function runTransfer(pair,mode=false){
  const reset=mode==='reset',automatic=mode==='auto',recheck=mode===true || reset || (automatic && !!editReceipts[transferReceiptKey(pair)]?.saveAttempted);
  if(automatic && recheck && !editReceipts[transferReceiptKey(pair)]?.verified)throw Error('An uncertain transfer attempt is locked. Recheck it before running automation.');
+ if(listCollecting)throw Error('Finish or stop the live-list collection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select a real Wave business and pair first.');
  const expectedBusiness=business,data=dataset,from=workFrom(),key=transferReceiptKey(pair);
  if(!transferPairs(queue).some(p=>p.key===pair.key))throw Error('This pair is no longer eligible in the working queue.');
@@ -664,13 +670,14 @@ async function runTransfer(pair,mode=false){
 
 let expenseWorkerTab=null;
 async function runExpenseBatch(t,mode='run'){
+ if(listCollecting)throw Error('Finish or stop the live-list collection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select your Wave business and real export.');
  const expectedBusiness=business,data=dataset,from=workFrom(),target=t.proposed,key=business+':'+t.id,previous=editReceipts[key];
- if(!expenseCandidates(queue).some(record=>record.id===t.id && record.proposed===target))throw Error('The approved expense rule is no longer eligible.');
+ if(!expenseCandidates(queue,allowedExpenseIds).some(record=>record.id===t.id && record.proposed===target))throw Error('The approved expense rule is no longer eligible.');
  if(previous?.saveAttempted && previous.category!==target)throw Error('The approved target changed since a saved attempt. Inspect the prior result first.');
  if(mode!=='recheck' && previous?.saveAttempted && (!previous.categoryVerified || previous.reviewAttempted))throw Error('This expense has a locked attempt. Use Recheck saved expense.');
  if(Object.entries(editReceipts).some(([k,r])=>k.startsWith(expectedBusiness+':transfer:') && r.saveAttempted && r.ids?.includes(t.id)))throw Error('This record has a transfer attempt. Inspect the transfer result.');
- const current=()=>business===expectedBusiness && dataset===data && workFrom()===from && queue.some(record=>record.id===t.id && record.proposed===target);
+ const current=()=>business===expectedBusiness && dataset===data && workFrom()===from && (!allowedExpenseIds || allowedExpenseIds.has(t.id)) && queue.some(record=>record.id===t.id && record.proposed===target);
  applying=true;document.querySelector('main').inert=true;let attempted=false;
  const readFresh=async()=>{const tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,expectedBusiness,t.id,current);expenseWorkerTab=tab.id;const snapshot=await waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);if(!current() || !snapshot)throw Error('Expense context changed.');return snapshot;};
  const saveReceipt=async extra=>storeEditReceipt(key,{...editReceipts[key],category:target,...extra});

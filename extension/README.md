@@ -185,3 +185,18 @@ Changed records move to Needs attention and are excluded from bulk selection; in
 Validation: 82 automated checks passed. The fictional integration preview completed five known expenses (four matching-category review-only actions and one category change with review follow-up), isolated a changed amount while completing the others, and stopped on a lost save response. No real Wave transactions were changed during development.
 
 Version 0.12.1 checks for a usable reviewed-state control before expense edits. Review updates panels and missing/ambiguous controls go to Needs attention while the rest of the batch continues. Explicit reviewed checkboxes and accessible icon buttons are supported; unknown checkbox states remain withheld. Receipts whose editor outcome explicitly proves a no-click preflight failure are archived and moved from locked attempts to Needs attention on reload. Unknown responses, selection-stage failures and attempted saves keep their locks. Copy expense diagnostics includes bounded review-control markup for layouts requiring further support.
+
+
+## Collect the live Not Reviewed list
+
+Open **Live Not Reviewed list** and click **Collect Not Reviewed transactions**. The solver opens your selected business's transaction list in a background tab with the Not Reviewed filter, starts at the top, and scrolls as more rows load. Keep that tab open until collection finishes. **Stop collecting** retains partial results.
+
+The results contain transaction IDs, dates, descriptions, accounts, categories, amounts, and explicitly readable review statuses. Choose **Uncategorized expenses and income** to focus the results. Filter membership is recorded separately from review status: a row without an explicit readable indicator stays **Unknown**. No transaction controls are clicked during collection.
+
+Snapshots are saved locally by business and survive extension reloads. **Download collected list** saves a private JSON snapshot; **Copy list diagnostics** copies table and row markup for troubleshooting. Neither is uploaded. Treat these files and diagnostics as accounting data.
+
+Completion is count-confirmed only when the identified rows match an explicit list total. Otherwise the collector reports that it reached a stable bottom; this does not independently prove that every transaction was captured. Pagination buttons are not clicked. Navigation changes, interruptions, unreadable rows, and scan limits are reported. The collector stops after roughly seven minutes, 450 scrolling steps, or 20,000 rows and retains partial results.
+
+Rows are identified by a Wave transaction ID or a unique exact date/description/account/amount match to your imported export. Ambiguous matches stay unresolved and cannot select bookkeeping actions. **Limit known-expense batches to identified rows from this collection** optionally narrows the existing expense queue; it does not approve rules or bypass live validation. The existing January 1, 2025 working-period cutoff still applies. Collect again before another bookkeeping session because the saved list is a snapshot.
+
+Synthetic list checks are available at the local preview's `/extension/list-fixture.html`. They cover lazy loading, returning to the top, ambiguous identities, stop/navigation handling, and completion evidence without connecting to Wave.
