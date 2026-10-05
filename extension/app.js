@@ -10,7 +10,7 @@ import { installProposalReview } from './proposal-view.js';
 import { prepareCategoryEdit, editWaveTransaction, verifyCategoryResult, resetAttemptReceipt } from './editor.js';
 import { defaultRules, importAccounting, proposals, waveIdentity, compareLive, normalize } from './model.js';
 import { readWavePage } from './live-reader.js';
-import { historySuggestions } from './history.js';
+import { installHistoryReview } from './history-view.js';
 import { actionable, buildPlan, validatePlan } from './plan.js';
 import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
@@ -73,6 +73,7 @@ async function loadCatalog() {
   }
   $('chartStatus').textContent = catalog ? `${catalog.groups.reduce((n,g)=>n+g.accounts.length,0)} names loaded for this business. Collected ${catalog.capturedAt}.` : 'No chart collected for this business.';
   renderCatalog(); renderCategories();
+  if(dataset)renderHistory();
   updateSteps();
 }
 function renderCategories() {
@@ -264,23 +265,8 @@ function renderQueue() {
   }
 }
 for (const id of ['search', 'kind', 'from', 'through']) $(id).oninput = renderQueue;
-function renderHistory() {
-  if (!dataset) return;
-  $('history').hidden = false;
-  const query = $('historySearch').value.toLowerCase();
-  const items = historySuggestions(dataset.transactions, rules, 3, business).filter(g => `${g.merchant} ${g.distribution.map(c => c.category).join(' ')}`.toLowerCase().includes(query));
-  $('historyInfo').textContent = `Showing ${Math.min(items.length, 30)} of ${items.length} repeated descriptions not already covered by your rules.`;
-  $('historyRows').replaceChildren();
-  for (const g of items.slice(0, 30)) {
-    const row = make('tr'), merchant = make('td', g.merchant); merchant.append(make('small', `Latest: ${g.latest}. ${g.accounts.length} account(s).`));
-    const categories = make('td', g.distribution.length ? g.distribution.map(c => `${c.category}: ${c.count}`).join('; ') : 'No established expense category');
-    categories.append(make('small', `${g.unresolved} uncategorized or not a single expense category. ${g.mixed ? 'Conflicting history: choose a category yourself.' : g.known < 3 ? 'Fewer than three categorized examples: choose a category yourself.' : 'Suggestion only: confirm the purchase purpose.'}`));
-    const action = make('td'), prepare = make('button', g.category ? 'Prepare rule' : 'Choose rule', 'secondary'); prepare.setAttribute('aria-label', `Prepare rule for ${g.merchant}`);
-    prepare.onclick = () => { $('ruleName').value = g.merchant.slice(0, 100); $('aliases').value = normalize(g.merchant).slice(0, 400); $('category').value = g.category; $('fold-merchant').open = true; $('ruleForm').scrollIntoView({ behavior: 'smooth' }); $('ruleName').focus(); };
-    action.append(prepare); row.append(merchant, make('td', String(g.count)), categories, action); $('historyRows').append(row);
-  }
-}
-$('historySearch').oninput = renderHistory;
+const historyReview=installHistoryReview({getState:()=>({dataset,rules,business,pack:proposalPack?.business===business?proposalPack:null,report:liveListReport(),from:workFrom(),categories:categoryNames(sampleMode?null:catalog,dataset?.categories || [])}),accept:async next=>{if(applying || listCollecting)throw Error('Finish the active transaction run first.');if(extensionMode)await chrome.storage.local.set({solverRules:next});rules=next;renderRules();analyze(true);},prepare:(g,category)=>{$('ruleName').value=g.merchant.slice(0,100);$('aliases').value=g.aliases.join(', ').slice(0,400);$('category').value=category;$('fold-merchant').open=true;$('ruleForm').scrollIntoView({behavior:'smooth'});$('ruleName').focus();rememberSoon();}});
+function renderHistory(){historyReview.render();}
 function renderPlan() {
   $('plan').hidden = !dataset;
   const pairs = new Set(queue.filter(t => shortlist.has(t.id) && t.partner).map(t => [t.id, t.partner.id].sort().join(':'))).size;
@@ -558,15 +544,15 @@ async function captureTransferMenu(t){
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
 const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
-const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 liveListReport=listReview.report;
 suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:runWaveSuggestion,recheck:t=>runWaveSuggestion(t,'recheck'),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,queue,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
-  imported:async (pack,fileName)=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; proposalFileName=fileName || "proposed-rule-pack.local.json"; await rememberSession(); updateSteps(); },
-  accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false);await rememberSession(); },
+  imported:async (pack,fileName)=>{ if(proposalPack?.source?.sha256!==pack.source.sha256 || JSON.stringify(proposalPack?.proposals)!==JSON.stringify(pack.proposals)) proposalDecisions={}; proposalPack=pack; proposalFileName=fileName || "proposed-rule-pack.local.json"; await rememberSession(); updateSteps();renderHistory(); },
+  accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false); },
   rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
 });
 installWorkspace();
@@ -578,7 +564,7 @@ await proposalReview.render();transferReview.render();
 updateSteps();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
-for (const id of ['clearPlan', 'ruleForm', 'planFile', 'historyRows']) $(id).addEventListener(id === 'ruleForm' ? 'submit' : id === 'planFile' ? 'change' : 'click', ()=>setTimeout(rememberSoon,0));
+for (const id of ['clearPlan', 'ruleForm', 'planFile']) $(id).addEventListener(id === 'ruleForm' ? 'submit' : id === 'planFile' ? 'change' : 'click', ()=>setTimeout(rememberSoon,0));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) rememberSoon(); });
 
 const transferWorkerTabs={out:null,in:null};

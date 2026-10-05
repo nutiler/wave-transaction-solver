@@ -60,7 +60,7 @@ export function nonPurchaseReason(t) {
   if(/\b(?:payin4|pay in 4|scratchpay|afterpay|klarna|affirm)\b/i.test(s)) return 'Installment or financing processor; check debt and the original purchase separately';
   if (/^(?:OVERDRAFT FEE|MONTHLY SERVICE FEE|CASH ADVANCE FEE|LATE FEE|INTERNATIONAL PURCHASE TRANSACTION FEE|PURCHASE INTEREST CHARGE|INTEREST CHARGE|ANNUAL FEE)\b/i.test(s)) return '';
   if (/^PAYPAL (?:INST XFER|RETRY PYMT)\s+\d+\s+[a-z]/i.test(s) && !/\s\d{8,}\s+[a-z]/i.test(s.replace(/^PAYPAL (?:INST XFER|RETRY PYMT)\s+\d+\s+/i,''))) return '';
-  if (/\b(?:transfer|xfer|epay|autopay|cash advance|atm withdrawal|cash withdrawal|credit crd|cc pymt|online pmt|loan|truck payment)\b/i.test(s) || /^(?:CHECK\b|ZELLE\b|VENMO\b|Created Transfer|Standard transfer|Payment\b|INTERNET PAYMENT|ONLINE PAYMENT|DIRECTPAY|BUSINESS TO BUSINESS ACH)/i.test(s)) return 'Payment, cash, transfer, check, or loan needs separate review';
+  if (/\b(?:card payment|transfer|xfer|epay|autopay|cash advance|atm withdrawal|cash withdrawal|credit crd|cc pymt|online pmt|loan|truck payment)\b/i.test(s) || /^(?:CHECK\b|ZELLE\b|VENMO\b|Created Transfer|Standard transfer|Payment\b|INTERNET PAYMENT|ONLINE PAYMENT|DIRECTPAY|BUSINESS TO BUSINESS ACH)/i.test(s)) return 'Payment, cash, transfer, check, or loan needs separate review';
   if (t.categories.some(c => /^(?:Transfer Clearing|Owner(?:'s)? Equity|Owner Investment|Truck Payment)/i.test(c))) return 'Transfer, owner movement, or financing category';
   return '';
 }

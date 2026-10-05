@@ -50,7 +50,11 @@ Complete collections are saved locally per business and shown in searchable grou
 
 ### Historical rule suggestions
 
-After importing, the history table lists exact repeated descriptions with at least three outgoing transactions not already covered by your merchant rules. It shows the category distribution and unresolved count. **Prepare rule** fills the rule form but does not save it. Mixed historical categories leave the proposed category blank for your decision. No history is treated as proof that transactions were reviewed. Descriptors are not shortened automatically, to avoid merging unrelated merchants.
+After importing, **Suggestions from your history** groups repeated safe purchases, removes documented bank wrappers/reference tails, and retains store numbers and processor names. Loaded proposal families supply curated alias grouping; unknown names remain exact. Incoming credits, suspected refund/transfer pairs, financing, split postings, and quoted person-to-person memos stay out. Expense and personal equity categories both count. The table shows spending, uncovered working-period counts, last-scan counts, category distributions and 2023–2024 evidence. Conflicting history leaves Category blank even when those years suggest a preferred category.
+
+Choose exact categories, tick rows, then **Add selected rules**. **Select visible suggestions** selects only visible rows with a chosen category; all selected rows, including hidden rows, remain in the displayed selection count. The entire batch validates before one rules save and one queue rebuild. Accepted merchants move to Current rules without changing Wave. New history rules match exact cleaned aliases, apply to outgoing purchases only, and protect previously different categories. Your existing rules and imported session remain saved. **Prepare individually** opens the manual rule form.
+
+History counts are evidence, not proof of purchase purpose or reviewed status. Use **In the last Not Reviewed scan** to focus on remaining purchases; collect a fresh scan after completing transactions. Additional pages load with **Show more historical merchants**. Analysis contexts can set `includeHistoryProposals: true` to include consistent exact-descriptor history candidates in the private proposal pack; those candidates always need judgment until approved.
 
 ### Draft session plans
 
@@ -261,3 +265,7 @@ Suggestion readiness (0.17.2): **Refresh Wave suggestions** in the confirmation 
 
 
 Known expense readiness (0.17.3): when no known expenses remain, the runner displays the live backlog breakdown rather than an unexplained zero. It separates purchases needing approval, incoming movements, payments/loans/refunds, transfer or posting checks, missing CSV records and rule exclusions. Expand **Why remaining transactions are not known expenses** for row-level reasons, or use **Review remaining merchant decisions** to open proposal review. These explanations do not approve rules or confirm Wave suggestions.
+
+### History review checks (0.18.0)
+
+`node --test` covers bank-reference boundaries, personal categories, 2023–2024 weighting, account scopes, conflicting batch choices, payments/refunds and atomic preparation. `/extension/history-fixture.html` uses fictional data to check multiple approvals produce one save, failures preserve the selection, accepted rows disappear, and reload restores current rules. The integration preview exercises the same history module in the full app.

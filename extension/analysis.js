@@ -2,6 +2,7 @@ import { normalize, merchantText, matchesDescription, nonPurchaseReason, matchin
 import { proposals } from './model.js';
 import { ruleCoverage, ruleFingerprint, acceptProposal } from './rule-pack.js';
 import { recordSnapshot } from './plan.js';
+import { historySuggestions } from './history.js';
 
 const unresolved = c => /^(?:Uncategorized |Personal Uncategorized)/i.test(c);
 const money = ts => ts.reduce((n,t)=>n+(t.amount || 0),0);
@@ -97,6 +98,20 @@ export function analyzeHistory(dataset, config, source) {
       }
     }
     if(tier==='needs_judgment')judgmentQueue.push({merchant:g.merchant,...evidence,reason,categoryOptions:known.map(c=>c.category),workflow:g.transactions.some(t=>!nonPurchaseReason(t))?'Merchant purpose review':'Payments, credits, cash or financing review',priority:out.some(t=>t.categories.some(unresolved))?'Uncategorized purchases':known.length>1?'Conflicting categories':'Confirm purpose',ids:g.transactions.map(t=>t.id)});
+  }
+  // Optional history-only candidates are proposals needing judgment even when
+  // every known category agrees. Purpose must never be inferred from counts alone.
+  if(config.includeHistoryProposals){
+    const byId=new Map(dataset.transactions.map(t=>[t.id,t]));
+    const history=historySuggestions(dataset.transactions,config.approvedRules || [],3,business,{families:familyRules,backlogIds,from:workingFrom,blockedIds:dangerIds});
+    for(const h of history){
+      if(!h.category || h.aliases.length>100 || resultProposals.some(p=>normalize(p.rule.name)===normalize(h.merchant)))continue;
+      const rows=h.transactionIds.map(id=>byId.get(id)),rule={name:h.merchant.slice(0,200),aliases:h.aliases,category:h.category,matchMode:'exact',onlyCategories:[h.category,...dataset.categories.filter(unresolved)]};
+      const reason=h.known+' categorized purchases agree; '+h.unresolved+' gaps. This is historical evidence only: verify merchant identity and business/personal use before accepting. Exact descriptors retain store numbers and processor distinctions.';
+      const p=makeProposal({merchant:h.merchant},rows,rule,'needs_judgment',reason);
+      p.historyOnly=true;p.evidence.historyReview=h;
+      const m=merchants.find(m=>normalize(m.merchant)===normalize(h.merchant));if(m)m.proposalTier=p.tier;
+    }
   }
   const approved=resultProposals.filter(p=>p.tier==='existing_approved').map(p=>p.rule),strong=resultProposals.filter(p=>p.tier==='strong_proposal').map(p=>p.rule);
   const coverage={

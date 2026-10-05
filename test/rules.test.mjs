@@ -100,3 +100,11 @@ test('invalid or already accepted selections fail the entire batch without mutat
  assert.throws(()=>acceptProposals(pack,['p1','p2'],rules,{p2:'accepted'}));
  assert.deepEqual(rules,[]);assert.deepEqual(decisions,{prior:'rejected'});
 });
+
+test('history-only analysis candidates require judgment even with consistent reliable-year categories',()=>{
+ const ts=['1','2','3','4'].map((id,i)=>({...t(id,'Fictional Unknown',i===3?'Uncategorized Expense':'Hosting'),date:i===3?'2026-01-01':'2024-01-01'}));
+ const dataset={transactions:ts,ledgerRows:8,categories:['Hosting','Uncategorized Expense']};
+ const config={business,groups:[],includeHistoryProposals:true};const a=analyzeHistory(dataset,config,{sha256:'synthetic'});
+ assert.equal(a.pack.proposals.length,1);assert.equal(a.pack.proposals[0].tier,'needs_judgment');assert.equal(a.pack.proposals[0].historyOnly,true);assert.equal(a.pack.proposals[0].rule.matchMode,'exact');assert.equal(a.session.candidates.length,0);
+ assert.equal(analyzeHistory(dataset,{...config,includeHistoryProposals:false},{}).pack.proposals.length,0);
+});
