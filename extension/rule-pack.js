@@ -32,6 +32,12 @@ export function acceptProposal(pack, id, rules, decisions = {}, editedRule = nul
   const next = retained.some(r=>same(r)===same(rule) && JSON.stringify(r.storeAliases || [])===JSON.stringify(rule.storeAliases || [])) ? [...retained] : [...retained,rule];
   return { rules: next, decisions: { ...decisions,[id]:'accepted' } };
 }
+export function acceptProposals(pack, ids, rules, decisions = {}, edits = {}) {
+  if(!Array.isArray(ids) || !ids.length || new Set(ids).size!==ids.length)throw Error('Choose distinct pending proposals.');
+  let result={rules,decisions};
+  for(const id of ids){if(decisions[id]==='accepted')throw Error('A selected proposal is already accepted.');result=acceptProposal(pack,id,result.rules,result.decisions,edits[id] || null);}
+  return result;
+}
 export function ruleCoverage(transactions, rules, business = null, blockedIds = new Set()) {
   const result = { eligible:0, eligibleCents:0, covered:0, coveredCents:0, overlaps:0, overlapCents:0, conflicts:0, conflictCents:0, changes:0, changeCents:0, confirmations:0, excluded:0 };
   for (const t of transactions) {

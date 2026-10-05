@@ -16,12 +16,13 @@ const csvText=[headers,...rows].map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"'
 const dataset=importAccounting(csvText),hash=await sourceHash(csvText);
 const pack=analyzeHistory(dataset,{business,backlog:{records:[{id:'1000000000000000004'}]},groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:8,ledgerRows:16}).pack;
 let state={dataset,business,csvText,sample:false,rules:[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}],pack,decisions:{},packFileName:'synthetic-proposals.json'};
+let approvalSaves=0;
 const output=document.getElementById('fixtureStatus');
 const save=async()=>saveSession({version:1,business,csvText,sourceName:'Fictional integration test.csv',sample:false,shortlist:['1000000000000000005'],proposalPack:state.pack,proposalDecisions:state.decisions,proposalFileName:state.packFileName});
 const view=installProposalReview({
  getState:()=>state,categories:()=>dataset.categories,
  imported:async (p,fileName)=>{state.pack=p;state.packFileName=fileName;state.decisions={};await save();},
- accepted:async result=>{state.rules=result.rules;state.decisions=result.decisions;await save();output.textContent='Accepted locally. Existing rule preserved: '+state.rules.some(r=>r.name==='Existing fixture rule')+'. Approved aliases: '+state.rules.at(-1).aliases.join(', ')+'. Previous versions: '+(state.rules.at(-1).previousVersions?.length || 0);},
+ accepted:async result=>{approvalSaves++;state.rules=result.rules;state.decisions=result.decisions;await save();output.textContent='Accepted locally. Existing rule preserved: '+state.rules.some(r=>r.name==='Existing fixture rule')+'. Approved aliases: '+state.rules.at(-1).aliases.join(', ')+'. Previous versions: '+(state.rules.at(-1).previousVersions?.length || 0)+'. Approval saves: '+approvalSaves+'. Accepted proposals: '+Object.values(state.decisions).filter(d=>d==='accepted').length;},
  rejected:async decisions=>{state.decisions=decisions;await save();output.textContent='Rejected locally; existing rule count '+state.rules.length;}
 });
 await view.render();
@@ -39,3 +40,5 @@ const seedBatch=document.createElement('button');seedBatch.textContent='Seed two
 };document.querySelector('main').append(seedBatch);
 
 const upgrade=document.createElement('button');upgrade.textContent='Seed merchant upgrade test';upgrade.onclick=async()=>{const old={name:'Example Cloud',aliases:['EXAMPLE CLOUD'],category:'Software'};state.rules=[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'},old];state.decisions={};state.pack=structuredClone(pack);const p=state.pack.proposals.find(p=>p.rule.name==='Example Cloud');p.replaces=[ruleFingerprint(old)];p.replacementNames=['Example Cloud'];p.changeType='Improve existing rule';p.rule.aliases=['EXAMPLE CLOUD','EXAMPLECLOUD'];p.rule.storeAliases=['EXAMPLECLOUD'];await view.render();output.textContent='Upgrade pending. Existing Example Cloud aliases: '+old.aliases.join(', ');};document.querySelector('main').append(upgrade);
+
+const stress=document.createElement('button');stress.textContent='Seed 200 fictional proposals';stress.onclick=async()=>{state.decisions={};state.rules=[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}];state.pack=structuredClone(pack);const p=state.pack.proposals[0];state.pack.proposals=Array.from({length:200},(_,i)=>({...structuredClone(p),id:'stress-'+i,rule:{...structuredClone(p.rule),name:'Fictional Merchant '+i,aliases:['FICTIONAL MERCHANT '+i]},reason:'Synthetic purpose evidence. '.repeat(80)}));const start=performance.now();await view.render();output.textContent='200 fictional proposal headers rendered in '+Math.round(performance.now()-start)+' ms. Reasoning remains closed.';};document.querySelector('main').append(stress);

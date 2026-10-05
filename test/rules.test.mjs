@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { matchingRules, matchesDescription, nonPurchaseReason, validateRule } from '../extension/rules.js';
-import { ruleCoverage, acceptProposal, validateRulePack, sourceHash } from '../extension/rule-pack.js';
+import { ruleCoverage, acceptProposal, acceptProposals, validateRulePack, sourceHash } from '../extension/rule-pack.js';
 import { analyzeHistory } from '../extension/analysis.js';
 import { proposals } from '../extension/model.js';
 const business='11111111-1111-1111-1111-111111111111';
@@ -80,4 +80,23 @@ test('full-history analysis reconciles groups, thresholds, aliases, partial refu
  assert.equal(out.session.executed,false);
  const mixed=analyzeHistory({...dataset,transactions:[...txs,t('1000000000000000007','EXAMPLE CLOUD','Office')]},{business,groups:[{...rule,narrow:true,purpose:'Cloud product'}]},{});
  assert.equal(mixed.pack.proposals[0].tier,'needs_judgment');
+});
+
+
+test('batch acceptance creates one result and preserves original rules and decisions',()=>{
+ const pack={business,source:{sha256:'synthetic'},proposals:[{id:'p1',tier:'strong_proposal',rule},{id:'p2',tier:'needs_judgment',rule:{name:'Example Storage',aliases:['EXAMPLE STORAGE'],category:'Storage'}}]};
+ const old={name:'Existing rule',aliases:['Old'],category:'Office'},rules=[old],decisions={prior:'rejected'};
+ const result=acceptProposals(pack,['p1','p2'],rules,decisions,{p2:{...pack.proposals[1].rule,aliases:['EXAMPLE STORAGE','EXAMPLESTORAGE']}});
+ assert.equal(result.rules.length,3);assert.deepEqual(result.decisions,{prior:'rejected',p1:'accepted',p2:'accepted'});
+ assert.deepEqual(result.rules[2].aliases,['EXAMPLE STORAGE','EXAMPLESTORAGE']);
+ assert.deepEqual(rules,[old]);assert.deepEqual(decisions,{prior:'rejected'});
+});
+
+test('invalid or already accepted selections fail the entire batch without mutating inputs',()=>{
+ const pack={business,source:{sha256:'synthetic'},proposals:[{id:'p1',tier:'strong_proposal',rule},{id:'p2',tier:'needs_judgment',rule:{...rule,name:'Second',aliases:['SECOND']}},{id:'existing',tier:'existing_approved',rule}]};
+ const rules=[],decisions={prior:'rejected'};
+ for(const ids of [[],['p1','p1'],['p1','missing'],['p1','existing']])assert.throws(()=>acceptProposals(pack,ids,rules,decisions));
+ assert.throws(()=>acceptProposals(pack,['p1','p2'],rules,decisions,{p2:{...rule,aliases:[]}}));
+ assert.throws(()=>acceptProposals(pack,['p1','p2'],rules,{p2:'accepted'}));
+ assert.deepEqual(rules,[]);assert.deepEqual(decisions,{prior:'rejected'});
 });
