@@ -38,16 +38,22 @@ export function waveListScan(request,testContext){
    const r={id:null,identity:'unresolved',date:date(get('Date',1)),description:get('Description',2),account:get('Account',3),category:get('Category',4),amountText:get('Amount',5),amountCents:amount(get('Amount',5)),reviewed:'Unknown',reviewEvidence:null,sourceFilter:'NOT_VERIFIED'};
    if(!r.date || !r.description || r.amountCents===null){problems.add('Some visible rows could not be parsed; inspect table diagnostics.');if(state.report.rowDiagnostics.length<5)state.report.rowDiagnostics.push({problem:'Unreadable row fields',html:row.outerHTML.slice(0,9000)});continue;}
    r.uncategorized=/^Uncategorized(?: Expense| Income)?$/i.test(r.category);
-   const ids=new Set();for(const el of [row,...row.querySelectorAll('[data-transaction-id],a[href]')]){
+   let foreignIdentity=false;const ids=new Set();for(const el of [row,...row.querySelectorAll('[data-transaction-id],[data-testid^="BulkCheckbox"],a[href]')]){
+    const testId=el.getAttribute('data-testid');if(testId?.startsWith('BulkCheckbox')){try{const payload=testId.slice('BulkCheckbox'.length);if(!/^[A-Za-z0-9+/]+={0,2}$/.test(payload))throw Error('Invalid encoded identity');const decoded=atob(payload),match=decoded.match(/^Business:([0-9a-f-]{36});Transaction:(\d+)$/i);if(match){if(match[1].toLowerCase()===request.business.toLowerCase())ids.add(match[2]);else foreignIdentity=true;}}catch{/* Unrecognized metadata never becomes an ID. */}}
     const raw=el.getAttribute('data-transaction-id');if(raw && /^\d+$/.test(raw))ids.add(raw);
     const href=el.getAttribute('href');if(href){try{const u=new URL(href,loc.href),match=u.pathname.match(/^\/([0-9a-f-]{36})\/transactions\/(\d+)\/?$/i);if(u.origin==='https://next.waveapps.com' && match?.[1]===request.business)ids.add(match[2]);}catch{}}
    }
-   if(ids.size===1){r.id=[...ids][0];r.identity='Wave transaction ID';}else if(ids.size>1)problems.add('Some rows expose multiple transaction IDs; those rows remain unresolved.');
+   if(foreignIdentity){problems.add('A row exposes a different business identity; that row remains unresolved.');}else if(ids.size===1){r.id=[...ids][0];r.identity='Wave transaction ID';}else if(ids.size>1)problems.add('Some rows expose multiple transaction IDs; those rows remain unresolved.');
    const k=fingerprint(r),candidates=known.get(k) || [];
-   if(!r.id && !ids.size && candidates.length===1){r.id=candidates[0];r.identity='Unique full-field export match';}
-   const statusAttribute=row.getAttribute('data-reviewed');if(statusAttribute==='true' || statusAttribute==='false'){r.reviewed=statusAttribute==='true'?'Reviewed':'Not reviewed';r.reviewEvidence='Row data-reviewed attribute';}
+   if(!r.id && !ids.size && !foreignIdentity && candidates.length===1){r.id=candidates[0];r.identity='Unique full-field export match';}
+   const evidence=[];
+   const statusAttribute=row.getAttribute('data-reviewed');if(statusAttribute==='true' || statusAttribute==='false')evidence.push({status:statusAttribute==='true'?'Reviewed':'Not reviewed',reason:'Row data-reviewed attribute'});
    const reviewLabels=[...row.querySelectorAll('[aria-label],[title]')].map(el=>tidy(el.getAttribute('aria-label') || el.getAttribute('title'))).filter(label=>/^(Reviewed|Transaction reviewed|Not reviewed|Transaction not reviewed)$/i.test(label));
-   const statuses=new Set(reviewLabels.map(label=>/not reviewed/i.test(label)?'Not reviewed':'Reviewed'));if(statuses.size===1){const status=[...statuses][0];if(r.reviewed!=='Unknown' && r.reviewed!==status){r.reviewed='Unknown';r.reviewEvidence='Conflicting row indicators';}else{r.reviewed=status;r.reviewEvidence='Explicit row status label';}}else if(statuses.size>1){r.reviewed='Unknown';r.reviewEvidence='Conflicting row indicators';}
+   for(const label of reviewLabels)evidence.push({status:/not reviewed/i.test(label)?'Not reviewed':'Reviewed',reason:'Explicit row status label'});
+   const reviewIcons=[...row.querySelectorAll('.transactions-list-v2__row__verify-icon')];
+   for(const icon of reviewIcons){if(icon.classList.contains('transactions-list-v2__row__verify-icon--unverified'))evidence.push({status:'Not reviewed',reason:'Wave row unverified marker'});if(icon.classList.contains('transactions-list-v2__row__verify-icon--verified'))evidence.push({status:'Reviewed',reason:'Wave row verified marker'});}
+   r.reviewControlDisabled=reviewIcons.some(icon=>icon.disabled || icon.getAttribute('aria-disabled')==='true' || icon.classList.contains('transactions-list-v2__row__verify-icon--unverified--is-disabled'));
+   const statuses=new Set(evidence.map(item=>item.status));if(statuses.size===1){r.reviewed=[...statuses][0];r.reviewEvidence=[...new Set(evidence.map(item=>item.reason))].join('; ');}else if(statuses.size>1)r.reviewEvidence='Conflicting row indicators';
    const occurrence=(occurrences.get(k) || 0)+1;occurrences.set(k,occurrence);const rowKey=r.id?'id:'+r.id:'unresolved:'+k+':'+occurrence;
    records.set(rowKey,r);
    if(!r.id && state.report.rowDiagnostics.length<5 && !state.report.rowDiagnostics.some(d=>d.key===rowKey))state.report.rowDiagnostics.push({key:rowKey,html:row.outerHTML.slice(0,9000)});
