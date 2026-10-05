@@ -1,6 +1,13 @@
+import {expenseCandidates} from './expense-batch.js';
 import {waveListScan} from './list-scan.js';
 import {openBackgroundTab} from './workflow.js';
 export function scopedListIds(report){return new Set((report?.records || []).filter(r=>typeof r.id==='string' && /^\d+$/.test(r.id) && r.reviewed!=='Reviewed' && ['Wave transaction ID','Unique full-field export match'].includes(r.identity)).map(r=>r.id));}
+export function liveExpenseLinks(report,queue=[],transactions=[],from='2025-01-01'){
+ const ids=scopedListIds(report),eligible=new Set(expenseCandidates(queue,ids).map(t=>t.id)),exports=new Set(transactions.map(t=>t.id));
+ const result={known:0,needsReview:0,missingExport:0,completedPeriod:0,unresolved:0,reviewed:0};
+ for(const row of report?.records || []){if(row.reviewed==='Reviewed'){result.reviewed++;continue;}if(!ids.has(row.id)){result.unresolved++;continue;}if(row.date && row.date<from){result.completedPeriod++;continue;}if(!exports.has(row.id)){result.missingExport++;continue;}if(eligible.has(row.id))result.known++;else result.needsReview++;}
+ return result;
+}
 export function installLiveList({getState,onRunning,onScope,refreshExpenses}){
  const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
  const section=make('section'),fold=make('details');fold.className='step';fold.id='liveList';const summary=make('summary','Live Not Reviewed list');summary.setAttribute('role','heading');summary.setAttribute('aria-level','2');fold.append(summary);const body=make('div');body.className='step-body';
@@ -12,10 +19,11 @@ export function installLiveList({getState,onRunning,onScope,refreshExpenses}){
  body.append(make('p','Opens the selected business with the Not Reviewed filter and scrolls through its transaction list, pressing Load More Transactions until it disappears. Select All briefly checks the total, then the selection is cleared. Categories and explicit visible statuses are recorded. The list filter is recorded separately; unreadable statuses remain Unknown. No transactions are edited.'),bar,status,view,scopeLabel,expenses,results);fold.append(body);section.append(fold);document.getElementById('expenseBatch').parentElement.before(section);
  let reports={},scopes={},busy=false,tabId=null,limit=100,currentBusiness=null;
  const selectedReport=()=>reports[getState().business];
- const applyScope=()=>{const business=getState().business;scope.checked=!!scopes[business];onScope(scope.checked && reports[business]?scopedListIds(reports[business]):null);};
+ const applyScope=()=>{const business=getState().business;if(scopes[business]===undefined && reports[business]?.completeness==='count-confirmed')scopes[business]=true;scope.checked=!!scopes[business];onScope(scope.checked && reports[business]?scopedListIds(reports[business]):null);};
  function render(){const s=getState(),r=selectedReport();if(currentBusiness!==s.business){currentBusiness=s.business;limit=100;}applyScope();start.disabled=busy || s.busy || !s.extensionMode || s.sample || !s.business;stop.disabled=!busy;download.disabled=copy.disabled=!r;scope.disabled=busy || !r || !scopedListIds(r).size;
   results.replaceChildren();if(!r){status.textContent='No live list collected for this business.';return;}
-  const list=(r.records || []).filter(row=>view.value!=='uncategorized' || row.uncategorized),identified=r.records.filter(row=>row.id).length;
+  const links=liveExpenseLinks(r,s.queue,s.dataset?.transactions,s.workFrom);const connection=make('p');connection.setAttribute('role','status');connection.textContent=(scope.checked?'Linked to known expenses: ':'Available to link: ')+links.known+' approved-rule expenses; '+links.needsReview+' need individual review; '+links.missingExport+' missing from the imported CSV; '+links.completedPeriod+' before the working period; '+links.unresolved+' unresolved IDs.';results.append(connection);if(links.missingExport)results.append(make('p','Import a fresh accounting.csv to include the missing transactions. Scanned rows do not replace ledger postings or approve merchant rules.'));
+ const list=(r.records || []).filter(row=>view.value!=='uncategorized' || row.uncategorized),identified=r.records.filter(row=>row.id).length;
   status.textContent=r.status+' · '+r.records.length+' rows, '+identified+' identified; '+r.records.filter(row=>row.uncategorized).length+' uncategorized; '+r.records.filter(row=>row.reviewed==='Unknown').length+' unknown review statuses. Captured '+r.capturedAt+'.';
   const table=make('table'),head=make('tr');for(const text of ['Date / ID','Description / Account','Category','Amount','Review status'])head.append(make('th',text));const thead=make('thead');thead.append(head);table.append(thead);const tbody=make('tbody');for(const row of list.slice(0,limit)){const tr=make('tr');tr.append(make('td',(row.date || 'Unknown')+' · '+(row.id || 'ID unresolved')),make('td',row.description+' · '+row.account),make('td',row.category || 'Unknown'),make('td',row.amountText),make('td',row.reviewed+(row.reviewEvidence?' · '+row.reviewEvidence:'')));tbody.append(tr);}table.append(tbody);results.append(make('p','Showing '+Math.min(limit,list.length)+' of '+list.length+' rows. Filter source: NOT_VERIFIED. Completion evidence: '+r.completeness+'.'),table);
   if(list.length>limit){const more=make('button','Show more collected transactions');more.onclick=()=>{limit+=100;render();};results.append(more);}
@@ -34,10 +42,10 @@ export function installLiveList({getState,onRunning,onScope,refreshExpenses}){
    const known=(s.dataset?.transactions || []).filter(t=>t.primary).map(t=>({id:t.id,date:t.date,description:t.description,account:t.primary.account,amountCents:t.amount}));
    report=(await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'start',business,known}]}))[0]?.result;if(!report)throw Error('No list collection response.');
    while(report.running){reports[business]=report;render();await new Promise(resolve=>setTimeout(resolve,1400));if(getState().business!==business)await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'stop'}]});report=(await chrome.scripting.executeScript({target:{tabId},func:waveListScan,args:[{action:'poll'}]}))[0]?.result;if(!report)throw Error('The collection tab was closed or reloaded. Partial results retained.');}
-   reports[business]=report;await persist();
+   reports[business]=report;if(report.completeness==='count-confirmed')scopes[business]=true;await persist();
   }catch(e){if(report){report={...report,running:false,status:'Collection interrupted: '+e.message,completeness:'unconfirmed'};reports[business]=report;await persist();}else status.textContent=e.message;}
   finally{busy=false;onRunning(false);if(report)render();else{start.disabled=false;stop.disabled=true;}refreshExpenses();}
  };
- const ready=(async()=>{if(getState().extensionMode){const stored=await chrome.storage.local.get(['solverLiveLists','solverLiveListScopes']);reports=stored.solverLiveLists || {};scopes=stored.solverLiveListScopes || {};}render();})();
+ const ready=(async()=>{if(getState().extensionMode){const stored=await chrome.storage.local.get(['solverLiveLists','solverLiveListScopes']);reports=stored.solverLiveLists || {};scopes=stored.solverLiveListScopes || {};}render();refreshExpenses();})();
  return {render,ready};
 }
