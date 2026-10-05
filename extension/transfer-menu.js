@@ -30,10 +30,10 @@ export function readTransferMenu(testContext){
  if(roots.size!==1){result.problems.push(roots.size?'Multiple transfer menus are visible. Close extra menus and read again.':'No matching submenu was detected. Leave the matching-transaction submenu open in the money-out transaction tab.');return result;}
  const menu=[...roots][0],matching=headingNodes(menu,matchingText),create=headingNodes(menu,createText);result.matchingGroups=matching.length;result.createGroups=create.length;
  const follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
- const nodes=[...menu.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,.wv-list__item,.wv-dropdown__item,.wv-select__option')].filter(visible);
+ const nodes=[...menu.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],li,button,a,.wv-list__item,.wv-dropdown__item,.wv-select__option,.wv-select__menu__option')].filter(visible);
  const options=nodes.filter(e=>!nodes.some(child=>child!==e && e.contains(child) && clean(child)===clean(e)));
  for(const e of options){const text=clean(e);if(!text || text.includes(matchingText) || text.includes(createText))continue;
-  const item={text,tag:e.tagName,role:e.getAttribute('role'),transactionId:e.getAttribute('data-transaction-id') || e.querySelector('[data-transaction-id]')?.getAttribute('data-transaction-id') || null,href:e.getAttribute('href') || e.querySelector('a[href]')?.getAttribute('href') || null,html:e.outerHTML.slice(0,6000)};
+  const item={text,tag:e.tagName,role:e.getAttribute('role'),checked:e.getAttribute('aria-checked'),disabled:e.getAttribute('aria-disabled')==='true' || !!e.disabled,transactionId:e.getAttribute('data-transaction-id') || e.querySelector('[data-transaction-id]')?.getAttribute('data-transaction-id') || null,href:e.getAttribute('href') || e.querySelector('a[href]')?.getAttribute('href') || null,html:e.outerHTML.slice(0,6000)};
   if(matching.length===1 && follows(matching[0],e) && (!create.length || create.every(h=>follows(e,h))))result.matchingOptions.push(item);
   else if(create.length===1 && follows(create[0],e))result.createOptions.push(item);
  }
@@ -49,6 +49,6 @@ export function checkTransferMenu(report,pair,business){
  const normalize=s=>String(s || '').replace(/[—–]/g,'-').replace(/\s+/g,' ').trim();
  const labels=dates.map(d=>normalize(t.primary.account+' - '+d+' - '+t.description));
  const validHref=href=>{if(!href)return true;try{const u=new URL(href,'https://next.waveapps.com');return u.origin==='https://next.waveapps.com' && u.pathname==='/'+business+'/transactions/'+t.id;}catch{return false;}};
- const candidates=report.matchingOptions.filter(o=>o && typeof o.text==='string' && labels.includes(normalize(o.text)) && (!o.transactionId || o.transactionId===t.id) && validHref(o.href));
+ const candidates=report.matchingOptions.filter(o=>o && typeof o.text==='string' && labels.includes(normalize(o.text).replace(/^Transfer to /i,'')) && !o.disabled && (!o.transactionId || o.transactionId===t.id) && validHref(o.href));
  return {ready:candidates.length===1,message:candidates.length===1?'One exact existing matching-transaction option was found. Copy the diagnostics for the final Set transfer integration. No transfer was set or reviewed.':'An exact unique counterpart could not be confirmed. Copy the diagnostics for selector inspection; create-transfer options are excluded.',candidate:candidates.length===1?candidates[0].text:null};
 }

@@ -90,3 +90,9 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Detect the transfer matching submenu from its visible section heading, without requiring one exact search placeholder or a single category search on the page.
 - Retain bounded menu markup on incomplete captures, including the first-level transfer menu, so copied diagnostics remain useful for adapting selectors.
 - Avoid double-counting nested option wrappers; withhold multiple visible menus. Add six synthetic DOM regression checks.
+
+## 0.9.3
+
+- Recognize Wave's menuitemradio options and wv-select__menu__option containers in the existing-match and create-transfer sections.
+- Accept the observed Transfer to prefix on exact counterpart labels; retain checked and disabled menu metadata without treating menu selection as a saved transfer.
+- Add a synthetic reproduction of Wave's radio-menu structure and disabled/prefix boundary tests. Transfer save/review automation remains unimplemented.
