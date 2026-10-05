@@ -39,3 +39,19 @@ test('failed transfer preflight identifies the side and field and retains copyab
 import {resetTransferReceipt} from '../extension/transfers.js';
 test('saved full transfer labels verify only the exact opposite account, date and description',()=>{const snapshots={[out.id]:{...snapshot(out),fields:{...snapshot(out).fields,category:'Transfer to Fictional Card - Jan 2, 2025 - Payment thank you'},reviewed:'Reviewed'},[incoming.id]:{...snapshot(incoming),fields:{...snapshot(incoming).fields,category:'Transfer from Fictional Checking - Jan 1, 2025 - Card payment'},reviewed:'Reviewed'}};assert(verifyTransferResult(editablePair,snapshots,business).verified);snapshots[out.id].fields.category='Transfer to Fictional Card - Jan 3, 2025 - Payment thank you';assert.equal(verifyTransferResult(editablePair,snapshots,business).verified,false);});
 test('explicit reset requires original fields on both fresh records and confirmed unreviewed state',()=>{const snapshots={[out.id]:{...snapshot(out),controls:['Mark as reviewed']},[incoming.id]:{...snapshot(incoming),controls:['Mark as reviewed']}};const receipt={ids:[out.id,incoming.id],saveAttempted:true,verified:false,snapshots};const reset=resetTransferReceipt(editablePair,snapshots,business,receipt);assert.equal(reset.saveAttempted,false);assert.equal(reset.previousAttempts.length,1);assert.equal(receipt.saveAttempted,true);for(const bad of [{...snapshots,[out.id]:{...snapshots[out.id],reviewed:'Reviewed',controls:['Reviewed']}},{...snapshots,[incoming.id]:{...snapshots[incoming.id],controls:[]}},{...snapshots,[out.id]:{...snapshots[out.id],fields:{...snapshot(out).fields,category:'Transfer to Fictional Card'}}}])assert.throws(()=>resetTransferReceipt(editablePair,bad,business,receipt));assert.throws(()=>resetTransferReceipt(editablePair,snapshots,business,{...receipt,verified:true}));assert.throws(()=>resetTransferReceipt(editablePair,snapshots,business,{...receipt,ids:[out.id,'1000000000000000003']}));assert.throws(()=>resetTransferReceipt(editablePair,snapshots,business,{...receipt,snapshots:undefined}));});
+
+import {classifyTransferState} from '../extension/transfers.js';
+test('batch preflight recognizes manually completed pairs from a stale export',()=>{
+ const snapshots={[out.id]:snapshot(out),[incoming.id]:snapshot(incoming)};
+ assert.equal(classifyTransferState(editablePair,snapshots,business).state,'original');
+ snapshots[out.id]={...snapshot(out),fields:{...snapshot(out).fields,category:'Transfer to Fictional Card'},reviewed:'Reviewed'};
+ snapshots[incoming.id]={...snapshot(incoming),fields:{...snapshot(incoming).fields,category:'Transfer from Fictional Checking'},reviewed:'Reviewed'};
+ const completed=classifyTransferState(editablePair,snapshots,business);assert.equal(completed.state,'linked');assert(completed.reviewed);
+ snapshots[incoming.id].reviewed='Unknown';assert.equal(classifyTransferState(editablePair,snapshots,business).reviewed,false);
+});
+test('batch recognition rejects partial links, other accounts, changed amounts and wrong identities with field diagnostics',()=>{
+ const saved={[out.id]:{...snapshot(out),fields:{...snapshot(out).fields,category:'Transfer to Fictional Card'},reviewed:'Reviewed'},[incoming.id]:{...snapshot(incoming),fields:{...snapshot(incoming).fields,category:'Transfer from Fictional Checking'},reviewed:'Reviewed'}};
+ for(const bad of [snapshot(incoming),{...saved[incoming.id],fields:{...saved[incoming.id].fields,category:'Transfer from Other Bank'}},{...saved[incoming.id],fields:{...saved[incoming.id].fields,amount:'99.01'}},{...saved[incoming.id],identity:{business,transaction:'1000000000000000003'}},{...saved[incoming.id],problems:['Account unreadable']}]){
+  assert.throws(()=>classifyTransferState(editablePair,{...saved,[incoming.id]:bad},business),e=>{assert(e.diagnostics.sides.length===2);assert.match(e.message,/Money (in|out):/);return true;});
+ }
+});

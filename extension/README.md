@@ -169,3 +169,5 @@ Reload the extension, expand **Transfer review**, select recognized pairs (or **
 No create-transfer entries, same-account refunds, ambiguous pairs, or completed-period records are automatically processed. Selecting pairs and clicking Run authorizes those edits; importing an export or reading diagnostics does not. Development validation uses synthetic DOM fixtures and mocked Wave tabs only.
 
 Validation for 0.11.0: 75 Node checks and 29 synthetic editor checks passed. The mocked integration preview verified two sequential pairs with a missing incoming review, changed-amount preflight rejection, and stop-after-current behavior. The new browser automation still needs its first user-run test in Wave.
+
+Version 0.11.1 checks both live records before opening the transfer menu. Pairs already linked to the expected accounts with unchanged identifying fields are recognized against older exports. Fully reviewed pairs are skipped without edits; linked pairs lacking review use only the review follow-up. Genuine differences retain both field comparisons and copyable snapshots, and stop the batch. Batch results count already completed pairs separately.

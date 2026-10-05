@@ -1,5 +1,5 @@
 import { readTransferMenu } from './transfer-menu.js';
-import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt } from './transfers.js';
+import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt,classifyTransferState } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
 import { validateRule } from './rules.js';
 import { installProposalReview } from './proposal-view.js';
@@ -572,20 +572,29 @@ async function runTransfer(pair,mode=false){
  if(recheck && !previous?.saveAttempted)throw Error('No transfer save attempt to recheck.');
  applying=true;document.querySelector('main').inert=true;liveGeneration++;
  const current=()=>business===expectedBusiness && dataset===data && workFrom()===from;
- let tabId=previous?.tabId ?? null,attempted=false;
+ let tabId=previous?.tabId ?? null,attempted=false,alreadyLinked=false;
  try{
   if(!recheck){
    if(automatic){
     const tab=await reopenSavedTransaction(chrome.tabs,transferWorkerTabs.out,expectedBusiness,pair.out.id,current);tabId=tab.id;transferWorkerTabs.out=tab.id;
     const before=await waitForLiveSnapshot(()=>captureLive(tabId,expectedBusiness,pair.out.id),current);
     if(!current())throw Error('Transfer context changed.');
-    // Validate all original fields before opening any Wave controls.
-    const original=compareLive(pair.out,before);
-    if(before.problems?.length || original.checks.some(c=>c.state!=='Match'))throw Error('Money-out record changed. Nothing applied.');
-    const opened=(await chrome.scripting.executeScript({target:{tabId},func:editWaveTransaction,args:[{business:expectedBusiness,id:pair.out.id,category:before.fields.category,expected:before.fields,openTransferMenu:true}]}))[0]?.result;
-    if(!opened?.menuOpened)throw Error(opened?.problem || 'Could not open the transfer menu. Nothing applied.');
+    const incoming=await reopenSavedTransaction(chrome.tabs,transferWorkerTabs.in,expectedBusiness,pair.in.id,current);transferWorkerTabs.in=incoming.id;
+    const incomingSnapshot=await waitForLiveSnapshot(()=>captureLive(incoming.id,expectedBusiness,pair.in.id),current);
+    if(!current())throw Error('Transfer context changed.');
+    const snapshots={[pair.out.id]:before,[pair.in.id]:incomingSnapshot};
+    const state=classifyTransferState(pair,snapshots,expectedBusiness);
+    alreadyLinked=state.state==='linked';
+    if(alreadyLinked){
+     await storeEditReceipt(key,{...previous,ids:[pair.out.id,pair.in.id],tabId,saveAttempted:true,externallyLinked:true,...state,snapshots,message:state.reviewed?'Already linked and reviewed in Wave. Skipped without editing.':state.message});
+     if(state.reviewed)return {...editReceipts[key],skipped:true};
+    }else{
+     const opened=(await chrome.scripting.executeScript({target:{tabId},func:editWaveTransaction,args:[{business:expectedBusiness,id:pair.out.id,category:before.fields.category,expected:before.fields,openTransferMenu:true}]}))[0]?.result;
+     if(!opened?.menuOpened)throw Error(opened?.problem || 'Could not open the transfer menu. Nothing applied.');
+    }
    }else{const menu=await captureTransferMenu(pair.out);tabId=menu.tabId;}
 
+   if(!alreadyLinked){
    const snapshots={};
    const incoming=await reopenSavedTransaction(chrome.tabs,transferWorkerTabs.in,expectedBusiness,pair.in.id,current);transferWorkerTabs.in=incoming.id;
    snapshots[pair.in.id]=await waitForLiveSnapshot(()=>captureLive(incoming.id,expectedBusiness,pair.in.id),current);
@@ -599,6 +608,7 @@ async function runTransfer(pair,mode=false){
    await storeEditReceipt(key,{...editReceipts[key],...outcome,message:outcome.problem || 'Save requested. Checking both records…'});
    if(outcome.problem)throw Error(outcome.problem);
    if(!outcome.saveAttempted)throw Error('Save was not requested. Cancel the Wave dialog before retrying.');
+   }
   }
   const snapshots={};
   for(const t of [pair.out,pair.in]){
@@ -639,7 +649,7 @@ async function runTransfer(pair,mode=false){
   return editReceipts[key];
  }catch(e){
   if(!attempted && !recheck && e.diagnostics){await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],saveAttempted:false,stage:'preflight',message:e.message,preflight:e.diagnostics,checkedAt:new Date().toISOString()});return editReceipts[key];}
-  if(attempted || recheck){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],reviewed:false,message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
+  if(attempted || recheck || alreadyLinked){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],reviewed:false,message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
   throw e;
  }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
 }

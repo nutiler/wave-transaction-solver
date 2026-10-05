@@ -49,3 +49,19 @@ export function resetTransferReceipt(pair,snapshots,business,receipt){
  const {previousAttempts=[],...previous}=receipt;
  return {ids:receipt.ids,saveAttempted:false,verified:false,reviewed:false,stage:'reset',resetAt:new Date().toISOString(),previousAttempts:[...previousAttempts,previous],originalSnapshots:baseline,message:'Attempt reset after both original records were freshly checked unchanged and unreviewed. Reopen the matching submenu and read it before setting the transfer. Nothing was changed in Wave.'};
 }
+
+// Fresh records can legitimately differ from an older export after manual linking.
+export function classifyTransferState(pair,snapshots,business){
+ const saved=verifyTransferResult(pair,snapshots,business);
+ if(saved.verified)return {state:'linked',...saved};
+ const sides=[['Money out',pair.out],['Money in',pair.in]].map(([side,t])=>{
+  const snapshot=snapshots[t.id] || {fields:{}};
+  const comparison=compareLive(t,snapshot),problems=[...(snapshot.problems || [])];
+  if(snapshot.identity?.business!==business)problems.push('Wrong or unreadable Wave business.');
+  return {side,id:t.id,checks:comparison.checks,problems,snapshot};
+ });
+ const failed=sides.filter(s=>s.problems.length || s.checks.some(c=>c.state!=='Match'));
+ if(!failed.length)return {state:'original',sides};
+ const detail=failed.map(s=>s.side+': '+[...s.problems,...s.checks.filter(c=>c.state!=='Match').map(c=>c.field+' '+c.state+' (export: '+c.exported+'; live: '+c.live+')')].join('; ')).join(' | ');
+ const error=Error('Live transfer records changed. Nothing applied. '+detail);error.diagnostics={sides};throw error;
+}

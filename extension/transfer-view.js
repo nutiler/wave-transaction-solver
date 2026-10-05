@@ -26,16 +26,17 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
    const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));running=true;stop=false;
    const panel=make('div');panel.className='transfer-run-progress';panel.setAttribute('role','status');
    const progress=make('p'),pause=make('button','Stop after current pair');pause.onclick=()=>{stop=true;pause.disabled=true;};panel.append(progress,pause);document.body.append(panel);
-   let done=0;
+   let done=0,skipped=0,activePair=null;
    try{for(const p of chosen){
     if(stop)break;
     if(getState().dataset!==s.dataset || getState().business!==s.business || getState().workFrom!==s.workFrom)throw Error('Session changed. Run stopped.');
-    progress.textContent='Pair '+(done+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
+    progress.textContent='Pair '+(done+skipped+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
+    activePair=p;
     const result=await applyTransfer(p,'auto');
     if(!result?.reviewed)throw Error(result?.message || 'Pair could not be completed.');
-    selected.delete(p.key);done++;
-   }batchMessage=done+' of '+chosen.length+' selected pairs completed and reviewed.'+(stop?' Stopped after the current pair.':'');
-   }catch(e){batchMessage=done+' pairs completed. Run stopped: '+e.message;}finally{running=false;panel.remove();render();}
+    selected.delete(p.key);if(result.skipped)skipped++;else done++;
+   }batchMessage=done+' pairs completed and reviewed; '+skipped+' already completed pairs skipped, of '+chosen.length+' selected.'+(stop?' Stopped after the current pair.':'');
+   }catch(e){batchMessage=done+' pairs completed; '+skipped+' already completed pairs skipped. Run stopped'+(activePair?' at '+money(activePair.out.amount)+' · '+activePair.out.date+' · '+activePair.out.primary.account+' · ID '+activePair.out.id:'')+': '+e.message;}finally{running=false;panel.remove();render();}
   };
   update();batch.append(selectAll,clear,runSelected,count);$('transferRows').append(batch,status);
   if(completed.length){const d=make('details');d.append(make('summary',completed.length+' completed transfer pairs'));for(const p of completed){const item=make('details');item.append(make('summary',money(p.out.amount)+' · '+p.out.primary.account+' → '+p.in.primary.account+' · Saved and reviewed'),make('pre',JSON.stringify(receipt(p),null,2)));d.append(item);}$('transferRows').append(d);}
