@@ -179,12 +179,13 @@ $('connect').onclick = handle(async () => {
 function renderRules() {
   $('rules').replaceChildren();
   rules.forEach((r, i) => {
-    const row = make('div', undefined, 'rule'), detail = make('div'); detail.append(make('strong', r.name), make('small', r.aliases.join(', ')));
+    const row = make('div', undefined, 'rule'), detail = make('div'); detail.append(make('strong', r.name), make('small', r.aliases.join(', ')+(r.storeAliases?.length?' · Store-number variants: '+r.storeAliases.join(', '):'')));
     const remove = make('button', 'Remove', 'secondary'); remove.setAttribute('aria-label', `Remove ${r.name} rule`);
     remove.onclick = handle(async () => { rules.splice(i, 1); if(r.proposalId && r.business===proposalPack?.business) delete proposalDecisions[r.proposalId]; await persistRules(); renderRules(); analyze(true); void proposalReview.render(); });
     if (r.accountNames?.length || r.accountIds?.length) detail.append(make('small','Only accounts: '+(r.accountNames || r.accountIds).join(', ')));
     if (r.onlyCategories?.length) detail.append(make('small','Only current categories: '+r.onlyCategories.join('; ')));
     if (r.excludeAliases?.length) detail.append(make('small','Excluded aliases: '+r.excludeAliases.join(', ')));
+    if(r.previousVersions?.length){const previous=make('details');previous.append(make('summary','Previous approved versions'));for(const old of r.previousVersions)previous.append(make('p',old.name+' → '+old.category+' · Aliases: '+old.aliases.join(', ')));detail.append(previous);}
     row.append(detail, make('span', r.category), remove); $('rules').append(row);
   });
   updateSteps();

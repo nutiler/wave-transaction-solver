@@ -2,6 +2,15 @@
 
 This repository starts with the completed local prototype. The initial commits group the existing work by component; they are not a reconstruction of earlier edit history.
 
+## 0.15.0 · Merchant recognition and backlog proposals
+- Add explicit store-number aliases, Unicode normalization, and payment-memo boundaries.
+- Recognize more non-purchase card and student-loan payment descriptions.
+- Weight reliable 2023–2024 categories, keep uncategorized gaps separate from contradictions, and expose annual evidence.
+- Preview/edit merchant upgrades with exact replacement identities and retained previous versions.
+- Prioritize backlog proposals and show affected transactions, scope changes, and distinct review buckets.
+- Generate private before/after coverage, backlog decisions, and period-limited draft plans.
+- Add synthetic regression tests for aliases, evidence weighting, scope preservation, payments, refunds, and replacement approvals.
+
 ## 0.14.0 · Usage and Debug workspaces
 - Group setup, transaction runners, merchant rules, and planning into Usage.
 - Move diagnostics, copied reports, and manual transfer-menu tools into Debug tools with direct links.

@@ -223,3 +223,16 @@ Click the blue **Prepare N known expenses** button in **Live Not Reviewed list**
 ### Workspace layout checks
 
 At `/extension/proposal-fixture.html`, seed the fictional integration session, open its integration preview, and seed approved fictional expense rules. Then open `/extension/workspace-fixture.html` and click **Run workspace checks**. It checks Usage/Debug navigation, preserved session text, diagnostic placement, unique IDs, checkbox styling, and both workspaces at 960px, 390px, and 320px. All records and Wave bindings are fictional.
+
+
+## Merchant recognition and reliable-year evidence (0.15)
+
+The matcher ignores capitalization, accents, punctuation, and ordinary bank wrappers. Explicit **store-number aliases** support known stems such as `EXAMPLE HARDWARE TOOLS3259`; it does not strip arbitrary numbers or match pieces of reference codes. Quoted payment memos are excluded from merchant identity. New card-payment/student-loan/returned-deposit guards keep those records out of expenses. The same matcher is used for proposal generation, live-list audit, expense batches, and refund identity.
+
+History summaries give 2023–2024 weight 5, 2025 onward weight 2, and earlier years weight 1. At least three mostly consistent purchases in the reliable years can support a proposal despite learning-year alternatives; other established categories remain excluded. Uncategorized rows are missing evidence, not contradictions. Explicit small-sample service proposals disclose their evidence and still require approval. Provider identity does not establish business purpose.
+
+Import the latest CSV before its regenerated proposal pack. In **Rule proposal review**, choose **Backlog proposals** to prioritize records from the supplied Not Reviewed snapshot. Cards show backlog transactions, category evidence by year, aliases, account/category exclusions, sources, and scope changes. Expand **Edit aliases or category before accepting** to edit aliases, store-number stems, or the exact category. Edits take effect only on acceptance. Changing category restricts matches to that category and uncategorized records.
+
+Accepting an upgrade replaces only the exact unchanged rule identities named in the pack and retains their previous versions in Current rules. Changed rules and rules from other businesses remain. Accepted proposals disappear from the queue and the next one opens. Browser rules, the loaded pack, imported session and execution receipts retain their existing storage behavior.
+
+For a new local analysis, supply private `approvedRules` (from the copied rule-check audit), `backlog` (the collected JSON), `workFrom`, and curated merchant definitions in the ignored context JSON. Use `minimumKnown` only for explicitly justified small samples. The analyzer independently reconciles ledger debit/credit totals, groups every text transaction ID, counts overlaps once, excludes incoming/payment/refund/split records, and writes only to ignored `local-analysis/`. It produces historical and working-period coverage, backlog partitions and prioritized decisions, plus a non-executable session proposal limited to the supplied backlog when present. Browser storage may have changed since the copied audit; approval remains explicit.

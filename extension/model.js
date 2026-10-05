@@ -66,7 +66,7 @@ export function proposals(transactions, rules, windowDays = 5, business = null) 
     const rule = ruleFor(t.description, rules, t, business);
     // Refund identity ignores outgoing-only category/account restrictions, but
     // remains confined to rules for the current business and same bank account.
-    const identityRules = rules.filter(r=>!r.business || r.business===business).map(r=>({name:r.name,aliases:r.aliases,category:r.category,matchMode:r.matchMode,excludeAliases:r.excludeAliases}));
+    const identityRules = rules.filter(r=>!r.business || r.business===business).map(r=>({name:r.name,aliases:r.aliases,category:r.category,matchMode:r.matchMode,excludeAliases:r.excludeAliases,storeAliases:r.storeAliases}));
     const merchantKey = ruleFor(t.description,identityRules)?.name || normalize(t.description);
     const refunds = (buckets.get(t.amount) || []).filter(other => other.id !== t.id && accountKey(other.primary) === accountKey(t.primary) && other.direction !== t.direction && Math.abs(other.day - t.day) <= 60 && (ruleFor(other.description, identityRules)?.name || normalize(other.description)) === merchantKey);
     if (refunds.length) return { ...base, kind: 'Possible refund', reason: `${refunds.length} equal-amount opposite movement(s) on the same account and merchant within 60 days. Needs review; not a transfer.` };

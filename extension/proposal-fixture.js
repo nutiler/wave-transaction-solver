@@ -1,6 +1,6 @@
 import { importAccounting } from './model.js';
 import { analyzeHistory } from './analysis.js';
-import { sourceHash } from './rule-pack.js';
+import { sourceHash,ruleFingerprint } from './rule-pack.js';
 import { loadSession, saveSession } from './session.js';
 import { installProposalReview } from './proposal-view.js';
 const business='11111111-1111-1111-1111-111111111111';
@@ -14,14 +14,14 @@ for(let n=1;n<=6;n++){
 for(const [id,account,accountId,desc,direction,category] of [['1000000000000000007','Fictional Checking','fictional-bank','Card payment','out','Uncategorized Expense'],['1000000000000000008','Fictional Credit Card','fictional-card','Payment thank you','in','Uncategorized Income']]){rows.push([id,'2026-10-01',account,desc,direction==='in'?'99.00':'',direction==='out'?'99.00':'',direction==='in'?'Liability':'Asset',direction==='in'?'Credit Card':'Cash and Bank',accountId]);rows.push([id,'2026-10-01',category,desc,direction==='out'?'99.00':'',direction==='in'?'99.00':'',direction==='out'?'Expense':'Income',direction==='out'?'Expense':'Income','fixture-category']);}
 const csvText=[headers,...rows].map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n');
 const dataset=importAccounting(csvText),hash=await sourceHash(csvText);
-const pack=analyzeHistory(dataset,{business,groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:8,ledgerRows:16}).pack;
+const pack=analyzeHistory(dataset,{business,backlog:{records:[{id:'1000000000000000004'}]},groups:[{name:'Example Cloud',aliases:['Example Cloud'],category:'Software',narrow:true,purpose:'Synthetic cloud software'},{name:'Example Storage',aliases:['Example Storage'],category:'Storage',purpose:'Synthetic storage needs purpose decision'}]},{sha256:hash,name:'Fictional test.csv',createdAt:'2026-10-04',transactions:8,ledgerRows:16}).pack;
 let state={dataset,business,csvText,sample:false,rules:[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'}],pack,decisions:{},packFileName:'synthetic-proposals.json'};
 const output=document.getElementById('fixtureStatus');
 const save=async()=>saveSession({version:1,business,csvText,sourceName:'Fictional integration test.csv',sample:false,shortlist:['1000000000000000005'],proposalPack:state.pack,proposalDecisions:state.decisions,proposalFileName:state.packFileName});
 const view=installProposalReview({
  getState:()=>state,categories:()=>dataset.categories,
  imported:async (p,fileName)=>{state.pack=p;state.packFileName=fileName;state.decisions={};await save();},
- accepted:async result=>{state.rules=result.rules;state.decisions=result.decisions;await save();output.textContent='Accepted locally. Existing rule preserved: '+state.rules.some(r=>r.name==='Existing fixture rule');},
+ accepted:async result=>{state.rules=result.rules;state.decisions=result.decisions;await save();output.textContent='Accepted locally. Existing rule preserved: '+state.rules.some(r=>r.name==='Existing fixture rule')+'. Approved aliases: '+state.rules.at(-1).aliases.join(', ')+'. Previous versions: '+(state.rules.at(-1).previousVersions?.length || 0);},
  rejected:async decisions=>{state.decisions=decisions;await save();output.textContent='Rejected locally; existing rule count '+state.rules.length;}
 });
 await view.render();
@@ -37,3 +37,5 @@ const seedBatch=document.createElement('button');seedBatch.textContent='Seed two
  }
  await saveSession({version:1,business,csvText:csvText+'\n'+extra.map(row=>row.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n'),sourceName:'Fictional batch test.csv',sample:false,shortlist:[]});output.textContent='Two fictional pairs saved. Open the integration preview.';
 };document.querySelector('main').append(seedBatch);
+
+const upgrade=document.createElement('button');upgrade.textContent='Seed merchant upgrade test';upgrade.onclick=async()=>{const old={name:'Example Cloud',aliases:['EXAMPLE CLOUD'],category:'Software'};state.rules=[{name:'Existing fixture rule',aliases:['Legacy'],category:'Software'},old];state.decisions={};state.pack=structuredClone(pack);const p=state.pack.proposals.find(p=>p.rule.name==='Example Cloud');p.replaces=[ruleFingerprint(old)];p.replacementNames=['Example Cloud'];p.changeType='Improve existing rule';p.rule.aliases=['EXAMPLE CLOUD','EXAMPLECLOUD'];p.rule.storeAliases=['EXAMPLECLOUD'];await view.render();output.textContent='Upgrade pending. Existing Example Cloud aliases: '+old.aliases.join(', ');};document.querySelector('main').append(upgrade);
