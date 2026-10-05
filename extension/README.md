@@ -255,3 +255,6 @@ Before a thumbs-up click, the runner reloads the saved transaction and checks it
 
 
 Suggestion control compatibility (0.17.1): scanning and confirmation recognize Wave’s observed exact `ConfirmAutocatIcon` aria-label, as well as the explicit confirmation tooltip wording. The approve SVG alone is insufficient. After upgrading, collect the Not Reviewed list again to replace older scans that could not detect this control.
+
+
+Suggestion readiness (0.17.2): **Refresh Wave suggestions** in the confirmation section recollects the live Not Reviewed list and reloads saved merchant rules. Older scans show an explicit refresh notice. The section reports scanned rows, detected suggestion controls, ready rows and exclusion reasons. Expand **Why suggestions are not ready** to compare Wave’s category with the approved target. Copied diagnostics include this audit; an empty list no longer hides rule exclusions or old scans.

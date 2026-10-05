@@ -2,15 +2,29 @@ import {expenseCandidates} from './expense-batch.js';
 import {matchingRules} from './rules.js';
 import {debugSlot,debugLink} from './workspace-ui.js';
 const tidy=s=>String(s || '').replace(/\s+/g,' ').trim();
-export function suggestionCandidates(report,queue,rules,business,from='2025-01-01'){
- if(!report || report.business!==business || report.running)return [];
- const rows=new Map();for(const row of report.records || []){if(rows.has(row.id))rows.set(row.id,null);else rows.set(row.id,row);}
- return expenseCandidates(queue).filter(t=>{
-  const r=rows.get(t.id);if(!r || r.identity!=='Wave transaction ID' || r.waveSuggestion!==true || r.suggestionControlDisabled || r.reviewed==='Reviewed' || t.date<from)return false;
-  if(r.date!==t.date || tidy(r.description)!==tidy(t.description) || tidy(r.account)!==tidy(t.primary.account) || r.amountCents!==t.amount || tidy(r.category)!==tidy(t.proposed))return false;
-  const matches=matchingRules(t.description,rules,t,business),categories=new Set(matches.map(rule=>rule.category));return categories.size===1 && categories.has(t.proposed);
- }).map(t=>({...t,suggestionRow:rows.get(t.id)}));
+export function suggestionAudit(report,queue,rules,business,from='2025-01-01'){
+ const result={rows:[],counts:{},scanned:report?.records?.length || 0,detected:0,eligible:[],needsRefresh:report?.suggestionDetectionVersion!==2};
+ const byId=new Map(queue.map(t=>[t.id,t])),counts=new Map();for(const row of report?.records || [])counts.set(row.id,(counts.get(row.id)||0)+1);
+ for(const row of report?.records || []){
+  const t=byId.get(row.id);let reason='Not a detected Wave suggestion';
+  if(row.waveSuggestion===true){result.detected++;
+   if(report.business!==business)reason='Collected for another business';
+   else if(report.running)reason='Collection still running';
+   else if(counts.get(row.id)!==1 || row.identity!=='Wave transaction ID')reason='Unconfirmed or duplicate transaction identity';
+   else if(row.suggestionControlDisabled)reason='Suggestion control disabled';
+   else if(row.reviewed==='Reviewed')reason='Already reviewed';
+   else if(row.date<from)reason='Before the working period';
+   else if(!t)reason='Not in the imported working queue';
+   else if(!expenseCandidates([t]).length)reason=t.kind==='Unclassified'?'No approved expense rule':t.kind || 'Not an eligible outgoing purchase';
+   else if(row.date!==t.date || tidy(row.description)!==tidy(t.description) || tidy(row.account)!==tidy(t.primary.account) || row.amountCents!==t.amount)reason='Live identity fields differ from export';
+   else {const matches=matchingRules(t.description,rules,t,business),categories=new Set(matches.map(rule=>rule.category));if(!matches.length)reason='Approved rule excludes this transaction';else if(categories.size!==1 || !categories.has(t.proposed))reason='Approved rules conflict or changed';else if(tidy(row.category)!==tidy(t.proposed))reason='Wave category differs from approved category';else {reason='Ready to confirm';result.eligible.push({...t,suggestionRow:row});}}
+  }
+  result.counts[reason]=(result.counts[reason] || 0)+1;
+  if(row.waveSuggestion===true)result.rows.push({id:row.id,description:row.description,waveCategory:row.category,approvedCategory:t?.proposed || null,reason});
+ }
+ return result;
 }
+export function suggestionCandidates(report,queue,rules,business,from='2025-01-01'){return suggestionAudit(report,queue,rules,business,from).eligible;}
 // Injected into the collected Wave list. Never clicks a category, Save, or a generic review button.
 export function waveSuggestionAction(request,testContext){
  const doc=testContext?.document || document,loc=testContext?.location || location,style=testContext?.getComputedStyle || getComputedStyle;
@@ -45,20 +59,23 @@ export function waveSuggestionAction(request,testContext){
  }catch(e){result.clicked=clicked;result.problems.push(e.message);}
  return result;
 }
-export function installSuggestionReview({getState,report,receipt,run,recheck,inspect}){
+export function installSuggestionReview({getState,report,receipt,run,recheck,inspect,refresh}){
  const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
  const section=make('section'),fold=make('details');fold.className='step';fold.id='waveSuggestions';const summary=make('summary','Confirm Wave’s suggestions');summary.setAttribute('role','heading');summary.setAttribute('aria-level','2');fold.append(summary);const body=make('div');body.className='step-body';fold.append(body);section.append(fold);document.getElementById('expenseBatch').parentElement.before(section);
  const debug=debugSlot('suggestionTools','Wave suggestion confirmation diagnostics');let selected=new Set(),running=false,message='',context=null;
  function render(){if(running)return;const s=getState(),key=[s.dataset,s.business,s.workFrom];if(!context || key.some((v,i)=>v!==context[i])){context=key;selected.clear();message='';}
-  const all=suggestionCandidates(report(),s.queue,s.rules,s.business,s.workFrom),pending=all.filter(t=>!receipt(t)?.reviewedVerified);const eligible=t=>!receipt(t)?.attempted;const known=new Set(pending.filter(eligible).map(t=>t.id));for(const id of selected)if(!known.has(id))selected.delete(id);
+  const audit=suggestionAudit(report(),s.queue,s.rules,s.business,s.workFrom),all=audit.eligible,pending=all.filter(t=>!receipt(t)?.reviewedVerified);const eligible=t=>!receipt(t)?.attempted;const known=new Set(pending.filter(eligible).map(t=>t.id));for(const id of selected)if(!known.has(id))selected.delete(id);
   body.replaceChildren(make('p','Collect the live Not Reviewed list first. Suggestions already matching an approved merchant rule can be confirmed with Wave’s thumbs-up, then marked reviewed. Different categories, incoming transactions, transfers and uncertain records stay out.'),make('p',pending.length+' matching suggestions; '+all.filter(t=>receipt(t)?.reviewedVerified).length+' completed. '+pending.filter(t=>receipt(t)?.attempted).length+' saved attempts need a recheck.'));
+  body.append(make('p',!report()?'No live collection is loaded. Click Refresh Wave suggestions to collect it.':audit.needsRefresh?'The saved collection predates this suggestion detector. Refresh Wave suggestions to check the thumbs-up controls again.':audit.scanned+' scanned transactions; '+audit.detected+' Wave suggestions detected. '+Object.entries(audit.counts).filter(([reason])=>reason!=='Not a detected Wave suggestion').map(([reason,count])=>count+' '+reason.toLowerCase()).join('; ')+'.'));
+  const refreshButton=make('button','Refresh Wave suggestions');refreshButton.disabled=!!s.busy || !s.extensionMode || s.sample || !s.business;refreshButton.onclick=async()=>{refreshButton.disabled=true;try{await refresh();message='Live suggestions refreshed and saved merchant rules checked.';}catch(e){message=e.message;}finally{render();}};body.append(refreshButton);
   const bar=make('div');bar.className='bar';const select=make('button','Select matching suggestions'),clear=make('button','Clear suggestion selection'),apply=make('button','Confirm selected suggestions'),count=make('span');select.className=clear.className='secondary';const update=()=>{count.textContent=selected.size+' selected';apply.disabled=!!s.busy || !s.extensionMode || s.sample || !selected.size;};select.onclick=()=>{selected=new Set(known);render();};clear.onclick=()=>{selected.clear();render();};select.disabled=!known.size || s.busy;update();bar.append(select,clear,apply,count);body.append(bar,make('p',message),debugLink('suggestionTools'));
   apply.onclick=async()=>{running=true;let done=0,stop=false;const panel=make('div');panel.className='transfer-run-progress';const progress=make('p'),pause=make('button','Stop after current suggestion');pause.onclick=()=>{stop=true;pause.disabled=true;};panel.append(progress,pause);document.body.append(panel);try{for(const t of pending.filter(t=>selected.has(t.id))){if(stop)break;const now=getState();if(now.business!==s.business || now.dataset!==s.dataset || now.workFrom!==s.workFrom)throw Error('Session changed.');progress.textContent=t.description+' · $'+(t.amount/100).toFixed(2)+' · '+t.proposed;const result=await run(t);if(!result.reviewedVerified)throw Error(result.message || 'Suggestion result needs a recheck.');done++;selected.delete(t.id);}message=done+' suggestions confirmed and reviewed.'+(stop?' Stopped after current suggestion.':'');}catch(e){message=done+' completed. Stopped: '+e.message;}finally{running=false;panel.remove();render();}};
-  debug.replaceChildren();for(const t of pending){const row=make('div');row.className='transfer-card';const box=make('input');box.type='checkbox';box.checked=selected.has(t.id);box.disabled=!eligible(t);box.setAttribute('aria-label','Select suggestion '+t.id);box.onchange=()=>{if(box.checked)selected.add(t.id);else selected.delete(t.id);update();};const label=make('label',t.description+' · $'+(t.amount/100).toFixed(2));label.prepend(box);row.append(label,make('p',t.date+' · '+t.primary.account+' → '+t.proposed));const open=make('button','Inspect suggestion');open.className='secondary';open.onclick=()=>inspect(t);row.append(open);
+  debug.replaceChildren(make('pre',JSON.stringify({scanned:audit.scanned,detected:audit.detected,needsRefresh:audit.needsRefresh,counts:audit.counts,rows:audit.rows},null,2)));
+  if(!all.length && audit.rows.length){const why=make('details');why.append(make('summary','Why suggestions are not ready'));for(const row of audit.rows)why.append(make('p',row.description+' · Wave: '+row.waveCategory+' · Approved: '+(row.approvedCategory || 'No approved target')+' · '+row.reason));body.append(why);}for(const t of pending){const row=make('div');row.className='transfer-card';const box=make('input');box.type='checkbox';box.checked=selected.has(t.id);box.disabled=!eligible(t);box.setAttribute('aria-label','Select suggestion '+t.id);box.onchange=()=>{if(box.checked)selected.add(t.id);else selected.delete(t.id);update();};const label=make('label',t.description+' · $'+(t.amount/100).toFixed(2));label.prepend(box);row.append(label,make('p',t.date+' · '+t.primary.account+' → '+t.proposed));const open=make('button','Inspect suggestion');open.className='secondary';open.onclick=()=>inspect(t);row.append(open);
    const r=receipt(t);if(r){row.append(make('p',r.message));const check=make('button','Recheck saved suggestion');check.className='secondary';check.onclick=async()=>{check.disabled=true;try{const result=await recheck(t);message=result.message;}catch(e){message=e.message;}finally{render();}};row.append(check);debug.append(make('pre',JSON.stringify(r,null,2)));}
    body.append(row);
   }
-  const copy=make('button','Copy suggestion diagnostics');copy.className='secondary';copy.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify({business:s.business,records:report()?.records?.filter(r=>r.waveSuggestion),collectionDiagnostics:report()?.tableDiagnostics,receipts:all.map(t=>({id:t.id,result:receipt(t)}))},null,2));copy.textContent='Copied';}catch{copy.textContent='Clipboard unavailable';}};debug.append(copy);
+  const copy=make('button','Copy suggestion diagnostics');copy.className='secondary';copy.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify({business:s.business,audit:{scanned:audit.scanned,detected:audit.detected,needsRefresh:audit.needsRefresh,counts:audit.counts,rows:audit.rows,eligibleIds:audit.eligible.map(t=>t.id)},records:report()?.records?.filter(r=>r.waveSuggestion),collectionDiagnostics:report()?.tableDiagnostics,receipts:all.map(t=>({id:t.id,result:receipt(t)}))},null,2));copy.textContent='Copied';}catch{copy.textContent='Clipboard unavailable';}};debug.append(copy);
  }
  return {render};
 }
