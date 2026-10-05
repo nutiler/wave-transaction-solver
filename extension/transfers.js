@@ -25,7 +25,9 @@ export async function checkTransferRecords(pair,business,read,isCurrent=()=>true
 }
 export function prepareTransferEdit(pair,business,snapshots,menu){
  if(transferPairs([pair.out,pair.in]).length!==1 || [pair.out,pair.in].some(t=>t.postings?.length!==2 || t.categories?.length!==1))throw Error('Only one unique pair of simple existing records can be linked.');
- for(const t of [pair.out,pair.in]){const s=snapshots[t.id];if(!s?.fields || s.identity?.business!==business || s.problems?.length || compareLive(t,s).checks.some(c=>c.state!=='Match'))throw Error('Both live records must match all original export fields. Nothing applied.');}
+ const sides=[['Money out',pair.out],['Money in',pair.in]].map(([side,t])=>{const snapshot=snapshots[t.id] || {fields:{}};const comparison=compareLive(t,snapshot);const problems=[...(snapshot.problems || [])];if(snapshot.identity?.business!==business)problems.push('Wrong or unreadable Wave business.');return {side,id:t.id,checks:comparison.checks,problems,snapshot};});
+ const failed=sides.filter(s=>s.problems.length || s.checks.some(c=>c.state!=='Match'));
+ if(failed.length){const detail=failed.map(s=>s.side+': '+[...s.problems,...s.checks.filter(c=>c.state!=='Match').map(c=>c.field+' '+c.state+' (export: '+c.exported+'; live: '+c.live+')')].join('; ')).join(' | ');const error=Error('Both live records must match all original export fields. Nothing applied. '+detail);error.diagnostics={sides};throw error;}
  const checked=checkTransferMenu(menu,pair,business);if(!checked.ready)throw Error(checked.message);
  return {business,id:pair.out.id,category:'Transfer to '+pair.in.primary.account,expected:{...snapshots[pair.out.id].fields},transfer:{id:pair.in.id,label:checked.candidate,account:pair.in.primary.account,date:pair.in.date,description:pair.in.description}};
 }

@@ -104,3 +104,10 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Persist a lock before injection and retain it from the first transfer-selection click onward, including lost responses or unexpected selection results. Recheck saved transfer only reloads/reads both exact records.
 - Verify both saved transfer categories and report each reviewed status independently. Preserve imported rules/session and keep receipts local. Add Copy transfer result for failures and partial verification.
 - Validate synthetic duplicate, disabled, create-only, wrong-ID, changed-value, save-on-review, response-loss, reload/recheck, changed-amount, and incomplete-save paths.
+
+## 0.10.1
+
+- Keep closed-copy tab diagnostics instead of discarding them when multiple money-out tabs exist; prefer the one visible matching menu and ignore inaccessible/navigated copies. Multiple open matching menus remain blocked.
+- Read a Wave dropdown's selected label while its transfer submenu adds focusable controls; retain ambiguity checks for multiple owners.
+- Report the exact transfer preflight side/field and original/live values. Save failed preflight comparisons and snapshots locally for Copy transfer result, without creating a save lock.
+- Add duplicate-tab, open-menu field-reader, and detailed-preflight regression tests.

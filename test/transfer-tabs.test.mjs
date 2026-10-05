@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {captureTransferMenuFromTabs} from '../extension/workflow.js';
+const business='11111111-1111-1111-1111-111111111111',id='1000000000000000001';
+const tab=n=>({id:n,url:'https://next.waveapps.com/'+business+'/transactions/'+id});
+const report=(groups=0)=>({format:'wave-solver-transfer-menu',version:1,identity:{business,transaction:id},matchingGroups:groups,matchingOptions:[],menuHtml:[],problems:groups?[]:['Matching submenu is closed.']});
+test('duplicate closed record tabs return diagnostics for the preferred tab',async()=>{const r=await captureTransferMenuFromTabs([tab(1),tab(2)],business,id,2,async()=>report());assert.equal(r.tabId,2);assert.equal(r.tabChecks.length,2);assert.deepEqual(r.problems,['Matching submenu is closed.']);});
+test('one open submenu wins over a preferred closed record copy',async()=>{const r=await captureTransferMenuFromTabs([tab(1),tab(2)],business,id,1,async n=>report(n===2?1:0));assert.equal(r.tabId,2);});
+test('two visible matching menus remain blocked',async()=>{await assert.rejects(()=>captureTransferMenuFromTabs([tab(1),tab(2)],business,id,1,async()=>report(1)),/multiple copies/);});
+test('one inaccessible or navigated copy cannot mask a readable menu',async()=>{for(const failed of [async()=>{throw Error('Closed tab');},async()=>({...report(1),identity:{business,transaction:'1000000000000000002'}})]){const r=await captureTransferMenuFromTabs([tab(1),tab(2)],business,id,1,async n=>n===1?failed():report(1));assert.equal(r.tabId,2);assert(r.tabChecks[0].problem);}});
+test('wrong business and wrong record tabs are not read; missing records give actionable guidance',async()=>{let reads=0;const other={id:3,url:'https://next.waveapps.com/22222222-2222-2222-2222-222222222222/transactions/'+id};await assert.rejects(()=>captureTransferMenuFromTabs([other],business,id,null,async()=>reads++),/Click Open money-out in Wave/);assert.equal(reads,0);});
+test('useful first-level popup capture is kept if the preferred tab is absent',async()=>{const r=await captureTransferMenuFromTabs([tab(1),tab(2)],business,id,99,async n=>({...report(),menuHtml:n===2?['<div>Fictional first-level menu</div>']:[]}));assert.equal(r.tabId,2);assert.equal(r.matchingGroups,0);});

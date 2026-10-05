@@ -84,3 +84,19 @@ export function workingQueue(queue, from = '2025-01-01') {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(Date.parse(from)) || new Date(from).toISOString().slice(0,10)!==from) throw Error('Choose a valid bookkeeping start date.');
   return queue.filter(t=>t.date>=from).map(t=>t.partner && t.partner.date<from ? {...t,kind:'Manual review',proposed:'',partner:null,reason:'The matching counterpart is before the bookkeeping start date. Earlier periods are complete; review this boundary movement separately.'} : t);
 }
+
+// Choose one visible matching submenu, while keeping useful diagnostics for closed copies.
+export async function captureTransferMenuFromTabs(tabs,business,id,preferredTab,read){
+ const candidates=tabs.filter(tab=>{try{const url=new URL(tab.url);return url.origin==='https://next.waveapps.com' && url.pathname==='/'+business+'/transactions/'+id;}catch{return false;}});
+ if(!candidates.length)throw Error('No Wave tab shows this pair’s money-out transaction. Click Open money-out in Wave, then open Category → Transfer to Bank, Credit Card, or Loan in that tab.');
+ const reports=[],tabChecks=[];
+ for(const tab of candidates){
+  try{const r=await read(tab.id);if(r?.identity?.business!==business || r.identity.transaction!==id){tabChecks.push({tabId:tab.id,problem:'The tab navigated away from the expected money-out record.'});continue;}reports.push({...r,tabId:tab.id});tabChecks.push({tabId:tab.id,matchingGroups:r.matchingGroups,problems:r.problems || []});}
+  catch(e){tabChecks.push({tabId:tab.id,problem:e.message});}
+ }
+ const open=reports.filter(r=>r.matchingGroups>0);
+ if(open.length>1)throw Error('Matching submenus are open in multiple copies of the money-out transaction. Close the extra submenus, then read again.');
+ const selected=open[0] || reports.find(r=>r.tabId===preferredTab) || reports.find(r=>r.menuHtml?.length) || reports[0];
+ if(!selected)throw Error('The money-out tabs could not be read. Click Open money-out in Wave and let the transaction finish loading, then open its transfer submenu.');
+ return {...selected,tabChecks};
+}

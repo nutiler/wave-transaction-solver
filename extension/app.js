@@ -11,7 +11,7 @@ import { actionable, buildPlan, validatePlan } from './plan.js';
 import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession } from './session.js';
-import { workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
+import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -535,7 +535,11 @@ async function restoreSession() {
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
-async function captureTransferMenu(t){const expectedBusiness=business;const tabs=(await chrome.tabs.query({url:'https://next.waveapps.com/*'})).filter(tab=>{const i=waveIdentity(tab.url);return i?.business===expectedBusiness && i.transaction===t.id;});const reports=[];for(const tab of tabs){const result=(await chrome.scripting.executeScript({target:{tabId:tab.id},func:readTransferMenu}))[0]?.result;if(result?.identity?.business===expectedBusiness && result.identity.transaction===t.id)reports.push({...result,tabId:tab.id});}const open=reports.filter(r=>r.matchingGroups>0);if(open.length>1)throw Error('Multiple matching menus are open for this record. Close the extra menus and read again.');if(open.length===1)return open[0];if(reports.length===1)return reports[0];throw Error('Open the money-out record and its transfer submenu in one Wave tab, then read the menu again.');}
+async function captureTransferMenu(t){
+ const expectedBusiness=business;
+ const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
+ return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
+}
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
@@ -593,6 +597,7 @@ async function runTransfer(pair,recheck=false){
   if(result.verified){shortlist.delete(pair.out.id);shortlist.delete(pair.in.id);renderPlan();rememberSoon();}
   return editReceipts[key];
  }catch(e){
+  if(!attempted && !recheck && e.diagnostics){await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],saveAttempted:false,stage:'preflight',message:e.message,preflight:e.diagnostics,checkedAt:new Date().toISOString()});return editReceipts[key];}
   if(attempted || recheck){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
   throw e;
  }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
