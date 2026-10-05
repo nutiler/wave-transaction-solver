@@ -111,3 +111,10 @@ This initial milestone preceded deliberate category Apply and review requests, a
 - Read a Wave dropdown's selected label while its transfer submenu adds focusable controls; retain ambiguity checks for multiple owners.
 - Report the exact transfer preflight side/field and original/live values. Save failed preflight comparisons and snapshots locally for Copy transfer result, without creating a save lock.
 - Add duplicate-tab, open-menu field-reader, and detailed-preflight regression tests.
+
+## 0.10.2
+
+- Accept the exact full selected transfer label, including the expected counterpart date and description, during confirmation before Review/Save. Wrong counterpart details remain blocked.
+- Verify saved short or exact full transfer categories on both sides, retaining all identity, field, and reviewed-state checks.
+- Add Reset unchanged transfer attempt: reload both original records, require every original field and explicit unreviewed evidence, archive the previous attempt, and require a fresh matching-menu read before retry. Changed, saved, reviewed, or unproven records stay locked.
+- Store original snapshots for new transfer attempts; support older receipts only when their prior reloaded snapshots still prove the original fields. Add long-label, wrong-date, reset, and reset/retry integration coverage.

@@ -94,5 +94,7 @@ document.getElementById('run').onclick = async () => {
   await check('Wrong counterpart transaction ID blocks the edit',{...transferFixture,transferMenu:{label:transfer.label,wrongId:true}},(r,s)=>!!r.problem && !r.saveAttempted && s.saves===0,transferRequest);
   await check('Unexpected selected transfer value blocks Save',{...transferFixture,targetCategory:'Unexpected transfer account'},(r,s)=>!!r.problem && r.saveAttempted && s.saves===0,transferRequest);
   await check('Transfer review action that saves never issues a second Save',{...transferFixture,reviewSave:true},(r,s)=>!r.problem && r.saveAttempted && s.reviewed && s.saves===1,transferRequest);
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 22 editor checks passed';
+  await check('Full transfer label with expected counterpart date and description is confirmed',{...transferFixture,targetCategory:transfer.label},(r,s)=>!r.problem && s.reviewed && s.saves===1 && s.selected===transfer.label,transferRequest);
+  await check('Full transfer label with the wrong counterpart date remains locked',{...transferFixture,targetCategory:transfer.label.replace('Sep 19','Sep 18')},(r,s)=>!!r.problem && r.saveAttempted && s.saves===0,transferRequest);
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 24 editor checks passed';
 };

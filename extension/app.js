@@ -1,5 +1,5 @@
 import { readTransferMenu } from './transfer-menu.js';
-import { transferPairs,prepareTransferEdit,verifyTransferResult } from './transfers.js';
+import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt } from './transfers.js';
 import { installTransferReview } from './transfer-view.js';
 import { validateRule } from './rules.js';
 import { installProposalReview } from './proposal-view.js';
@@ -560,7 +560,8 @@ for (const id of ['clearPlan', 'ruleForm', 'planFile', 'historyRows']) $(id).add
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) rememberSoon(); });
 
 function transferReceiptKey(pair){return business+':transfer:'+pair.key;}
-async function runTransfer(pair,recheck=false){
+async function runTransfer(pair,mode=false){
+ const reset=mode==='reset',recheck=mode===true || reset;
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select a real Wave business and pair first.');
  const expectedBusiness=business,data=dataset,from=workFrom(),key=transferReceiptKey(pair);
  if(!transferPairs(queue).some(p=>p.key===pair.key))throw Error('This pair is no longer eligible in the working queue.');
@@ -580,7 +581,7 @@ async function runTransfer(pair,recheck=false){
    if(!current())throw Error('Transfer context changed. Nothing applied.');
    const freshMenu=(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result;
    const request=prepareTransferEdit(pair,expectedBusiness,snapshots,freshMenu);
-   await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],tabId,saveAttempted:true,startedAt:new Date().toISOString(),message:'Transfer attempt not yet verified. Use Recheck saved transfer.'});attempted=true;
+   await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],tabId,originalSnapshots:snapshots,previousAttempts:previous?.previousAttempts || [],saveAttempted:true,startedAt:new Date().toISOString(),message:'Transfer attempt not yet verified. Use Recheck saved transfer.'});attempted=true;
    const outcome=(await chrome.scripting.executeScript({target:{tabId},func:editWaveTransaction,args:[request]}))[0]?.result;
    if(!outcome)throw Error('No transfer result returned. Inspect Wave before continuing.');
    await storeEditReceipt(key,{...editReceipts[key],...outcome,message:outcome.problem || 'Save requested. Checking both records…'});
@@ -592,6 +593,7 @@ async function runTransfer(pair,recheck=false){
    const tab=await reopenSavedTransaction(chrome.tabs,t.id===pair.out.id?tabId:null,expectedBusiness,t.id,current);
    snapshots[t.id]=await waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);
   }
+  if(reset){await storeEditReceipt(key,resetTransferReceipt(pair,snapshots,expectedBusiness,previous));return editReceipts[key];}
   const result=verifyTransferResult(pair,snapshots,expectedBusiness);
   await storeEditReceipt(key,{...editReceipts[key],...result,verifiedAt:new Date().toISOString(),snapshots});
   if(result.verified){shortlist.delete(pair.out.id);shortlist.delete(pair.in.id);renderPlan();rememberSoon();}

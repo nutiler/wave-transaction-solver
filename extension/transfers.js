@@ -32,7 +32,20 @@ export function prepareTransferEdit(pair,business,snapshots,menu){
  return {business,id:pair.out.id,category:'Transfer to '+pair.in.primary.account,expected:{...snapshots[pair.out.id].fields},transfer:{id:pair.in.id,label:checked.candidate,account:pair.in.primary.account,date:pair.in.date,description:pair.in.description}};
 }
 export function verifyTransferResult(pair,snapshots,business){
- const sides=[['out',pair.out,'Transfer to '+pair.in.primary.account],['in',pair.in,'Transfer from '+pair.out.primary.account]].map(([direction,t,category])=>({id:t.id,direction,...verifyCategoryResult(t,snapshots[t.id] || {fields:{}},business,category)}));
+ const sides=[['out',pair.out,'Transfer to '+pair.in.primary.account],['in',pair.in,'Transfer from '+pair.out.primary.account]].map(([direction,t,category])=>{const snapshot=snapshots[t.id] || {fields:{}};const other=direction==='out'?pair.in:pair.out;const dates=[other.date,...['short','long'].map(month=>new Intl.DateTimeFormat('en-US',{month,day:'numeric',year:'numeric',timeZone:'UTC'}).format(new Date(other.date+'T00:00:00Z')))];const tidy=s=>String(s || '').replace(/[—–]/g,'-').replace(/\s+/g,' ').trim();const full=dates.map(date=>tidy(category+' - '+date+' - '+other.description));const actual=snapshot.fields?.category;const expected=full.includes(tidy(actual))?actual:category;return {id:t.id,direction,...verifyCategoryResult(t,snapshot,business,expected)};});
  const verified=sides.every(s=>s.categoryVerified),reviewed=verified && sides.every(s=>s.reviewedVerified);
  return {sides,verified,reviewed,message:verified?reviewed?'Both saved transfer categories and reviewed statuses verified.':'Both saved transfer categories verified. Reviewed status is not confirmed on both sides; inspect Wave.':'Saved transfer could not be verified on both records. Inspect Wave; this attempt will not run again.'};
+}
+
+export function resetTransferReceipt(pair,snapshots,business,receipt){
+ if(!receipt?.saveAttempted || receipt.verified || receipt.ids?.length!==2 || ![pair.out.id,pair.in.id].every(id=>receipt.ids.includes(id)) || transferPairs([pair.out,pair.in]).length!==1)throw Error('Only an unverified attempt for this exact pair can be reset.');
+ const baseline=receipt.originalSnapshots || receipt.snapshots;
+ for(const t of [pair.out,pair.in]){
+  const s=snapshots[t.id],before=baseline?.[t.id];
+  for(const value of [before,s])if(!value?.fields || value.identity?.business!==business || value.problems?.length || compareLive(t,value).checks.some(c=>c.state!=='Match'))throw Error('Both freshly reloaded records and the previous original snapshot must match the export before reset.');
+  const controls=s.controls || [],reviewed=/^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i,mark=/^Mark (as )?reviewed$/i;
+  if(s.reviewed==='Reviewed' || controls.some(c=>reviewed.test(c)) || !(s.reviewed==='Not reviewed' || controls.filter(c=>mark.test(c)).length===1))throw Error('Both records must explicitly indicate an unreviewed state before reset.');
+ }
+ const {previousAttempts=[],...previous}=receipt;
+ return {ids:receipt.ids,saveAttempted:false,verified:false,reviewed:false,stage:'reset',resetAt:new Date().toISOString(),previousAttempts:[...previousAttempts,previous],originalSnapshots:baseline,message:'Attempt reset after both original records were freshly checked unchanged and unreviewed. Reopen the matching submenu and read it before setting the transfer. Nothing was changed in Wave.'};
 }

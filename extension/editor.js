@@ -97,7 +97,8 @@ export async function editWaveTransaction(request, testContext) {
     for (const name of ['Date','Description','Account','Type','Amount','Category']) {
       const actual = value(control(dialog, name)), expected = name === 'Category' ? category : request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
-      if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected)) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
+      const transferLabels=name==='Category' && request.transfer && category===request.category ? [tidy(request.transfer.label),tidy('Transfer to '+String(request.transfer.label || '').replace(/^Transfer to /i,''))] : [];
+      if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual)) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
     }
     return dialog;
   }
