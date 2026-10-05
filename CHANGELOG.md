@@ -2,6 +2,13 @@
 
 This repository starts with the completed local prototype. The initial commits group the existing work by component; they are not a reconstruction of earlier edit history.
 
+## 0.14.0 · Usage and Debug workspaces
+- Group setup, transaction runners, merchant rules, and planning into Usage.
+- Move diagnostics, copied reports, and manual transfer-menu tools into Debug tools with direct links.
+- Standardize the blue theme, checkbox alignment, button rows, card spacing, and responsive scrolling tables.
+- Preserve existing sessions, selections, approved rules, saved receipts, and editing safeguards.
+- Add synthetic workspace navigation and narrow-screen checks.
+
 ## CSV organizer
 - Local CSV parsing, merchant alias rules, review suggestions, and review CSV export.
 

@@ -1,3 +1,4 @@
+import {installWorkspace,showWorkspace} from './workspace-ui.js';
 import {installLiveList} from './list-view.js';
 import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
@@ -62,6 +63,7 @@ function rememberSession() {
 }
 function rememberSoon() { void rememberSession().catch(e => { $('sessionStatus').textContent = `Session could not be saved locally: ${e.message}`; }); }
 async function loadCatalog() {
+  $('chartDiagnostics').textContent = ''; $('chartCopyStatus').textContent = ''; $('chartDebug').hidden = true;
   catalog = null;
   if (extensionMode && business) {
     const savedChart = (await chrome.storage.local.get('solverCharts')).solverCharts?.[business];
@@ -212,7 +214,7 @@ function imported(text, name, isSample = false) {
   $('fold-import').open = false;
 }
 $('file').onchange = handle(async () => { const file = $('file').files[0]; if (!file) return; if (file.size > 30 * 1024 * 1024) throw new Error('Choose a CSV under 30 MB.'); imported(await file.text(), file.name); await rememberSession(); $('sessionStatus').textContent = 'Session saved locally. It will return after a reload.'; });
-function clearImported() { proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); listReview.render(); expenseReview.render(); void proposalReview.render(); }
+function clearImported() { $('diagnostics').textContent='';$('diagnostics').hidden=true;$('diagnosticToggle').hidden=true;$('copyDiagnostics').hidden=true; proposalPack=null; proposalDecisions={}; proposalFileName=""; dataset = null; csvText = ''; sourceName = ''; importedAt = ''; queue = []; chosen = null; liveTab = null; sampleMode = false; shortlist.clear(); loadedPlan = null; $('file').value = ''; $('planFile').value = ''; $('queue').hidden = true; $('live').hidden = true; $('history').hidden = true; $('plan').hidden = true; $('planText').value = ''; $('planValidation').replaceChildren(); $('importStatus').textContent = 'Imported session cleared. Saved rules, business, and account names remain.'; renderCategories(); error(); transferReview.render(); listReview.render(); expenseReview.render(); void proposalReview.render(); }
 $('clear').onclick = handle(async () => { clearImported(); updateSteps(); await rememberSession(); $('sessionStatus').textContent = 'Saved CSV and draft plan cleared. They will not return after a reload.'; });
 $('sample').onclick = handle(async () => { imported(sampleCSV(), 'Fictional sample — cannot open these IDs in Wave', true); await rememberSession(); });
 const workFrom = () => $('workFrom').value || '2025-01-01';
@@ -280,7 +282,7 @@ function renderPlan() {
   $('plan').hidden = !dataset;
   const pairs = new Set(queue.filter(t => shortlist.has(t.id) && t.partner).map(t => [t.id, t.partner.id].sort().join(':'))).size;
   const singles = queue.filter(t => shortlist.has(t.id) && !t.partner).length;
-  $('planStatus').textContent = `${singles} merchant proposal(s) and ${pairs} transfer pair(s) shortlisted. ${shortlist.size} records in this draft. ${Object.entries(editReceipts).filter(([key, receipt]) => key.startsWith(business + ':') && receipt.saveAttempted).length} local Apply attempt(s); inspect their saved results in section 5.`;
+  $('planStatus').textContent = `${singles} merchant proposal(s) and ${pairs} transfer pair(s) shortlisted. ${shortlist.size} records in this draft. ${Object.entries(editReceipts).filter(([key, receipt]) => key.startsWith(business + ':') && receipt.saveAttempted).length} local Apply attempt(s); inspect their saved results in the live transaction check.`;
   $('downloadPlan').disabled = !shortlist.size;
   updateSteps(); updateApply();
 }
@@ -304,6 +306,7 @@ function validateLoadedPlan() {
   } catch (e) { $('planValidation').append(make('p', e.message)); }
 }
 function select(t, scroll = true) {
+  showWorkspace('usage');
   liveGeneration++;
   liveStepLabel = 'Not checked'; if(scroll)$('fold-live').open = true; updateSteps();
   lastLiveSnapshot = null;
@@ -561,6 +564,7 @@ const proposalReview=installProposalReview({
   accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false);await rememberSession(); },
   rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
 });
+installWorkspace();
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;

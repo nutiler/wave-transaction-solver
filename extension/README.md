@@ -11,6 +11,12 @@
 
 No Node server is needed to run the extension. The earlier localhost application is separate.
 
+## Usage and Debug tools
+
+Version 0.14 groups the page into two workspaces. **Usage** contains session setup, transaction collection and runners, merchant rules, and planning. **Debug tools** contains chart, live-field, list, rule-check, expense-result, and transfer diagnostics, plus manual transfer-menu tools and the fictional sample. **View diagnostics** buttons open the relevant Debug card. Normal Run, retry, and recheck controls remain beside the affected transactions in Usage. Switching workspaces keeps your loaded session and selections.
+
+The blue theme uses consistent buttons, checkboxes, collapsible cards, and scrolling tables, with compact layouts for smaller windows.
+
 ## Reloading after an update
 
 The solver now saves the working session locally in IndexedDB, including the imported CSV. Selected business, transaction, filters, draft shortlist, unfinished rule form, and chart names return after a reload. Existing matching Wave tabs are reconnected. Import a fresh CSV for new bookkeeping work; the restored export is labeled with its original import time. Clear imported session removes the saved CSV and draft plan while preserving rules, selected business, and chart names. No additional permissions are required.
@@ -19,7 +25,7 @@ Reload the extension at chrome://extensions. Its existing solver tab refreshes a
 
 ## Export shortcut and compact steps
 
-Expand **2. Import your session export** and click **Open Wave data export**. Copy settings.example.js to settings.local.js and configure your business UUID and export-page URL. This private file stays out of Git. The shortcut opens that accounting.waveapps.com page in a background tab without extra host permissions. Switch to Wave and request **Export all transactions as CSV**; Wave emails the ZIP. Extract it and import accounting.csv. Requesting the export remains a manual action on Wave. The shortcut is bound to the supplied business so it cannot silently open the wrong company’s export.
+Expand **Import your session export** and click **Open Wave data export**. Copy settings.example.js to settings.local.js and configure your business UUID and export-page URL. This private file stays out of Git. The shortcut opens that accounting.waveapps.com page in a background tab without extra host permissions. Switch to Wave and request **Export all transactions as CSV**; Wave emails the ZIP. Extract it and import accounting.csv. Requesting the export remains a manual action on Wave. The shortcut is bound to the supplied business so it cannot silently open the wrong company’s export.
 
 Click any step header to expand or collapse it. Business selection, collected chart names, CSV import, and saved rules show completion badges and fold when completed. Other headers show proposal, live-check, and draft status. Open/closed choices persist with the session. Inspecting a transaction opens its live-check section, and preparing a merchant rule opens the rule section.
 
@@ -32,11 +38,11 @@ Click any step header to expand or collapse it. Business selection, collected ch
 5. Inspect the Export / Live Wave comparison. Missing fields remain **Unknown**; truncated or changed values are reported as **Different**. The NOT_VERIFIED URL filter is never treated as evidence of a transaction's reviewed state.
 6. Test a transaction you previously corrected in Wave. An older CSV should report its changed category. A fresh CSV may identify it as an existing multi-account record. The extension does not overwrite either state.
 
-The first live check is a feasibility test of the DOM reader. Wave's exact markup has not yet been inspected through this extension. If fields are unknown, click **Show field diagnostics** and share the diagnostics plus a screenshot of the dialog for an adapter adjustment. No passwords or cookies are read.
+The first live check is a feasibility test of the DOM reader. Wave's exact markup has not yet been inspected through this extension. If fields are unknown, open **Debug tools → Live transaction diagnostics** and click **Show field diagnostics** and share the diagnostics plus a screenshot of the dialog for an adapter adjustment. No passwords or cookies are read.
 
 ## Collect exact account and category names
 
-Select your business in section 1. Click **Open Chart of Accounts** to load it in a background tab, wait for Wave to load, then click **Collect all five tabs** from the solver. The collector clicks only Assets, Liabilities & Credit Cards, Income, Expenses, and Equity navigation tabs. It checks selected-tab state and reads every recognized account-name row before accepting the names. Wave’s tab counters omit some built-in accounts inconsistently; the collector treats the counter as a lower bound and shows it separately from the number of collected names. Wave’s account-name cells exclude add-account buttons and empty-section messages. Account editing controls are never clicked.
+Select your business under **Set up your session**. Click **Open Chart of Accounts** to load it in a background tab, wait for Wave to load, then click **Collect all five tabs** from the solver. The collector clicks only Assets, Liabilities & Credit Cards, Income, Expenses, and Equity navigation tabs. It checks selected-tab state and reads every recognized account-name row before accepting the names. Wave’s tab counters omit some built-in accounts inconsistently; the collector treats the counter as a lower bound and shows it separately from the number of collected names. Wave’s account-name cells exclude add-account buttons and empty-section messages. Account editing controls are never clicked.
 
 Complete collections are saved locally per business and shown in searchable groups. All collected account names join the Category suggestions in the merchant-rule form, including names not present in your export. They are Chart of Accounts names; transfers, splits, and context-specific transaction options still require their own handling. A failed or partial collection does not replace the previously saved chart. Expand **Collection diagnostics** if Wave's markup is not recognized. Live compatibility still needs checking on your account.
 
@@ -212,3 +218,8 @@ Click **Open known-expense runner**, then **Select matching expenses**, inspect 
 ### Prepare the known expenses in one step
 
 Click the blue **Prepare N known expenses** button in **Live Not Reviewed list**. It reloads saved approved rules, enables linking to this scan, clears the Uncategorized-only display, and opens the expense runner with only the known matched records selected. Review that selection, then click **Run selected expenses**. Preparing does not edit Wave. Existing completed records, preflight attention items, and uncertain saved attempts cannot be selected automatically.
+
+
+### Workspace layout checks
+
+At `/extension/proposal-fixture.html`, seed the fictional integration session, open its integration preview, and seed approved fictional expense rules. Then open `/extension/workspace-fixture.html` and click **Run workspace checks**. It checks Usage/Debug navigation, preserved session text, diagnostic placement, unique IDs, checkbox styling, and both workspaces at 960px, 390px, and 320px. All records and Wave bindings are fictional.
