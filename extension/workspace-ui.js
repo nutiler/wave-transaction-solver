@@ -13,7 +13,7 @@ export function installWorkspace(){
  const assigned=new Set();
  for(const [id,title,description,keys] of [
   ['setup','Set up your session','Choose a business, import your export, and load category names.',['fold-setup','fold-import','fold-chart']],
-  ['transactions','Work through transactions','Collect the live backlog, prepare known expenses, or process matching transfers.',['liveList','expenseBatch','fold-transfers','fold-live']],
+  ['transactions','Work through transactions','Collect the live backlog, prepare known expenses, or process matching transfers.',['liveList','waveSuggestions','expenseBatch','fold-transfers','fold-live']],
   ['rules','Manage merchant rules','Keep approved rules current and review new proposals.',['fold-merchant','fold-proposals','fold-history']],
   ['planning','Inspect and plan','Review individual proposals and keep a draft for later.',['fold-queue','fold-plan']]]){
   const group=make('div');group.className='workflow-group';group.id='usage-'+id;const heading=make('h2',title);heading.className='group-title';group.append(heading,make('p',description));

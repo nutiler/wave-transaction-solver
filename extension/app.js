@@ -1,3 +1,4 @@
+import {suggestionCandidates,waveSuggestionAction,installSuggestionReview} from './suggestions.js';
 import {installWorkspace,showWorkspace} from './workspace-ui.js';
 import {installLiveList} from './list-view.js';
 import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
@@ -18,6 +19,7 @@ import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusines
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+let suggestionReview=null;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
@@ -235,7 +237,7 @@ function analyze(preserveDraft = false, renderProposals = true) {
   rememberSoon();
 }
 function renderQueue() {
-  listReview.render();
+  listReview.render();suggestionReview?.render();
   expenseReview.render();
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
   const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
@@ -556,7 +558,8 @@ async function captureTransferMenu(t){
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
 const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t)});
-const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>expenseReview.render(),showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:runWaveSuggestion,recheck:t=>runWaveSuggestion(t,'recheck'),inspect:t=>select(t)});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,queue,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
@@ -675,6 +678,7 @@ async function runTransfer(pair,mode=false){
 
 let expenseWorkerTab=null;
 async function runExpenseBatch(t,mode='run'){
+ if(mode==='run' && !editReceipts[business+':suggestion:'+t.id]?.attempted && !editReceipts[business+':suggestion:'+t.id]?.reviewedVerified && suggestionCandidates(listReview.report(),queue,rules,business,workFrom()).some(record=>record.id===t.id && record.proposed===t.proposed))return runWaveSuggestion(t);
  if(listCollecting)throw Error('Finish or stop the live-list collection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select your Wave business and real export.');
  const expectedBusiness=business,data=dataset,from=workFrom(),target=t.proposed,key=business+':'+t.id,previous=editReceipts[key];
@@ -724,4 +728,38 @@ async function runExpenseBatch(t,mode='run'){
   if(attempted || previous?.saveAttempted){await saveReceipt({message:e.message+' Use Recheck saved expense; no automatic retry will occur.'});return editReceipts[key];}
   throw e;
  }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
+}
+
+async function runWaveSuggestion(t,mode='run'){
+ if(applying || listCollecting || !extensionMode || sampleMode || !business)throw Error('Finish other runs and collect the real Wave list first.');
+ const expectedBusiness=business,data=dataset,from=workFrom(),key=business+':suggestion:'+t.id,previous=editReceipts[key];
+ if(mode==='run' && previous?.attempted)throw Error('Suggestion has a saved attempt. Recheck it before any further action.');
+ const current=()=>business===expectedBusiness && dataset===data && workFrom()===from;
+ const expenseAttempt=editReceipts[expectedBusiness+':'+t.id];
+ if(mode==='run' && expenseAttempt?.saveAttempted && (!expenseAttempt.categoryVerified || expenseAttempt.reviewAttempted) && !expenseAttempt.reviewedVerified)throw Error('This expense has an uncertain saved attempt. Recheck the saved expense before confirming a suggestion.');
+ if(mode==='run' && Object.entries(editReceipts).some(([k,r])=>k.startsWith(expectedBusiness+':transfer:') && r.saveAttempted && r.ids?.includes(t.id)))throw Error('This record has a saved transfer attempt. Inspect the transfer result first.');
+ if(mode==='recheck'){
+  let verified=await runExpenseBatch(t,'recheck');if(verified.categoryVerified && !verified.reviewedVerified && previous?.outcome?.confirmed && !editReceipts[expectedBusiness+':'+t.id]?.reviewAttempted)verified=await runExpenseBatch(t);await storeEditReceipt(key,{...previous,...verified,attempted:true});expenseReview.render();suggestionReview?.render();return editReceipts[key];
+ }
+ const eligible=suggestionCandidates(listReview.report(),queue,rules,business,from).find(c=>c.id===t.id && c.proposed===t.proposed);
+ if(!eligible)throw Error('Suggestion no longer matches an approved expense rule. Collect the list again.');
+ const tabId=listReview.tab();if(tabId===null)throw Error('Collect Not Reviewed transactions again to reconnect its live tab.');
+ applying=true;document.querySelector('main').inert=true;
+ try{
+  const tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,expectedBusiness,t.id,current);expenseWorkerTab=tab.id;
+  const snapshot=await waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);
+  const verified=verifyCategoryResult(t,snapshot,expectedBusiness,t.proposed);if(!current() || !verified.categoryVerified)throw Error('Live suggestion fields or category changed. Nothing confirmed.');
+  if(verified.reviewedVerified){await storeEditReceipt(expectedBusiness+':'+t.id,{...verified,category:t.proposed,stage:'completed',message:'Approved category and reviewed status already verified.'});await storeEditReceipt(key,{...verified,attempted:false,message:'Approved category is already reviewed. Skipped without confirming a suggestion.'});expenseReview.render();suggestionReview?.render();return editReceipts[key];}
+  const row=eligible.suggestionRow,expected={date:row.date,description:row.description,account:row.account,category:row.category,amountCents:row.amountCents};
+  const request={action:'inspect',business:expectedBusiness,id:t.id,category:t.proposed,expected};
+  const inspected=(await chrome.scripting.executeScript({target:{tabId},func:waveSuggestionAction,args:[request]}))[0]?.result;
+  if(!inspected || inspected.problems?.length || !inspected.suggestionVisible){await storeEditReceipt(key,{attempted:false,inspection:inspected,message:inspected?.problems?.join('; ') || 'Cannot identify the thumbs-up control. Copy suggestion diagnostics.'});throw Error(editReceipts[key].message);}
+  if(!current())throw Error('Session changed.');
+  await storeEditReceipt(key,{attempted:true,category:t.proposed,reviewedVerified:false,inspection:inspected,message:'Suggestion confirmation requested; verification pending.'});
+  const outcome=(await chrome.scripting.executeScript({target:{tabId},func:waveSuggestionAction,args:[{...request,action:'confirm'}]}))[0]?.result;
+  await storeEditReceipt(key,{...editReceipts[key],outcome,message:!outcome?'No suggestion confirmation response returned. Use Recheck saved suggestion; the thumbs-up will not repeat automatically.':outcome.problems?.join('; ') || (outcome.confirmed?'Thumbs-up clicked. Checking saved category and reviewed status…':'Suggestion confirmation was not completed. Recheck its saved result.')});
+  if(!outcome?.confirmed || outcome.problems?.length)throw Error(editReceipts[key].message || 'Suggestion response uncertain. Recheck saved suggestion.');
+ }finally{applying=false;document.querySelector('main').inert=false;updateApply();}
+ const verified=await runExpenseBatch(t);
+ await storeEditReceipt(key,{...editReceipts[key],...verified,attempted:true,message:verified.reviewedVerified?'Wave suggestion confirmed; saved category and reviewed status verified.':verified.message});expenseReview.render();suggestionReview?.render();return editReceipts[key];
 }

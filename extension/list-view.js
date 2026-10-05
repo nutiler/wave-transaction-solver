@@ -86,5 +86,5 @@ export function installLiveList({getState,onRunning,onScope,refreshExpenses,refr
   finally{busy=false;onRunning(false);if(report)render();else{start.disabled=false;stop.disabled=true;}refreshExpenses();}
  };
  const ready=(async()=>{if(getState().extensionMode){const stored=await chrome.storage.local.get(['solverLiveLists','solverLiveListScopes']);reports=stored.solverLiveLists || {};scopes=stored.solverLiveListScopes || {};}render();refreshExpenses();})();
- return {render,ready};
+ return {render,ready,report:selectedReport,tab:()=>tabId};
 }
