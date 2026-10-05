@@ -33,7 +33,7 @@ export function waveSuggestionAction(request,testContext){
   const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);
   const labels=button=>[button.getAttribute('aria-label'),button.getAttribute('title'),clean(button),...((button.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>doc.getElementById(id)?.textContent)),...button.querySelectorAll('svg title,[role="tooltip"]')].map(v=>tidy(typeof v==='string'?v:v?.textContent)).filter(Boolean);
   result.controls=buttons.map(b=>({labels:labels(b),disabled:!!b.disabled || b.getAttribute('aria-disabled')==='true',html:b.outerHTML.slice(0,3500)}));
-  const confirm=buttons.filter(b=>labels(b).some(s=>/^Confirm (?:the )?auto.updated category$/i.test(s)));
+  const confirm=buttons.filter(b=>labels(b).some(s=>/^(?:ConfirmAutocatIcon|Confirm (?:the )?auto.updated category)$/i.test(s)));
   result.suggestionVisible=confirm.length===1;
   if(request.action==='inspect')return result;
   if(request.action!=='confirm' || !request.expected)throw Error('Invalid suggestion confirmation request.');
