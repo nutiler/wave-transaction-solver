@@ -1,4 +1,4 @@
-// Runs in the selected Wave list tab. Only scrolls and reads; no edit controls are clicked.
+// Runs in the selected Wave list tab. Loads more rows and briefly selects all to count; never edits transactions.
 export function waveListScan(request,testContext){
  const doc=testContext?.document || document,loc=testContext?.location || location,win=testContext?.window || window,style=testContext?.getComputedStyle || getComputedStyle;
  const pause=testContext?.wait || (ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=testContext?.now || Date.now;
@@ -49,8 +49,43 @@ export function waveListScan(request,testContext){
   return table;
  };
  const scrollOwner=table=>{for(let el=table.parentElement;el && el!==doc.body;el=el.parentElement){if(/auto|scroll/.test(style(el).overflowY) && el.clientHeight>=100 && el.scrollHeight>el.clientHeight+2)return el;}return doc.scrollingElement || doc.documentElement;};
+ const named=el=>tidy(el.getAttribute('aria-label') || clean(el));
+ const loadButtons=()=>[...doc.querySelectorAll('button,[role="button"],a')].filter(el=>visible(el) && /^Load more transactions?$/i.test(named(el)));
+ const disabled=el=>el.disabled || el.getAttribute('aria-disabled')==='true';
+ const selectControls=()=>[...doc.querySelectorAll('input[type="checkbox"],[role="checkbox"]')].filter(el=>{
+  const labels=[...(el.labels || [])].filter(visible).map(clean);
+  const parent=el.closest('label');if(parent && visible(parent))labels.push(clean(parent));
+  for(let container=el.parentElement,n=0;container && n<2;n++,container=container.parentElement){if(visible(container) && container.querySelectorAll('input[type="checkbox"],[role="checkbox"]').length===1)labels.push(clean(container));}
+  const labelled=(el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id=>doc.getElementById(id)).filter(visible).map(clean).join(' ');
+  return (visible(el) || labels.length) && [el.getAttribute('aria-label'),labelled,...labels].some(t=>/^Select all(?: transactions)?$/i.test(tidy(t)));
+ });
+ const checked=el=>el.matches('input')?el.checked:el.getAttribute('aria-checked')==='true';
+ const mixed=el=>el.indeterminate || el.getAttribute('aria-checked')==='mixed';
+ const verifyTotal=async()=>{
+  const controls=selectControls();state.report.countDiagnostics={selectControls:controls.map(el=>el.outerHTML.slice(0,3000))};
+  if(controls.length!==1 || disabled(controls[0])){problems.add('Select All count check unavailable; total was not independently checked by selection.');return;}
+  const control=controls[0];if(checked(control) || mixed(control)){problems.add('Existing selection preserved; Select All count check skipped.');return;}
+  const container=control.closest('label') || control.parentElement;
+  const currentControl=()=>{if(control.isConnected)return control;if(container?.isConnected){const options=[...container.querySelectorAll('input[type="checkbox"],[role="checkbox"]')];if(options.length===1)return options[0];}const options=selectControls();return options.length===1?options[0]:null;};
+  let created=false;
+  try{
+   if(state.stop || !valid())return;
+   control.click();created=true;
+   for(let i=0;i<12;i++){
+    await pause(300);if(state.stop || !valid())return;
+    const counts=new Set([...doc.querySelectorAll('span,div,p,strong')].filter(visible).map(el=>tidy(el.textContent)).map(t=>t.match(/^([\d,]+) selected$/i)?.[1]).filter(Boolean).map(n=>Number(n.replace(/,/g,''))));
+    if(counts.size===1 && currentControl() && checked(currentControl())){state.report.expectedTotal=[...counts][0];state.report.totalEvidence='Select All selected count';state.report.countDiagnostics.selectedTotal=state.report.expectedTotal;return;}
+   }
+   problems.add('Select All selected count was unreadable.');
+  }finally{
+   if(created && valid()){
+    const current=currentControl();if(current && !disabled(current) && (checked(current) || mixed(current))){current.click();await pause(300);}
+    const remaining=currentControl();if(!remaining || checked(remaining) || mixed(remaining))problems.add('Selection cleanup could not be confirmed; check the Wave tab.');
+   }else if(created)problems.add('Page changed during counting; selection cleanup could not be confirmed.');
+  }
+ };
  state.done=(async()=>{
-  const started=now();let stable=0,last='',ready=false;
+  const started=now();let stable=0,last='',ready=false,loadPending=null;
   try{
    for(let n=0;n<450;n++){
     if(state.stop){publish('Stopped; partial collection retained');break;}
@@ -61,7 +96,18 @@ export function waveListScan(request,testContext){
     const marker=JSON.stringify([records.size,scroller.scrollHeight,scroller.scrollTop]);stable=bottom && marker===last?stable+1:0;last=marker;
     publish('Collecting: '+records.size+' rows; '+state.report.records.filter(r=>r.id).length+' identified');
     const loading=[...doc.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible);
-    if(bottom && stable>=6 && !loading){const identified=state.report.records.filter(r=>r.id).length;if(state.report.expectedTotal!==null && identified===state.report.expectedTotal){state.report.completeness='count-confirmed';publish('Complete: observed transaction count matches the list total');}else{state.report.completeness='bottom-reached';publish('Reached bottom after repeated stable checks; total not independently confirmed');}break;}
+    if(records.size>=20000 || now()-started>420000){publish('Collection limit reached; partial results retained');break;}
+    const more=loadButtons();if(more.length>1)throw Error('Multiple Load More Transactions controls found.');
+    if(loadPending){
+     if(records.size>loadPending.count || !more.length){loadPending=null;stable=0;}
+     else if(now()-loadPending.at>30000)throw Error('Load More Transactions did not produce more rows within 30 seconds.');
+     else{publish('Waiting for more transactions to load');await pause(700);continue;}
+    }
+    if(bottom && more.length){
+     stable=0;if(!loading && !disabled(more[0])){loadPending={count:records.size,at:now()};state.report.loadMoreClicks=(state.report.loadMoreClicks || 0)+1;more[0].click();}
+     await pause(700);continue;
+    }
+    if(bottom && stable>=6 && !loading){await verifyTotal();if(state.stop || !valid()){publish('Stopped during count verification; partial results retained');break;}const identified=state.report.records.filter(r=>r.id).length;if(state.report.expectedTotal!==null && identified===state.report.expectedTotal){state.report.completeness='count-confirmed';publish('Complete: identified transaction count matches '+(state.report.totalEvidence || 'the list total'));}else{state.report.completeness='bottom-reached';publish('Reached bottom after repeated stable checks; total not independently confirmed');}break;}
     if(records.size>=20000 || now()-started>420000){publish('Collection limit reached; partial results retained');break;}
     scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,Math.floor(scroller.clientHeight*0.7)),scroller.scrollHeight-scroller.clientHeight);
     await pause(bottom?1200:650);
