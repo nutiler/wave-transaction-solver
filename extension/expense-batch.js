@@ -53,7 +53,7 @@ export function installExpenseBatch({getState,receipt,apply,inspect}){
   if(matches.length>limit){const more=make('button','Show more expenses');more.onclick=()=>{limit+=100;render();};rows.append(more);}
   if(completed.length){const d=make('details');d.append(make('summary',completed.length+' completed expenses'));for(const t of completed.slice(0,completedLimit)){const item=make('details');item.append(make('summary',t.description+' · '+money(t.amount)+' · '+t.proposed),make('pre',JSON.stringify(receipt(t),null,2)));d.append(item);}if(completed.length>completedLimit){const more=make('button','Show more completed expenses');more.onclick=()=>{completedLimit+=100;render();};d.append(more);}rows.append(d);}
  }
- search.oninput=()=>{limit=100;render();};return {render};
+ search.oninput=()=>{limit=100;render();};return {render,open:()=>{search.value='';limit=100;render();fold.open=true;fold.scrollIntoView({block:'start',behavior:'smooth'});summary.tabIndex=-1;summary.focus({preventScroll:true});}};
 }
 
 // Editor preflight returns before any category, review, or Save click.
