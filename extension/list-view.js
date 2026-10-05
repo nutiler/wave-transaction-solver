@@ -23,6 +23,7 @@ export function liveMerchantAudit(report,rules=[],transactions=[],queue=[],busin
   else if(matches.length){state='blocked';reason=plan?.reason || 'Export and live merchant or transaction eligibility differ; inspect individually.';}
   else if(named.length){state='blocked';reason='Merchant alias matches, but the rule excludes this account, category, or transaction direction.';}
   const bucket=state==='known'?'approved_expense':!t?'missing_export':t.direction==='in'?'incoming_credit_or_income':nonPurchaseReason(t)?'payment_refund_or_nonpurchase':['Transfer candidate','Ambiguous transfer','Possible refund','Existing multi-account','Manual review'].includes(plan?.kind)?'transfer_refund_or_structure':state==='blocked'?'rule_scope_or_conflict':'purchase_needing_rule';
+  if(state==='unmatched' && t){if(t.direction==='in')reason='Incoming credit or income; review payment/refund context separately.';else if(nonPurchaseReason(t))reason=nonPurchaseReason(t);else if(['Transfer candidate','Ambiguous transfer','Possible refund','Existing multi-account','Manual review'].includes(plan?.kind))reason=plan.reason;}
   return {id:row.id,state,reason,bucket,rules:matches.map(r=>({name:r.name,category:r.category})),aliasRules:named.map(r=>({name:r.name,category:r.category}))};
  });
  const buckets=rows.reduce((counts,row)=>(counts[row.bucket]=(counts[row.bucket]||0)+1,counts),{});

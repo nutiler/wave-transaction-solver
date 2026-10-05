@@ -1,6 +1,6 @@
 import {suggestionCandidates,waveSuggestionAction,installSuggestionReview} from './suggestions.js';
 import {installWorkspace,showWorkspace} from './workspace-ui.js';
-import {installLiveList} from './list-view.js';
+import {installLiveList,liveMerchantAudit} from './list-view.js';
 import {expenseCandidates,prepareExpenseBatch,installExpenseBatch,recoverStoppedExpenseReceipt} from './expense-batch.js';
 import { readTransferMenu } from './transfer-menu.js';
 import { transferPairs,prepareTransferEdit,verifyTransferResult,resetTransferReceipt,classifyTransferState } from './transfers.js';
@@ -19,7 +19,7 @@ import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusines
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
-let suggestionReview=null;
+let suggestionReview=null,liveListReport=()=>null;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
@@ -557,8 +557,9 @@ async function captureTransferMenu(t){
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
-const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t)});
+const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:runExpenseBatch,inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
 const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+liveListReport=listReview.report;
 suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:runWaveSuggestion,recheck:t=>runWaveSuggestion(t,'recheck'),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
 const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:captureTransferMenu,applyTransfer:runTransfer,receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({

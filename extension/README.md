@@ -258,3 +258,6 @@ Suggestion control compatibility (0.17.1): scanning and confirmation recognize W
 
 
 Suggestion readiness (0.17.2): **Refresh Wave suggestions** in the confirmation section recollects the live Not Reviewed list and reloads saved merchant rules. Older scans show an explicit refresh notice. The section reports scanned rows, detected suggestion controls, ready rows and exclusion reasons. Expand **Why suggestions are not ready** to compare Wave’s category with the approved target. Copied diagnostics include this audit; an empty list no longer hides rule exclusions or old scans.
+
+
+Known expense readiness (0.17.3): when no known expenses remain, the runner displays the live backlog breakdown rather than an unexplained zero. It separates purchases needing approval, incoming movements, payments/loans/refunds, transfer or posting checks, missing CSV records and rule exclusions. Expand **Why remaining transactions are not known expenses** for row-level reasons, or use **Review remaining merchant decisions** to open proposal review. These explanations do not approve rules or confirm Wave suggestions.
