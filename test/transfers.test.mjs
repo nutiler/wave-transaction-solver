@@ -55,3 +55,8 @@ test('batch recognition rejects partial links, other accounts, changed amounts a
   assert.throws(()=>classifyTransferState(editablePair,{...saved,[incoming.id]:bad},business),e=>{assert(e.diagnostics.sides.length===2);assert.match(e.message,/Money (in|out):/);return true;});
  }
 });
+
+test('partial saved transfer is reported for individual review rather than relinking',()=>{
+ const snapshots={[out.id]:{...snapshot(out),fields:{...snapshot(out).fields,category:'Transfer to Fictional Card'},reviewed:'Reviewed'},[incoming.id]:snapshot(incoming)};
+ assert.throws(()=>classifyTransferState(editablePair,snapshots,business),e=>{assert.match(e.message,/Only one side.*individual review/);assert.equal(e.diagnostics.sides.length,2);return true;});
+});

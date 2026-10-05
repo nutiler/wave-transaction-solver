@@ -63,5 +63,5 @@ export function classifyTransferState(pair,snapshots,business){
  const failed=sides.filter(s=>s.problems.length || s.checks.some(c=>c.state!=='Match'));
  if(!failed.length)return {state:'original',sides};
  const detail=failed.map(s=>s.side+': '+[...s.problems,...s.checks.filter(c=>c.state!=='Match').map(c=>c.field+' '+c.state+' (export: '+c.exported+'; live: '+c.live+')')].join('; ')).join(' | ');
- const error=Error('Live transfer records changed. Nothing applied. '+detail);error.diagnostics={sides};throw error;
+ const error=Error((saved.sides.some(side=>side.categoryVerified)?'Only one side confirms the expected saved transfer. Needs individual review. ':'')+'Live transfer records changed. Nothing applied. '+detail);error.diagnostics={sides};throw error;
 }

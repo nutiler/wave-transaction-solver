@@ -648,7 +648,7 @@ async function runTransfer(pair,mode=false){
   if(result.verified){shortlist.delete(pair.out.id);shortlist.delete(pair.in.id);renderPlan();rememberSoon();}
   return editReceipts[key];
  }catch(e){
-  if(!attempted && !recheck && e.diagnostics){await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],saveAttempted:false,stage:'preflight',message:e.message,preflight:e.diagnostics,checkedAt:new Date().toISOString()});return editReceipts[key];}
+  if(!attempted && !recheck && e.diagnostics){await storeEditReceipt(key,{ids:[pair.out.id,pair.in.id],saveAttempted:false,stage:'preflight',message:e.message,preflight:e.diagnostics,checkedAt:new Date().toISOString()});return {...editReceipts[key],needsAttention:true};}
   if(attempted || recheck || alreadyLinked){const locked=editReceipts[key]?.saveAttempted;await storeEditReceipt(key,{...editReceipts[key],reviewed:false,message:e.message+(locked?' Save may have completed. Inspect Wave or use Recheck saved transfer; this attempt will not run again.':' Save was not clicked. Cancel the Wave dialog before retrying.')});return editReceipts[key];}
   throw e;
  }finally{applying=false;document.querySelector('main').inert=false;updateApply();}

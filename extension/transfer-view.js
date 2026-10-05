@@ -18,7 +18,7 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
   const selectAll=make('button','Select matching pairs'),clear=make('button','Clear selection'),runSelected=make('button','Run selected transfers');
   selectAll.className=clear.className='secondary';
   const count=make('span'),status=make('p',batchMessage);status.setAttribute('role','status');
-  const eligible=p=>!receipt?.(p)?.saveAttempted || (receipt(p).verified && !Object.values(receipt(p).reviewAttempts || {}).some(a=>a.attempted));
+  const eligible=p=>receipt?.(p)?.stage!=='preflight' && (!receipt?.(p)?.saveAttempted || (receipt(p).verified && !Object.values(receipt(p).reviewAttempts || {}).some(a=>a.attempted)));
   for(const p of matches)if(!eligible(p))selected.delete(p.key);
   const update=()=>{const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));count.textContent=chosen.length+' selected · '+money(chosen.reduce((sum,p)=>sum+p.out.amount,0));runSelected.disabled=!s.extensionMode || s.sample || !s.business || !chosen.length;};
   selectAll.onclick=()=>{for(const p of matches)if(eligible(p))selected.add(p.key);render();};clear.onclick=()=>{selected.clear();render();};
@@ -26,24 +26,27 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
    const chosen=matches.filter(p=>selected.has(p.key) && eligible(p));running=true;stop=false;
    const panel=make('div');panel.className='transfer-run-progress';panel.setAttribute('role','status');
    const progress=make('p'),pause=make('button','Stop after current pair');pause.onclick=()=>{stop=true;pause.disabled=true;};panel.append(progress,pause);document.body.append(panel);
-   let done=0,skipped=0,activePair=null;
+   let done=0,skipped=0,attention=0,activePair=null;
    try{for(const p of chosen){
     if(stop)break;
     if(getState().dataset!==s.dataset || getState().business!==s.business || getState().workFrom!==s.workFrom)throw Error('Session changed. Run stopped.');
-    progress.textContent='Pair '+(done+skipped+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
+    progress.textContent='Pair '+(done+skipped+attention+1)+' of '+chosen.length+' · '+money(p.out.amount)+' · Checking, linking and reviewing both records…';
     activePair=p;
     const result=await applyTransfer(p,'auto');
+    if(result?.needsAttention){attention++;selected.delete(p.key);continue;}
     if(!result?.reviewed)throw Error(result?.message || 'Pair could not be completed.');
     selected.delete(p.key);if(result.skipped)skipped++;else done++;
-   }batchMessage=done+' pairs completed and reviewed; '+skipped+' already completed pairs skipped, of '+chosen.length+' selected.'+(stop?' Stopped after the current pair.':'');
-   }catch(e){batchMessage=done+' pairs completed; '+skipped+' already completed pairs skipped. Run stopped'+(activePair?' at '+money(activePair.out.amount)+' · '+activePair.out.date+' · '+activePair.out.primary.account+' · ID '+activePair.out.id:'')+': '+e.message;}finally{running=false;panel.remove();render();}
+   }batchMessage=done+' pairs completed and reviewed; '+skipped+' already completed pairs skipped; '+attention+' need attention, of '+chosen.length+' selected.'+(stop?' Stopped after the current pair.':'');
+   }catch(e){batchMessage=done+' pairs completed; '+skipped+' already completed pairs skipped; '+attention+' need attention. Run stopped'+(activePair?' at '+money(activePair.out.amount)+' · '+activePair.out.date+' · '+activePair.out.primary.account+' · ID '+activePair.out.id:'')+': '+e.message;}finally{running=false;panel.remove();render();}
   };
   update();batch.append(selectAll,clear,runSelected,count);$('transferRows').append(batch,status);
+  const needsAttention=pairs.filter(p=>receipt?.(p)?.stage==='preflight');
+  if(needsAttention.length){const d=make('details');d.open=true;d.append(make('summary',needsAttention.length+' transfer pairs need attention (excluded from Select matching pairs)'));for(const p of needsAttention){const row=make('p',money(p.out.amount)+' · '+p.out.date+' · '+p.out.primary.account+' → '+p.in.primary.account+' · '+receipt(p).message);const inspectPair=make('button','Inspect this pair');inspectPair.onclick=()=>{const card=[...$('transferRows').querySelectorAll('.transfer-card')].find(c=>c.dataset.pairKey===p.key);if(card){card.open=true;card.scrollIntoView({block:'center'});}else{inspect(p.out);}};row.append(inspectPair);d.append(row);}$('transferRows').append(d);}
   if(completed.length){const d=make('details');d.append(make('summary',completed.length+' completed transfer pairs'));for(const p of completed){const item=make('details');item.append(make('summary',money(p.out.amount)+' · '+p.out.primary.account+' → '+p.in.primary.account+' · Saved and reviewed'),make('pre',JSON.stringify(receipt(p),null,2)));d.append(item);}$('transferRows').append(d);}
 
   if(!matches.length)$('transferRows').append(make('p','No unique transfer pairs in this view.'));
   for(const pair of matches.slice(0,limit)){
-   const card=make('details');card.className='transfer-card';card.append(make('summary',money(pair.out.amount)+' · '+pair.out.primary.account+' → '+pair.in.primary.account));
+   const card=make('details');card.className='transfer-card';card.dataset.pairKey=pair.key;card.append(make('summary',money(pair.out.amount)+' · '+pair.out.primary.account+' → '+pair.in.primary.account));
    const choose=make('input');choose.type='checkbox';choose.checked=selected.has(pair.key);choose.disabled=!eligible(pair);choose.setAttribute('aria-label','Select transfer '+money(pair.out.amount)+' '+pair.out.primary.account+' to '+pair.in.primary.account);choose.onchange=()=>{if(choose.checked)selected.add(pair.key);else selected.delete(pair.key);update();};
    const choice=make('label',' Include in automatic run ');choice.prepend(choose);card.append(choice);
    const table=make('table'),body=make('tbody');
@@ -71,14 +74,15 @@ export function installTransferReview({getState,read,inspect,openMenuRecord,capt
    const checkPaste=make('button','Check pasted diagnostics');checkPaste.className='secondary';checkPaste.onclick=()=>{try{if(paste.value.length>1000000)throw Error('Paste a transfer diagnostic report under 1 MB.');const report=JSON.parse(paste.value);menuStatus.textContent=checkTransferMenu(report,pair,s.business).message;}catch(e){menuStatus.textContent=e.message;}};
    menuActions.append(openMenu,readMenu,copy);menuPanel.append(menuActions,menuStatus,pre,paste,checkPaste);card.append(menuPanel);
    const setActions=make('div');setActions.className='bar';
+   const retry=make('button','Retry live preflight');retry.className='secondary';retry.hidden=receipt?.(pair)?.stage!=='preflight';
    const setTransfer=make('button','Set transfer and request review'),recheck=make('button','Recheck saved transfer'),copyResult=make('button','Copy transfer result'),resetAttempt=make('button','Reset unchanged transfer attempt');resetAttempt.className='secondary';recheck.className='secondary';copyResult.className='secondary';
    const setStatus=make('p');setStatus.setAttribute('role','status');
    const resultPanel=make('details'),resultPre=make('pre');resultPanel.append(make('summary','Transfer result diagnostics'),resultPre);
    function updateTransferActions(){const r=receipt?.(pair);let ready=false;try{ready=checkTransferMenu(menus.get(pair.key),pair,s.business).ready;}catch{}setTransfer.disabled=!s.extensionMode || s.sample || !ready || !!r?.saveAttempted;recheck.disabled=!s.extensionMode || !r?.saveAttempted;copyResult.disabled=!r;resetAttempt.disabled=!s.extensionMode || !r?.saveAttempted || !!r?.verified;if(r){setStatus.textContent=r.message;resultPre.textContent=JSON.stringify(r,null,2);}}
    const run=async verify=>{setStatus.textContent=verify==='reset'?'Reloading both original records to check whether this attempt can be reset…':verify?'Reopening both records to check the saved result…':'Checking both records, selecting the existing match, and requesting review…';setTransfer.disabled=true;recheck.disabled=true;try{const r=await applyTransfer(pair,verify);if(verify==='reset' && r.stage==='reset' && !r.saveAttempted)menus.delete(pair.key);setStatus.textContent=r.message;resultPre.textContent=JSON.stringify(r,null,2);}catch(e){setStatus.textContent=e.message;}finally{updateTransferActions();}};
-   setTransfer.onclick=()=>run(false);recheck.onclick=()=>run(true);resetAttempt.onclick=()=>run('reset');
+   retry.onclick=async()=>{await run('auto');render();};setTransfer.onclick=()=>run(false);recheck.onclick=()=>run(true);resetAttempt.onclick=()=>run('reset');
    copyResult.onclick=async()=>{try{await navigator.clipboard.writeText(resultPre.textContent);setStatus.textContent='Transfer result copied.';}catch{resultPanel.open=true;const range=document.createRange();range.selectNodeContents(resultPre);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);setStatus.textContent='Result selected. Press Ctrl+C to copy.';}};
-   updateTransferActions();setActions.append(setTransfer,recheck,resetAttempt,copyResult);card.append(make('p','Read the matching submenu first. Set transfer links this one existing pair and requests reviewed status. It excludes create-transfer entries. Both records are checked again before editing and reopened after Save; uncertain saves stay locked.'),setActions,setStatus,resultPanel);
+   updateTransferActions();setActions.append(retry,setTransfer,recheck,resetAttempt,copyResult);card.append(make('p','Read the matching submenu first. Set transfer links this one existing pair and requests reviewed status. It excludes create-transfer entries. Both records are checked again before editing and reopened after Save; uncertain saves stay locked.'),setActions,setStatus,resultPanel);
    $('transferRows').append(card);
   }
   if(matches.length>limit){const more=make('button','Show more pairs');more.onclick=()=>{limit+=100;render();};$('transferRows').append(more);}
