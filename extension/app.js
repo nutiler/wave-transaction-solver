@@ -1,3 +1,4 @@
+import {installRemainingGroups} from './remaining-view.js';
 import {installAmazonReview} from './amazon-view.js';
 import {installAllCollection} from './all-collection.js';
 import {installBulkInspector} from './inspection-view.js';
@@ -30,7 +31,7 @@ const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 let inspectionTab=null;
-let workspace=null,suggestionReview=null,bulkInspector=null,allCollection=null,amazonReview=null,liveListReport=()=>null;
+let workspace=null,suggestionReview=null,bulkInspector=null,allCollection=null,amazonReview=null,remainingReview=null,liveListReport=()=>null;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
@@ -258,10 +259,12 @@ function renderQueue() {
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
   const report=liveListReport(),historical=$('queueScope')?.value==='history';
   const source=historical?queue:remainingWork(queue,report,{business,from:workFrom(),receipts:editReceipts});
+  stepStatus('queue',historical?source.length+' CSV candidates':report?source.length+' live records remaining':'Collect live backlog first');
   const list = source.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
-  $('queueInfo').textContent = !historical && !report?'Collect the live Not Reviewed list in step 2. CSV history is not an unfinished-work list.':`Showing ${Math.min(list.length,150)} of ${list.length} ${historical?'CSV candidates (reviewed status unknown)':'remaining live records'} from ${workFrom()}. ${!historical && report.completeness!=='count-confirmed'?'Partial collection; the remaining count is incomplete.':!historical?'Based on your last collection; rescan after completing work.':'Advanced history view only; not a live backlog.'}`;
+  $('queueInfo').textContent = !historical && !report?'Collect the live Not Reviewed list in step 2. CSV history is not an unfinished-work list.':`${list.length} filtered ${historical?'CSV candidates (reviewed status unknown)':'remaining live records'} from ${workFrom()}. ${!historical && report.completeness!=='count-confirmed'?'Partial collection; the remaining count is incomplete.':!historical?'Based on your last collection; rescan after completing work.':'Advanced history view only; not a live backlog.'}`;
   $('counts').textContent=historical?source.length+' historical CSV candidates':source.length+' records in your last live backlog after verified session results';
   bulkInspector?.render();allCollection?.render();amazonReview?.render();
+  remainingReview?.render(list,{historical});
   $('rows').replaceChildren();
   for (const t of list.slice(0, 150)) {
     const tr = make('tr'), date = make('td', t.date); date.append(make('small', t.id));
@@ -391,6 +394,7 @@ function updateApply() {
   const supported = chosen?.kind === 'Merchant rule' && !sampleMode;
   $('applyPanel').hidden = !supported;
   $('apply').disabled = true;
+  if($('groupNavigation')){$('groupNavigation').hidden=!remainingReview?.hasContext();$('nextGrouped').disabled=applying || !!remainingReview?.hasNext()===false;}
   if($('prepareChange')){$('prepareChange').hidden=!supported || shortlist.has(chosen?.id) || !!editReceipts[receiptKey()]?.saveAttempted;$('prepareChange').disabled=applying || !!bulkInspector?.busy() || !!amazonReview?.busy() || !lastLiveSnapshot;}
   $('verifyApply').hidden = !editReceipts[receiptKey()]?.saveAttempted;
   $('resetAttempt').hidden = !supported || !editReceipts[receiptKey()]?.saveAttempted;
@@ -582,9 +586,10 @@ const proposalReview=installProposalReview({
 allCollection=installAllCollection({getState:()=>({business,dataset,extensionMode,sample:sampleMode,busy:applying || listCollecting || !!bulkInspector?.busy() || !!amazonReview?.busy()}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();workspace?.refresh();},onChange:()=>{bulkInspector?.render();updateSteps();},openInspector:mode=>void bulkInspector?.selectSource(mode)});
 bulkInspector=installBulkInspector({getState:()=>({business,dataset,queue,csvText,workFrom:workFrom(),report:listReview.report(),allReport:allCollection.report(),extensionMode,sample:sampleMode,busy:applying || listCollecting || !!amazonReview?.busy()}),read:async(t,current)=>{const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+business+'/transactions/'+t.id,inspectionTab);inspectionTab=tab.id;return waitForLiveSnapshot(()=>captureLive(tab.id,business,t.id),current);},inspect:t=>select(t),onChange:()=>{renderQueue();updateSteps();}});
 amazonReview=installAmazonReview({getState:()=>({business,dataset,categories:categoryNames(sampleMode?null:catalog,dataset?.categories||[]),from:workFrom(),report:allCollection.report() || listReview.report(),sample:sampleMode,busy:applying || listCollecting || !!bulkInspector?.busy()}),onChange:()=>{if(dataset)analyze(true,false);},onRunning:()=>{renderQueue();transferReview.render();workspace?.refresh();},inspect:(t,a)=>{select(a?amazonReview.proposalFor(queue.find(x=>x.id===t.id) || t,a):(queue.find(x=>x.id===t.id)||{...t,kind:'Manual review',reason:'Amazon payment candidate needs review.'}));}});
+remainingReview=installRemainingGroups({getState:()=>({business,rules,chosenId:chosen?.id,busy:applying || listCollecting || !!bulkInspector?.busy() || !!amazonReview?.busy()}),inspect:t=>select(t),openAmazon:()=>showUsageSection('amazonReview'),prepareRule:g=>{ $('ruleName').value=g.name.slice(0,100);$('aliases').value=g.name.slice(0,250);$('category').value='';showUsageSection('fold-merchant');$('customRule').open=true;$('ruleName').focus();rememberSoon();}});
 workspace=installWorkspace({getState:()=>({business,dataset,report:liveListReport(),rules,busy:applying || listCollecting || !!bulkInspector?.busy() || !!amazonReview?.busy(),workFrom:workFrom(),expenseMatches:expenseCandidates(liveRunQueue(queue,liveListReport(),business,workFrom()),allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(liveRunQueue(queue,liveListReport(),business,workFrom())).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:stage=>{rememberSoon();if(stage==='planning')renderQueue();}});
 renderRules();
-try { await restoreSession();await amazonReview.restore();if(dataset)analyze(true,false); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
+try { await restoreSession();await amazonReview.restore();await remainingReview.restore();if(dataset)analyze(true,false); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
 try {
  await refreshTabs();
@@ -595,6 +600,7 @@ try {
  updateSteps();
 } finally {startupPending=false;startupActivity.finish();document.querySelector('main').inert=false;}
 const prepareChange=make('button','Prepare this category change','secondary');prepareChange.id='prepareChange';prepareChange.onclick=handle(async()=>{if(chosen?.kind!=='Merchant rule' || !actionable(chosen))throw Error('Choose an approved-rule purchase first.');if(!lastLiveSnapshot)throw Error('Read live details before preparing this change.');shortlist.add(chosen.id);renderPlan();updateApply();await rememberSession();});$('apply').before(prepareChange);
+const groupNavigation=make('div');groupNavigation.id='groupNavigation';groupNavigation.className='bar';const backGrouped=make('button','Back to this group','secondary'),nextGrouped=make('button','Inspect next in group');nextGrouped.id='nextGrouped';backGrouped.onclick=()=>{showUsageSection('fold-queue');remainingReview.reveal();};nextGrouped.onclick=()=>remainingReview.next();groupNavigation.append(backGrouped,nextGrouped);$('selected').after(groupNavigation);updateApply();
 const queueScope=make('select');queueScope.id='queueScope';queueScope.setAttribute('aria-label','Remaining work scope');for(const [value,label] of [['live','Latest live backlog'],['history','Advanced: all CSV candidates']]){const option=make('option',label);option.value=value;queueScope.append(option);}queueScope.onchange=()=>renderQueue();$('search').parentElement.prepend(queueScope);renderQueue();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for(const id of ['liveList','waveSuggestions','expenseBatch'])$(id).addEventListener('toggle',rememberSoon);

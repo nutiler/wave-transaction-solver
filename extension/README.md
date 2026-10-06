@@ -305,3 +305,11 @@ A reconciled order with all items explicitly approved for one purpose and one ca
 Download the local Amazon review or approved draft plan to retain a review package. Identical report uploads and overlapping parsed rows are deduplicated; item and payment totals must reconcile before an action can be prepared. Indistinguishable identical item lines are held when their totals do not reconcile.
 
 Synthetic browser checks: open /extension/amazon-fixture.html on the local development server and select **Run synthetic interface checks**. This verifies bulk approval, payment-link confirmation, mixed-category splits, persistence and duplicate imports without connecting to Wave.
+
+## Grouped remaining transactions
+
+Version 0.24.0 makes **Grouped review** the default view under Step 5 → Remaining transactions. It uses the latest live backlog and existing search/date/action filters. Small groups come first; switch to largest groups or sort by name when useful. Venmo, PayPal, Zelle, Cash App, Square and Amazon have service groups with purpose-check reminders. Other entries group by approved merchant aliases or normalized descriptive words. Original descriptions, IDs, accounts, categories and separate incoming/outgoing totals remain visible; grouping never creates a categorization rule.
+
+Open a group and choose **Set aside for later** to park it while you obtain receipts or app activity. The choice persists locally per business across reloads, fresh exports and scans. Choose **Set aside for later** in the group-scope dropdown to revisit it, then **Bring back to work** to restore it. Deferred transactions remain unreviewed in Wave and remain available to existing runners; this feature organizes only the grouped review view.
+
+Choose **Inspect next**, then use **Inspect next in group** or **Back to this group** in the individual check. Inspecting or navigating does not mark a record completed. Rescan after reviewing in Wave. Repeated merchants without an approved alias group can offer **Prepare merchant rule**, which opens the existing rule editor for your category choice and explicit approval. Broad payment-service groups do not offer a merchant rule. Amazon groups link to the item-report solver. The original flat transaction list is available in the view dropdown.
