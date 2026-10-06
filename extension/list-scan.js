@@ -4,7 +4,8 @@ export function waveListScan(request,testContext){
  const pause=testContext?.wait || (ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=testContext?.now || Date.now;
  const key='__dandelionWaveListScanV1',tidy=s=>String(s || '').replace(/\s+/g,' ').trim();
  const mode=request.mode==='ALL'?'ALL':'NOT_VERIFIED';
- const valid=()=>{const u=new URL(loc.href);return u.origin==='https://next.waveapps.com' && u.pathname.replace(/\/$/,'')==='/'+request.business+'/transactions' && (mode==='ALL'?u.search==='':u.searchParams.get('status')==='NOT_VERIFIED');};
+ const year=Number.isInteger(request.year)&&request.year>=1900&&request.year<=2200?request.year:null;
+ const valid=()=>{const u=new URL(loc.href);return u.origin==='https://next.waveapps.com' && u.pathname.replace(/\/$/,'')==='/'+request.business+'/transactions' && (mode==='ALL'?(year?[...u.searchParams.keys()].length===2&&u.searchParams.get('startDate')===year+'-01-01'&&u.searchParams.get('endDate')===year+'-12-31':u.search===''):u.searchParams.get('status')==='NOT_VERIFIED');};
  if(request.action==='stop'){if(win[key])win[key].stop=true;return win[key]?.report || null;}
  if(request.action==='poll')return win[key]?.report || null;
  if(!/^[0-9a-f-]{36}$/i.test(request.business || '') || !valid())throw Error(mode==='ALL'?'Open the selected business Transactions list with no URL filters.':'Open the selected business Transactions list with status=NOT_VERIFIED.');
@@ -16,9 +17,11 @@ export function waveListScan(request,testContext){
  const fingerprint=r=>JSON.stringify([r.date,tidy(r.description).toLowerCase(),tidy(r.account).toLowerCase(),r.amountCents]);
  const known=new Map();for(const t of request.known || []){if(typeof t.id!=='string' || !/^\d+$/.test(t.id))continue;const k=fingerprint(t);if(!known.has(k))known.set(k,[]);known.get(k).push(t.id);}
  const records=new Map(),problems=new Set();
- const state={stop:false,report:{format:'wave-solver-live-list',version:1,suggestionDetectionVersion:2,business:request.business,url:loc.href,filter:mode,filterChipObserved:false,startedAt:new Date(now()).toISOString(),capturedAt:null,running:true,status:'Starting',records:[],expectedTotal:null,completeness:'unconfirmed',problems:[],rowDiagnostics:[]}};win[key]=state;
+ const state={stop:false,report:{format:'wave-solver-live-list',version:1,suggestionDetectionVersion:2,business:request.business,url:loc.href,filter:mode,year,filterChipObserved:false,startedAt:new Date(now()).toISOString(),capturedAt:null,running:true,status:'Starting',records:[],expectedTotal:null,completeness:'unconfirmed',problems:[],rowDiagnostics:[]}};win[key]=state;
  const publish=status=>{state.report.status=status;state.report.records=[...records.values()];state.report.problems=[...problems];state.report.capturedAt=new Date(now()).toISOString();};
  const collect=()=>{
+  state.report.filterChipObserved=[...doc.querySelectorAll('button,span,a,div')].some(el=>visible(el) && /^(Not Reviewed|Not Verified)$/i.test(clean(el)));
+  if(mode==='ALL'){const filters=[...doc.querySelectorAll('button,[role=button]')].filter(visible).map(clean).filter(text=>/^[1-9]\d* filters?$/i.test(text));const searches=[...doc.querySelectorAll('input')].filter(visible).filter(input=>/search transactions/i.test(input.getAttribute('placeholder') || input.getAttribute('aria-label') || '') && input.value.trim());if(state.report.filterChipObserved || filters.some(text=>Number(text.match(/^\d+/)[0])>(year?1:0)) || searches.length)throw Error('The all-transactions list still has active filters or a search. Clear them in Wave and collect again.');}
   const tables=[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).filter(el=>{const text=clean(el);return /Description/i.test(text) && /Category/i.test(text) && /Amount/i.test(text);});
   const owners=tables.filter(el=>!tables.some(other=>other!==el && el.contains(other)));if(owners.length!==1){if(owners.length>1)throw Error('Multiple transaction tables are visible.');return null;}
   const table=owners[0],headerRow=table.querySelector('thead tr,[role="row"]:has([role="columnheader"])');
@@ -32,13 +35,13 @@ export function waveListScan(request,testContext){
   if(!dataRows(root).some(shape))for(let parent=table.parentElement;parent;parent=parent.parentElement){if(dataRows(parent).some(shape)){root=parent;break;}if(parent===doc.body)break;}
   const rows=dataRows(root),occurrences=new Map();
   state.report.tableDiagnostics={headers,headerHtml:table.querySelector('thead')?.outerHTML.slice(0,5000) || '',rowSamples:rows.slice(0,3).map(row=>row.outerHTML.slice(0,7000)),nearbyTables:[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).slice(0,4).map(t=>({class:t.className,rows:t.querySelectorAll('tr,[role="row"]').length,rowSamples:[...t.querySelectorAll('tr,[role="row"]')].filter(row=>!row.closest('thead')).slice(0,2).map(row=>row.outerHTML.slice(0,7000)),html:t.outerHTML.slice(0,3500)}))};
-  state.report.filterChipObserved=[...doc.querySelectorAll('button,span,a,div')].some(el=>visible(el) && /^(Not Reviewed|Not Verified)$/i.test(clean(el)));
-  if(mode==='ALL'){const filters=[...doc.querySelectorAll('button,[role=button]')].filter(visible).map(clean).filter(text=>/^[1-9]\d* filters?$/i.test(text));const searches=[...doc.querySelectorAll('input')].filter(visible).filter(input=>/search transactions/i.test(input.getAttribute('placeholder') || input.getAttribute('aria-label') || '') && input.value.trim());if(state.report.filterChipObserved || filters.length || searches.length)throw Error('The all-transactions list still has active filters or a search. Clear them in Wave and collect again.');}
+
 
   for(const row of rows){
    const cells=[...row.querySelectorAll(':scope > td,:scope > [role="cell"],:scope > [role="gridcell"]')];if(!cells.length)continue;
    const get=(name,fallback)=>clean(cells[index(name)>=0?index(name):fallback]);
    const r={id:null,identity:'unresolved',date:date(get('Date',1)),description:get('Description',2),account:get('Account',3),category:get('Category',4),amountText:get('Amount',5),amountCents:amount(get('Amount',5)),reviewed:'Unknown',reviewEvidence:null,sourceFilter:mode};
+   if(year && r.date && !r.date.startsWith(year+'-'))throw Error('A row falls outside the requested year. Wait for the date filter to load.');
    if(!r.date || !r.description || r.amountCents===null){problems.add('Some visible rows could not be parsed; inspect table diagnostics.');if(state.report.rowDiagnostics.length<5)state.report.rowDiagnostics.push({problem:'Unreadable row fields',html:row.outerHTML.slice(0,9000)});continue;}
    const suggestionButtons=[...row.querySelectorAll('button,[role="button"]')].filter(visible).filter(button=>[button.getAttribute('aria-label'),button.getAttribute('title'),tidy(button.textContent),...((button.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>doc.getElementById(id)?.textContent)),...[...button.querySelectorAll('svg title,[role="tooltip"]')].map(el=>el.textContent)].some(text=>/^(?:ConfirmAutocatIcon|Confirm (?:the )?auto.updated category)$/i.test(tidy(text))));
    r.waveSuggestion=suggestionButtons.length===1;r.suggestionControlDisabled=suggestionButtons.some(button=>button.disabled || button.getAttribute('aria-disabled')==='true');if(suggestionButtons.length)r.suggestionControls=suggestionButtons.map(button=>button.outerHTML.slice(0,3500));
@@ -103,12 +106,12 @@ export function waveListScan(request,testContext){
   }
  };
  state.done=(async()=>{
-  const started=now();let stable=0,last='',ready=false,loadPending=null;
+  const started=now();let stable=0,last='',ready=false,loadPending=null,emptyTicks=0;
   try{
    for(let n=0;n<(mode==='ALL'?3000:450);n++){
     if(state.stop){publish('Stopped; partial collection retained');break;}
     if(!valid()){publish('Stopped because the business or filter changed');problems.add('The Wave list navigated away during collection.');break;}
-    const table=collect();if(!table){if(ready || now()-started>30000)throw Error('Transaction table was not readable.');await pause(700);continue;}const firstTable=!ready;ready=true;
+    const table=collect();const empty=year && !records.size && ![...doc.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible) && [...doc.querySelectorAll('p,div,span')].some(el=>visible(el)&&/^(No transactions|No transactions found|No transactions to display)\.?$/i.test(clean(el)));if(empty){emptyTicks++;if(emptyTicks>=6){state.report.expectedTotal=0;state.report.totalEvidence='Explicit stable empty year list';state.report.completeness='count-confirmed';publish('Complete: no transactions in '+year);break;}await pause(700);continue;}emptyTicks=0;if(!table){if(ready || now()-started>30000)throw Error('Transaction table was not readable.');await pause(700);continue;}const firstTable=!ready;ready=true;
     const scroller=scrollOwner(table),bottom=scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-3;
     if(firstTable && scroller.scrollTop>0){scroller.scrollTop=0;await pause(700);continue;}
     const marker=JSON.stringify([records.size,scroller.scrollHeight,scroller.scrollTop]);stable=bottom && marker===last?stable+1:0;last=marker;
@@ -134,4 +137,18 @@ export function waveListScan(request,testContext){
   }catch(e){problems.add(e.message);publish('Collection stopped: '+e.message);}finally{if([...records.values()].some(r=>!r.id))problems.add('Rows without an exact ID or unique export match cannot be used to select bookkeeping actions. Identical unidentified rows may not be distinguishable across scroll frames.');state.report.running=false;publish(state.report.status);}
  })();
  return state.report;
+}
+
+// Only opens the Sort menu and its exact oldest-first option, then reads the first dated row.
+export async function discoverOldestWaveYear(request,testContext){
+ const doc=testContext?.document || document,loc=testContext?.location || location,style=testContext?.getComputedStyle || getComputedStyle,pause=testContext?.wait || (ms=>new Promise(resolve=>setTimeout(resolve,ms)));
+ const url=new URL(loc.href);if(url.origin!=='https://next.waveapps.com' || url.pathname.replace(/\/$/,'')!=='/'+request.business+'/transactions' || url.search)throw Error('Oldest-year discovery requires the unfiltered business Transactions page.');
+ const visible=el=>!el.hidden&&!el.closest('[hidden],[aria-hidden="true"]')&&style(el).display!=='none'&&style(el).visibility!=='hidden'&&el.getClientRects().length>0;
+ const text=el=>{const clone=el.cloneNode(true);clone.querySelectorAll('svg,[aria-hidden="true"]').forEach(n=>n.remove());return clone.textContent.replace(/\s+/g,' ').trim();};
+ for(const table of doc.querySelectorAll('table'))for(let parent=table.parentElement;parent;parent=parent.parentElement)if(parent.scrollHeight>parent.clientHeight)parent.scrollTop=0;if(doc.scrollingElement)doc.scrollingElement.scrollTop=0;
+ let sorts=[];for(let n=0;n<20;n++){sorts=[...doc.querySelectorAll('button,[role="button"]')].filter(el=>visible(el)&&/^Sort$/i.test(text(el)));if(sorts.length)break;await pause(500);}if(sorts.length!==1)throw Error('Cannot identify the Sort button. Open oldest-first manually and copy collection diagnostics.');sorts[0].click();await pause(300);
+ const choices=[...doc.querySelectorAll('button,[role="menuitem"],[role="option"],li,div')].filter(el=>visible(el)&&/^Oldest to newest$/i.test(text(el)));const leaf=choices.filter(el=>!choices.some(other=>other!==el&&el.contains(other)));if(leaf.length!==1)throw Error('Cannot identify the exact Oldest to newest option.');leaf[0].click();
+ const firstDate=()=>{for(const row of doc.querySelectorAll('tbody tr,tr.wv-table__row,[role="row"]')){if(!visible(row)||row.closest('thead'))continue;for(const cell of row.querySelectorAll('td,[role="cell"]')){const t=text(cell);if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;if(/^[A-Za-z]{3,9} \d{1,2},? \d{4}$/.test(t)){const n=Date.parse(t+' UTC');if(Number.isFinite(n))return new Date(n).toISOString().slice(0,10);}}}return null;};
+ let previous=null,stable=0;for(let n=0;n<20;n++){await pause(n===0?1500:500);if(loc.href!==url.href)throw Error('Wave navigated during oldest-year discovery.');const date=firstDate();if(date && date===previous)stable++;else stable=0;previous=date;if(stable>=2){const year=Number(date.slice(0,4));if(year<1900||year>2200)throw Error('Unexpected oldest transaction year.');return {year,date,sort:'Oldest to newest',capturedAt:new Date().toISOString()};}}
+ throw Error('Could not read a stable oldest transaction date after sorting.');
 }
