@@ -59,8 +59,9 @@ export function waveListScan(request,testContext){
    const reviewLabels=[...row.querySelectorAll('[aria-label],[title]')].map(el=>tidy(el.getAttribute('aria-label') || el.getAttribute('title'))).filter(label=>/^(Reviewed|Transaction reviewed|Not reviewed|Transaction not reviewed)$/i.test(label));
    for(const label of reviewLabels)evidence.push({status:/not reviewed/i.test(label)?'Not reviewed':'Reviewed',reason:'Explicit row status label'});
    const reviewIcons=[...row.querySelectorAll('.transactions-list-v2__row__verify-icon')];
-   for(const icon of reviewIcons){if(icon.classList.contains('transactions-list-v2__row__verify-icon--unverified'))evidence.push({status:'Not reviewed',reason:'Wave row unverified marker'});if(icon.classList.contains('transactions-list-v2__row__verify-icon--verified'))evidence.push({status:'Reviewed',reason:'Wave row verified marker'});}
+   for(const icon of reviewIcons){if(icon.classList.contains('transactions-list-v2__row__verify-icon--unverified'))evidence.push({status:'Not reviewed',reason:'Wave row unverified marker'});if(icon.classList.contains('transactions-list-v2__row__verify-icon--verified') || icon.classList.contains('transactions-list-v2__row__verify-icon--true'))evidence.push({status:'Reviewed',reason:'Wave row verified marker'});}
    r.reviewControlDisabled=reviewIcons.some(icon=>icon.disabled || icon.getAttribute('aria-disabled')==='true' || icon.classList.contains('transactions-list-v2__row__verify-icon--unverified--is-disabled'));
+   r.reviewMarkers=reviewIcons.map(icon=>[...icon.classList].filter(name=>name.startsWith('transactions-list-v2__row__verify-icon--')));
    const statuses=new Set(evidence.map(item=>item.status));if(statuses.size===1){r.reviewed=[...statuses][0];r.reviewEvidence=[...new Set(evidence.map(item=>item.reason))].join('; ');}else if(statuses.size>1)r.reviewEvidence='Conflicting row indicators';
    const occurrence=(occurrences.get(k) || 0)+1;occurrences.set(k,occurrence);const rowKey=r.id?'id:'+r.id:'unresolved:'+k+':'+occurrence;
    records.set(rowKey,r);
