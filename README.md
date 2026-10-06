@@ -10,6 +10,8 @@ A local Chrome extension for organizing Wave accounting transactions from an acc
 4. Open your Wave business and launch Dandelion's Wave Transaction Solver.
 5. Import accounting.csv from Wave's data export.
 
+Amazon order CSVs, PayPal monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. Group recipients, approve purchase purposes and confirm bank links before using the existing live expense runner.
+
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 ## Workspace
