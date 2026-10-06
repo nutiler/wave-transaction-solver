@@ -316,7 +316,7 @@ Choose **Inspect next**, then use **Inspect next in group** or **Back to this gr
 
 ## Venmo statement downloader
 
-Version 0.26.0 collects **both profiles for each month** from Venmo's All profiles statement page. No Wave records or payment actions are changed.
+Version 0.26.1 collects **both profiles for each month** from Venmo's All profiles statement page. No Wave records or payment actions are changed.
 
 1. Open the downloader from Step 1 of the solver and connect Venmo.
 2. Choose the project's data/venmo folder. Chrome requires a user-selected folder; its handle is retained locally.
@@ -325,7 +325,7 @@ Version 0.26.0 collects **both profiles for each month** from Venmo's All profil
 
 The page adapter briefly observes CSV blobs created by the clicked transaction download and suppresses the redundant browser download for that observed blob. It restores the temporary hooks after capture or error. This uses the native Venmo download without reading cookies, authentication headers or request bodies. A direct non-blob download format is not inferred; if no recognizable CSV appears, the run stops with an explanation. Separate-profile endpoint capture remains an optional fallback.
 
-Each CSV must contain Venmo transaction headers and dates within the selected month. Personal/YYYY and business/YYYY files are saved beneath the selected folder. A private manifest and local checkpoints record each profile-month independently. Resume verifies existing file hashes and can finish the missing side of a partially downloaded month without downloading the saved side again. Changed files get a new filename.
+The validator accepts personal ID/Datetime exports and business Transaction ID/Date/Time (UTC) exports, including empty statements with balance metadata and the Account Statement footer. Actual transaction rows still require dates within the selected month. A statement profile label, when present, must match the clicked profile. Header failures expose sanitized layout diagnostics (column names and counts, without notes, names, handles or transaction IDs). Personal/YYYY and business/YYYY files are saved beneath the selected folder. A private manifest and local checkpoints record each profile-month independently. Resume verifies existing file hashes and can finish the missing side of a partially downloaded month without downloading the saved side again. Changed files get a new filename.
 
 A month showing no transaction download controls after waiting is recorded as **availability unconfirmed**, with no fake CSV, and collection continues. Profile changes, sign-in problems, changed months, malformed CSVs or uncertain results stop the run while preserving saved files. Empty valid CSVs are retained. All financial files, source/profile context, manifests and destination settings remain local and excluded from Git.
 
