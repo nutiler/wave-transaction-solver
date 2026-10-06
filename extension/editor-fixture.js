@@ -111,5 +111,8 @@ document.getElementById('run').onclick = async () => {
   const refundExpected={...expected,type:'Deposit',category:'Uncategorized Income'};
   for(const path of ['Deposit from Personal','Refund for Expense'])await check('Incoming refund uses '+path+' and preserves Deposit',{custom:true,personalSubmenu:true,submenuLabel:path,original:refundExpected},(r,s)=>!r.problem&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:[path]});
   await check('Refund navigation cannot turn an outgoing purchase into a refund',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,refund:true,categoryPath:['Refund for Expense']});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 36 editor checks passed';
+  const changedDescription='Test Store — fictional source detail';
+  await check('Description enrichment uses approved text without changing original identity',{custom:true},(r,s)=>!r.problem&&s.saves===1,{...request,description:changedDescription});
+  await check('Blank description is rejected before category changes or Save',{},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,description:' '});
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 38 editor checks passed';
 };

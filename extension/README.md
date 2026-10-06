@@ -11,7 +11,31 @@
 
 No Node server is needed to run the extension. The earlier localhost application is separate.
 
-## Usage and Debug tools
+## Daily workflow (0.30.0)
+
+1. Reload the extension in Chrome, then open **Command center**. Your rules, imported export, source decisions and queued choices are preserved.
+2. For the latest files, click **Load data folder** and select your private `data` directory. It imports `wave/accounting.csv` (or `accounting.csv` at the selected folder root), reads available source evidence, and prepares a fresh count-confirmed Not Reviewed collection. If your saved imports are already current, click **Prepare workspace** instead.
+3. Review the category and description suggestions. Type in **Category** to search exact names, choose the treatment for money in, or edit the description. Expand **Included records** to exclude an exception. **Confirm locally** queues your choice and opens the next group; **Set aside** saves difficult work for later. C confirms, S defers, Z undoes the last local confirmation; shortcuts stay off while typing.
+4. **Pending queue** lets you inspect, Edit or Undo choices. **Queue approved-rule suggestions** stages supported approved-rule or stated-policy choices locally; it does not execute anything or approve new historical proposals.
+5. Click **Execute queued decisions** (or Ctrl+Enter) when ready. Saves run sequentially through the existing live checks, editor and saved-result verification. Existing Wave suggestions matching an approved rule can use the thumbs-up path when no description change is requested. Unsupported Review updates layouts remain explained preflight exceptions. The overall backlog is collected once after the batch. Stop finishes the current record. No native Wave bulk-save API is claimed.
+
+**Confirm only changes local state.** It makes no Wave calls, does no full scan/source/history analysis, and coalesces rapid local writes. A prepared snapshot and the pending queue are cached separately per business. Changed imports, rules, source choices or category catalogs require preparation again, without discarding queued decisions. Execution revalidates their original export and source evidence.
+
+Source additions retain the original bank description and use item classifications, recipients or payment notes. Product identity alone does not prove business use. Proposed additions are capped at 255 characters; the editor checks Wave's actual field limit before changing anything. Refunds use their purchase category with Wave's refund or personal-deposit submenu; incoming records require an explicit treatment. Existing merchant rules remain outgoing-only. Human-confirmed income and personal deposit choices are scoped to their exact records.
+
+**Exceptions** separates unsupported structures and changed or uncertain attempts from ordinary review. Fee-adjusted candidates show explicit source gross, net and fees. Unequal pairs cannot use the equal-amount transfer executor; they require a supported split/fee allocation in Wave. Loan principal/interest, mixed-category purchases, ambiguous source allocations and missing CSV records remain exceptions rather than invented classifications.
+
+An execution checkpoint is saved before each record. Safe preflight failures go to attention and permit later records; uncertain saves stop the run and stay locked across reloads. **Recheck saved result** reads the existing record without repeating the save. An interrupted executing receipt also stays locked until rechecked. Completed saves are not automatically replayed.
+
+Preparation uses the latest explicit reviewed evidence and the current Not Reviewed backlog. A historical scan with Unknown statuses does not prove reviewed bookkeeping; absence from Not Reviewed is not a saved-result verification. Transactions before your working period remain excluded. Existing rules and legacy receipts are preserved.
+
+Development checks: `node --test`; `/extension/editor-fixture.html` exercises real DOM editing against synthetic dialogs; `/extension/command-fixture.html` simulates preparation, local confirmation, reload, group exceptions, queued execution and lost-response recovery. None changes real Wave records. All financial files, source evidence and derived review packages remain ignored locally.
+
+## Advanced tools and earlier workflows
+
+The reference sections below describe retained collection, analysis, manual runners and troubleshooting capabilities. They are under Advanced tools unless available in Session or Rule library. The daily workflow above replaces the previous immediate per-group execution flow.
+
+### Earlier workspace layout
 
 Version 0.14 groups the page into two workspaces. **Usage** contains session setup, transaction collection and runners, merchant rules, and planning. **Debug tools** contains chart, live-field, list, rule-check, expense-result, and transfer diagnostics, plus manual transfer-menu tools and the fictional sample. **View diagnostics** buttons open the relevant Debug card. Normal Run, retry, and recheck controls remain beside the affected transactions in Usage. Switching workspaces keeps your loaded session and selections.
 
@@ -371,10 +395,10 @@ Step 5's ordinary merchant groups also offer **Use category for this group**. Th
 
 Previously verified records that return to the fresh Not Reviewed backlog receive a read-only saved-result recheck. They are not saved again automatically; a changed or unreadable result goes to attention. Source review starts with All sources and Needs my input.
 
-## Decision desk (0.29.0)
+## Previous decision desk (0.29.0, superseded)
 
 Daily work is now **Session → Do the work → Rule library**. **Do the work** is the human workspace. Start with **Solve recognized work**; it returns to **Needs your decision** automatically. Pick an exact category in a merchant group, then **Apply and verify N purchases/refunds**. That single click saves the decision, refreshes the live backlog, runs only that group, verifies each category and reviewed state, and refreshes what remains. The next group opens automatically. Outgoing merchant choices preserve scoped rules for later purchases. Incoming refund choices approve only those exact export snapshots and never establish a general income rule. Different existing categories, ambiguous matches, transfers and unsafe structures remain for individual attention.
 
 Choose **Money in is a merchant refund** explicitly for incoming merchant returns. Amount and Deposit direction stay unchanged. Collected Expenses categories use Wave's **Refund for Expense** submenu; personal Equity categories use **Deposit from Personal** to reverse the owner's personal category. This is separate from transfers, customer refunds, cashback and genuine income. A missing or ambiguous submenu stops without guessing. See [Wave refund documentation](https://support.waveapps.com/hc/en-us/articles/4410868866964-Bookkeep-a-refund) and [personal transaction documentation](https://support.waveapps.com/hc/en-us/articles/360020168332-Record-personal-transactions-from-a-business-account).
 
-**Source purchases** remains in Do the work for Amazon, PayPal and Venmo evidence. A similar-source choice now immediately runs its uniquely linked group after the local approval finishes. Detailed manual approval/export controls are collapsed. Full-history scans, bulk inspection, the older Amazon tool, individual editing, separate expense/transfer/suggestion runners and draft export are under **Advanced tools**; their saved data is preserved. Old saved collection/remaining-work navigation resumes in Do the work. Local refund decisions are stored per business in IndexedDB. No real Wave records are changed by the fictional operator/editor fixtures.
+**Source purchases** remains in Do the work for Amazon, PayPal and Venmo evidence. As of 0.30, similar-source choices save locally; execution is a separate Command center action. Detailed manual approval/export controls are collapsed. Full-history scans, bulk inspection, the older Amazon tool, individual editing, separate expense/transfer/suggestion runners and draft export are under **Advanced tools**; their saved data is preserved. Old saved collection/remaining-work navigation resumes in Do the work. Local refund decisions are stored per business in IndexedDB. No real Wave records are changed by the fictional operator/editor fixtures.

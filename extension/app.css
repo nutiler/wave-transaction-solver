@@ -39,3 +39,36 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--input);border:1
 /* Source evidence shares the existing review-card palette and responsive controls. */
 #sourceSolvers .custom-rule label{display:block;margin:10px 0;overflow-wrap:anywhere}#sourceSolvers .custom-rule select{display:block;width:100%;margin-top:8px}#sourceSolvers>.step-body>select,#sourceSolvers>.step-body>input:not([type=file]){margin:6px 8px 12px 0;max-width:100%}#sourceSolvers .inspection-row{margin:12px 0;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--input)}#sourceSolvers .inspection-row[open]{border-color:#75aaff;background:#30435e}#sourceSolvers .inspection-row>p{overflow-wrap:anywhere;font-size:13px}#sourceSolvers .inspection-row>select{width:100%;margin-top:14px}#sourceSolvers .inspection-row>button{margin:10px 10px 0 0}#sourceSolvers .amazon-item-controls{margin-top:16px}#sourceSolvers .inspection-row>summary{font-size:15px;font-weight:700;color:#d4e6ff}#sourceSolvers .inspection-row input[type=checkbox]{accent-color:var(--blue)}
 .automation-shortcut{display:flex;align-items:center;gap:16px;margin:16px 0;padding:16px;background:#304766;border:1px solid #6393d2;border-radius:10px}.automation-shortcut span{color:var(--muted);font-size:13px}#knownWork .plan-choice{display:block;margin:12px 0}#knownWork button{margin:8px 10px 8px 0}@media(max-width:600px){.automation-shortcut{align-items:stretch;flex-direction:column}}
+/* Command center: compact blue operator workspace. */
+.command-body { padding:18px; }
+.command-lead { color:#d8e6fb; font-size:15px; margin:0 0 14px; }
+.command-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.command-toolbar button:last-child { margin-left:auto; }
+.command-layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:16px; margin-top:16px; align-items:start; }
+.command-rail { display:flex; flex-direction:column; gap:6px; max-height:70vh; overflow:auto; padding:2px; }
+.command-group { background:#263348; border:1px solid #45566f; color:#dce9fb; text-align:left; white-space:normal; padding:12px; border-radius:8px; }
+.command-group.is-current { background:#304d73; border-color:#75aaf0; color:#fff; }
+.command-desk { min-width:0; padding:18px; background:#263348; border:1px solid #4e6380; border-radius:10px; }
+.command-desk h2 { margin:0 0 8px; color:#e0edff; font-size:21px; }
+.command-facts { color:#cedcf1; margin:0 0 10px; }
+.command-provenance { display:inline-block; padding:4px 8px; border-radius:5px; font-size:12px; background:#374b65; color:#bcd9ff; }
+.command-evidence { border-left:3px solid #75aaf0; padding:8px 12px; margin:14px 0; background:#2d4059; }
+.command-evidence p { margin:5px 0; }
+.command-fields { display:grid; grid-template-columns:minmax(180px,1fr) minmax(220px,1.4fr); gap:12px; margin:16px 0; }
+.command-fields>label { display:flex; flex-direction:column; gap:6px; font-weight:600; color:#d7e6fc; }
+.command-fields input,.command-fields select { width:100%; min-width:0; font-weight:400; }
+.command-fields>label:last-of-type,.command-fields>details { grid-column:1/-1; }
+.command-category-options { grid-column:1/-1; display:flex; flex-direction:column; border:1px solid #627b9b; background:#1e2b3e; border-radius:7px; max-height:220px; overflow:auto; padding:4px; }
+.command-category-options[hidden] { display:none; }
+.command-category { text-align:left; background:transparent; color:#dcecff; border:none; padding:9px; }
+.command-category:hover,.command-category:focus-visible { background:#36577e; }
+.command-include { display:flex; gap:8px; margin:8px 0; align-items:flex-start; font-size:13px; }
+.command-include input { width:auto; margin-top:3px; }
+.command-pending { display:flex; gap:12px; align-items:center; background:#263348; border:1px solid #4e6380; border-radius:8px; padding:12px; margin-bottom:8px; }
+.command-pending>div { flex:1; min-width:0; }
+.command-pending p { margin:5px 0; overflow-wrap:anywhere; }
+.command-warning { color:#ffd79b; }
+@media(max-width:900px){.command-layout{grid-template-columns:1fr}.command-rail{max-height:180px}.command-fields{grid-template-columns:1fr}.command-toolbar button:last-child{margin-left:0}.command-pending{flex-wrap:wrap}}
+
+/* Navigation scrolls normally so it cannot cover the decision fields. */
+.workspace-nav{position:static}.command-body>p{margin:8px 0}.command-body>.bar{margin:10px 0}.command-lead{font-size:13px}#usage-transactions>.group-title{display:none}@media(min-width:601px){.usage-steps{grid-template-columns:repeat(3,minmax(0,1fr))}}

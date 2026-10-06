@@ -1,6 +1,6 @@
 # Dandelion's Wave Transaction Solver
 
-A local Chrome extension for organizing Wave accounting transactions from an accounting CSV export. It proposes merchant categories and transfer matches, checks transaction details against Wave, and builds draft session plans. Apply saves one planned merchant category and requests reviewed status after a fresh live check. It reloads Wave to verify saved values and records attempts locally to prevent uncertain saves from being repeated. Transfer review supports a deliberate Set transfer and request review action for one unique existing pair after its matching submenu is inspected. Both saved categories and reviewed statuses are checked separately.
+A local Chrome extension that prepares Wave exports and Amazon, PayPal and Venmo evidence, groups unfinished transactions, and prefills category and description suggestions. **Confirm saves locally and moves to the next group. Execute queued decisions applies your saved choices together, using sequential verified Wave saves.**
 
 ## Install
 
@@ -10,13 +10,13 @@ A local Chrome extension for organizing Wave accounting transactions from an acc
 4. Open your Wave business and launch Dandelion's Wave Transaction Solver.
 5. Import accounting.csv from Wave's data export.
 
-Amazon order CSVs, PayPal monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. Group recipients, approve purchase purposes and confirm bank links before using the existing live expense runner.
+Amazon order CSVs, PayPal monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. The Command center combines that evidence with your saved rules and working snapshot. New suggestions remain proposals until you confirm them.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 ## Workspace
 
-**Usage** groups setup, transaction runners, rules, and planning. **Debug tools** keeps diagnostics and manual troubleshooting separate. Sessions and rules stay saved while switching workspaces. The blue interface uses consistent controls and scrollable tables across window sizes.
+**Bookkeeping** contains Session, Command center and Rule library. **Advanced tools** holds collectors, legacy runners, historical analysis and diagnostics. Sessions and rules stay saved while switching workspaces. The blue interface uses consistent controls and scrollable tables across window sizes.
 
 ## Local data
 
@@ -26,7 +26,7 @@ CSV exports, working sessions, rules, and collected account names stay on your c
 
 Requires Node.js 20 or later. No package installation is needed.
 
-Run node --test for the automated checks. Run node server.mjs and open http://127.0.0.1:4317/extension/app.html to preview the interface. Live Wave checks require the installed extension. DOM checks are at /extension/reader-fixture.html; Apply mock-dialog checks are at /extension/editor-fixture.html. Responsive workspace checks are at /extension/workspace-fixture.html.
+Run node --test for the automated checks. Run node server.mjs and open http://127.0.0.1:4317/extension/app.html to preview the interface. Live Wave checks require the installed extension. DOM checks are at /extension/reader-fixture.html; Apply mock-dialog checks are at /extension/editor-fixture.html. Responsive workspace checks are at /extension/workspace-fixture.html. The command-center integration simulation is at /extension/command-fixture.html; its browser calls and saved records are fictional.
 
 The earlier standalone CSV organizer remains available at http://127.0.0.1:4317/.
 

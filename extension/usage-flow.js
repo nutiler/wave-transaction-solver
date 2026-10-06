@@ -1,7 +1,7 @@
 export const usageStages=[
- {id:'setup',label:'Session',title:'1. Your saved session',description:'Your export, business and source files stay saved. Import a fresh CSV when needed. Solve recognized work collects the current Wave list automatically.',panels:['fold-setup','fold-import','fold-chart','liveList'],next:'Go to your decision desk'},
- {id:'transactions',label:'Do the work',title:'2. Your decision desk',description:'Start with Solve recognized work. Then choose a category for a merchant group and Apply and verify it here. Money in needs an explicit refund choice. Open Source purchases for Amazon, PayPal and Venmo evidence.',panels:['knownWork','fold-queue','sourceSolvers'],next:'Open rule library'},
- {id:'rules',label:'Rule library',title:'3. Rules and proposals',description:'Optional: accept new rule proposals or maintain saved merchant rules. Your daily decisions and execution are in Do the work.',panels:['fold-proposals','fold-merchant'],next:'Return to your decision desk'}
+ {id:'setup',label:'Session',title:'1. Your saved session',description:'Your export, business and source files stay saved. Import a fresh CSV when needed. Prepare workspace collects the current Wave list and links your source evidence.',panels:['fold-setup','fold-import','fold-chart','liveList'],next:'Go to your decision desk'},
+ {id:'transactions',label:'Command center',title:'2. Review and queue decisions',description:'Prepare workspace once. Confirm prefilled suggestions locally, adjust any category or description, and execute your saved queue when ready.',panels:['commandCenter'],next:'Open rule library'},
+ {id:'rules',label:'Rule library',title:'3. Rules and proposals',description:'Optional: accept new rule proposals or maintain saved merchant rules. Your daily decisions and execution are in the Command center.',panels:['fold-proposals','fold-merchant'],next:'Return to your decision desk'}
 ];
 export function usageReadiness({business,dataset,report,rules=[],expenseMatches,transferMatches}={}){
  const setup=!!business && !!dataset,scan=!!report && !report.running && report.completeness==='count-confirmed';

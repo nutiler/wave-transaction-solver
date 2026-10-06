@@ -1,13 +1,14 @@
+import {approvedCommandRecord} from './command-center.js';
 import {approvedRefund} from './operator-decisions.js';
 import { compareLive } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
 export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
   if (sample || !business) throw new Error('Select a real Wave business and export first.');
-  if (!transaction || (!approvedRefund(transaction) && (transaction.kind !== 'Merchant rule' || transaction.direction !== 'out')) || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
+  if (!transaction || (!approvedRefund(transaction)&&!approvedCommandRecord(transaction) && (transaction.kind !== 'Merchant rule' || transaction.direction !== 'out')) || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
   if (!categories.includes(transaction.proposed)) throw new Error('Collect the exact category name from Chart of Accounts first.');
   let entry;
-  if(approvedRefund(transaction)){if(transaction.operatorDecision.business!==business)throw Error('Refund decision belongs to another business.');entry={category:transaction.proposed,requestReviewAfterMatch:true};}
+  if(approvedRefund(transaction)||approvedCommandRecord(transaction)){if((transaction.commandDecision||transaction.operatorDecision).business!==business)throw Error('Refund decision belongs to another business.');entry={category:transaction.proposed,requestReviewAfterMatch:true};}
   if (!entry && shortlist.has(transaction.id)) entry = buildPlan(queue, [transaction.id], { business, sourceName: '' }).entries[0];
   else if (!entry && loadedPlan) {
     const validations = validatePlan(loadedPlan, queue, business);
@@ -15,23 +16,25 @@ export function prepareCategoryEdit(transaction, snapshot, { business, sample, s
     if (index >= 0 && validations[index].state === 'Unchanged in export') entry = loadedPlan.entries[index];
   }
   if (!entry || entry.category !== transaction.proposed || !entry.requestReviewAfterMatch) throw new Error('Tick this transaction’s Plan checkbox, or import its unchanged draft plan.');
-  if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction, snapshot).checks.some(c => c.state !== 'Match')) throw new Error('All live fields must match the export before Apply.');
+  if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(approvedCommandRecord(transaction)&&snapshot.fields.category===transaction.proposed?{...transaction,categories:[transaction.proposed]}:transaction, snapshot).checks.some(c => c.state !== 'Match')) throw new Error('All live fields must match the export before Apply.');
   const groups = (categoryGroups || []).filter(group => group.accounts.some(account => account.name === entry.category));
   const personal=groups.length===1&&groups[0].name==='Equity';
   if(approvedRefund(transaction)&&(groups.length!==1||!['Expenses','Equity'].includes(groups[0].name)))throw Error('Collect category names before applying this refund.');
-  const categoryPath=approvedRefund(transaction)?[personal?'Deposit from Personal':'Refund for Expense']:personal?['Personal Expense or Withdrawal']:[];
-  return { business, id: transaction.id, category: entry.category, categoryPath,refund:approvedRefund(transaction), expected: { ...snapshot.fields } };
+  const treatment=transaction.commandDecision?.treatment||transaction.intent;
+  const categoryPath=treatment==='refund'?[personal?'Deposit from Personal':'Refund for Expense']:treatment==='personal-deposit'?['Deposit from Personal']:treatment==='income'?[]:personal?['Personal Expense or Withdrawal']:[];
+  return { business, id: transaction.id, category: entry.category, categoryPath,refund:approvedRefund(transaction)||['refund','personal-deposit'].includes(transaction.commandDecision?.treatment),description:transaction.approvedDescription,expected: { ...snapshot.fields } };
 }
 
 export function verifyCategoryResult(transaction, snapshot, business, category) {
-  const result = compareLive({ ...transaction, categories: [category] }, snapshot);
+  const description=transaction.approvedDescription??transaction.description;
+  const result = compareLive({ ...transaction, description,categories: [category] }, snapshot);
   const categoryVerified = snapshot.identity?.business === business && !snapshot.problems?.length && result.checks.every(c => c.state === 'Match');
   const controls = snapshot.controls || [];
   const inverse = controls.filter(name => /^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
   const mark = controls.filter(name => /^Mark (as )?reviewed$/i.test(name));
   const reviewedVerified = categoryVerified && (snapshot.reviewed === 'Reviewed' || (inverse.length === 1 && mark.length === 0));
   const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : 'Saved result could not be verified. Inspect Wave; Apply will not repeat this attempt.';
-  return { categoryVerified, reviewedVerified, message };
+  return { categoryVerified, reviewedVerified,descriptionVerified:result.checks.find(c=>c.field==='Description')?.state==='Match', message };
 }
 
 export function resetAttemptReceipt(transaction, snapshot, business, receipt, resetAt = new Date().toISOString()) {
@@ -51,7 +54,7 @@ export async function editWaveTransaction(request, testContext) {
   const wait = testContext?.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const tidy = value => String(value || '').replace(/\s+/g, ' ').trim();
   const visible = el => !!el && !el.hidden && !el.closest('[hidden],[aria-hidden="true"]') && style(el).display !== 'none' && style(el).visibility !== 'hidden' && el.getClientRects().length > 0;
-  let saveAttempted = false, reviewRequested = false, stage = 'preflight';
+  let saveAttempted = false, reviewRequested = false, descriptionUpdated=false,stage = 'preflight';
   function identity() {
     const url = new URL(loc.href);
     if (url.origin !== 'https://next.waveapps.com' || url.pathname !== '/' + request.business + '/transactions/' + request.id) throw new Error('Wave navigated away from the requested transaction.');
@@ -99,7 +102,7 @@ export async function editWaveTransaction(request, testContext) {
   function assertFields(category) {
     identity(); const dialog = root();
     for (const name of ['Date','Description','Account','Type','Amount','Category']) {
-      const actual = value(control(dialog, name)), expected = name === 'Category' ? category : request.expected[name.toLowerCase()];
+      const actual = value(control(dialog, name)), expected = name === 'Category' ? category : name==='Description'&&descriptionUpdated?request.description:request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
       const transferLabels=name==='Category' && request.transfer && category===request.category ? [tidy(request.transfer.label),tidy('Transfer to '+String(request.transfer.label || '').replace(/^Transfer to /i,''))] : [];
       if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual)) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
@@ -121,6 +124,7 @@ export async function editWaveTransaction(request, testContext) {
   try {
     if (!request || !/^[0-9a-f-]{36}$/i.test(request.business || '') || !/^\d+$/.test(request.id || '') || !tidy(request.category) || !request.expected) throw new Error('Invalid edit request.');
     let dialog = assertFields(request.expected.category);
+    if(request.description!==undefined){const input=control(dialog,'Description');if(typeof request.description!=='string'||!request.description.trim()||input.tagName!=='INPUT'||!enabled(input)||(input.maxLength>0&&request.description.length>input.maxLength))throw Error('Approved description is invalid or exceeds Wave’s field limit. Nothing edited.');}
     if (buttons(dialog, ['Save']).length !== 1) throw new Error('Cannot identify one Save button.');
     const {mark:review,confirmed:alreadyReviewed}=reviewControls(dialog);
     if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
@@ -261,6 +265,7 @@ export async function editWaveTransaction(request, testContext) {
       if (!ready) throw new Error('Category selection could not be confirmed. Save was not clicked.');
     }
     dialog = assertFields(request.category);
+    if(request.description!==undefined&&request.description!==request.expected.description){stage='description edit';const input=control(dialog,'Description'),setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input),'value')?.set;if(!setter)throw Error('Cannot update the description input. Save was not clicked.');setter.call(input,request.description);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));descriptionUpdated=true;dialog=assertFields(request.category);}
     stage = 'review';
     let mark = reviewControls(dialog).mark;
     // Wave may keep Review disabled while the purchase is uncategorized or loading.

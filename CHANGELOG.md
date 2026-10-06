@@ -1,5 +1,14 @@
 # Development milestones
 
+## 0.30.0 — Prepare, confirm locally, execute queue
+
+- Added a primary Command center with prepared source/rule/history suggestions, ranked searchable categories, explicit incoming treatments, original descriptions, item/recipient enrichment, group exclusions, deferral and local undo/edit.
+- Local confirmation advances immediately with coalesced persistence and no Wave calls or repeated analysis. Prepared snapshots, queued decisions and execution checkpoints survive reloads per business.
+- Reused verified sequential editors and transfer runners for one explicit queued execution, safe preflight continuation, uncertain-save locking/rechecks and one final backlog collection. Added snapshot-bound description changes and saved-description verification.
+- Source-backed gross/net/fee candidates remain clearly explained exceptions when Wave needs an unsupported split allocation; Unknown historical statuses never imply reviewed records.
+- Moved collectors, redundant runners, manual source tooling and diagnostics into Advanced. Added synthetic command-center integration, DOM description checks and queue/interruption tests. Financial reports and source files remain local.
+
+
 This repository starts with the completed local prototype. The initial commits group the existing work by component; they are not a reconstruction of earlier edit history.
 
 ## 0.15.0 · Merchant recognition and backlog proposals

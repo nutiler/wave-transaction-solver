@@ -12,5 +12,5 @@ test('a partial or running scan does not claim completed collection or reviewed 
 });
 test('the approval stage counts only this business and separates scans, approvals and execution',()=>{
  const rules=[{name:'Global'},{name:'Current',business},{name:'Other',business:'22222222-2222-2222-2222-222222222222'}];assert.equal(usageReadiness({business,dataset,rules}).rules.text,'2 saved rules');
- assert.deepEqual(usageStages.map(s=>s.id),['setup','transactions','rules']);assert(usageStages[1].panels.includes('fold-queue'));assert(!usageStages.some(s=>s.panels.includes('expenseBatch')));assert.equal(initialUsageStage({business,dataset},'planning'),'transactions');
+ assert.deepEqual(usageStages.map(s=>s.id),['setup','transactions','rules']);assert(usageStages[1].panels.includes('commandCenter'));assert(!usageStages.some(s=>s.panels.includes('expenseBatch')));assert.equal(initialUsageStage({business,dataset},'planning'),'transactions');
 });

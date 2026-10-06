@@ -32,7 +32,7 @@ test('Imported plan authorizes only its unchanged transaction and current rule c
 
 test('Saved verification needs every field and explicit reviewed evidence', () => {
   const saved = {...snapshot,fields:{...snapshot.fields,category:'Personal Groceries'},controls:['Mark as unreviewed']};
-  assert.deepEqual(verifyCategoryResult(transaction,saved,business,'Personal Groceries'),{categoryVerified:true,reviewedVerified:true,message:'Saved category and reviewed status verified after reloading Wave.'});
+  assert.deepEqual(verifyCategoryResult(transaction,saved,business,'Personal Groceries'),{categoryVerified:true,reviewedVerified:true,descriptionVerified:true,message:'Saved category and reviewed status verified after reloading Wave.'});
   assert.equal(verifyCategoryResult(transaction,{...saved,controls:[]},business,'Personal Groceries').reviewedVerified,false);
   assert.equal(verifyCategoryResult(transaction,{...saved,controls:['Mark as unreviewed','Mark as reviewed']},business,'Personal Groceries').reviewedVerified,false);
   for(const changed of [{identity:{business:'other',transaction:transaction.id}},{fields:{...saved.fields,amount:'99.00'}},{fields:{...saved.fields,category:'Uncategorized Expense'}},{problems:['Unreadable control']}]) {
