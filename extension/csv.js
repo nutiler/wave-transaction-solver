@@ -1,4 +1,4 @@
-export function parseCSV(text) {
+export function parseCSV(text, {excelText=false} = {}) {
   text = text.replace(/^\uFEFF/, '');
   const rows = []; let row = [], field = '', quoted = false, closed = false;
   for (let i = 0; i < text.length; i++) {
@@ -9,6 +9,8 @@ export function parseCSV(text) {
     } else if (c === ',' || c === '\n' || c === '\r') {
       row.push(field); field = ''; closed = false;
       if (c !== ',') { rows.push(row); row = []; if (c === '\r' && text[i + 1] === '\n') i++; }
+    } else if (excelText && c === '=' && !field && !closed && text[i + 1] === '"') {
+      // Amazon exports literal Excel text cells such as ="00123". Parse the text without executing it.
     } else if (c === '"') {
       if (field || closed) throw new Error('Invalid quote in CSV.'); quoted = true;
     } else { if (closed) throw new Error('Unexpected text after a quoted CSV value.'); field += c; }

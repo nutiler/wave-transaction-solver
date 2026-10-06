@@ -291,3 +291,17 @@ Version 0.21 adds an optional unfiltered Collect all transactions panel in step 
 Version 0.22 collects full history by calendar year. It selects Sort → Oldest to newest on the unfiltered list to discover the starting year, visits exact startDate/endDate URLs through the current year, and confirms each year independently. Resume unfinished years skips saved count-confirmed years; Collect all transactions again starts a fresh sweep. Empty years are retained, interrupted years are rescanned from their start, and combined coverage is confirmed only when every year is complete. Duplicate IDs across years or out-of-range rows prevent confirmation.
 
 Version 0.22.1 recognizes Wave’s exact verify-icon--true reviewed marker and retains marker classes as evidence in new collections. Older collections with Unknown statuses require a fresh collection; sampled diagnostics cannot safely reconstruct statuses for every record.
+
+## Amazon purchase solver
+
+Version 0.23.0 adds an Amazon item-report review panel under Step 3. Load your normal accounting.csv and exact Chart of Accounts names first, then upload Amazon order/item CSV reports. Reports and decisions persist locally per Wave business in IndexedDB, independently of the accounting export and merchant rules. Only required order, item and payment fields are retained; contact and delivery columns are excluded. No report is sent to a server.
+
+Review the product title, purpose suggestion and exact category. Check several items and choose **Approve checked items** to save once. Suggestions require confirmation of actual use; they are not a determination of deductibility. Computers, household goods and other mixed-use products remain for judgment. Completed years can be shown for reference and cannot generate current-period actions.
+
+Open **Match Amazon payment instruments to Wave accounts** if a card cannot be identified by a unique four-digit ending. Matching requires an outgoing Amazon charge, exact cents, the same account and a payment date within five days. It excludes refunds, transfers, split postings and rewards-only payments. Multiple candidates and shared references remain unresolved. Confirm a candidate payment link yourself. A saved link is invalidated when the accounting snapshot changes.
+
+A reconciled order with all items explicitly approved for one purpose and one category can offer **Prepare matched transaction**. This opens the existing individual live-check workflow: open Wave, inspect the live fields, prepare the change and use Apply when ready. Approval and payment-link confirmation alone do not change Wave. No whole-merchant Amazon rule is created. Mixed categories show approved item totals for a manual split in Wave. Cancelled orders, missing or inconsistent totals and shared payment references cannot generate purchase actions.
+
+Download the local Amazon review or approved draft plan to retain a review package. Identical report uploads and overlapping parsed rows are deduplicated; item and payment totals must reconcile before an action can be prepared. Indistinguishable identical item lines are held when their totals do not reconcile.
+
+Synthetic browser checks: open /extension/amazon-fixture.html on the local development server and select **Run synthetic interface checks**. This verifies bulk approval, payment-link confirmation, mixed-category splits, persistence and duplicate imports without connecting to Wave.
