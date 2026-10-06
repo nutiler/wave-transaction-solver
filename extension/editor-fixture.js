@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
+function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -40,7 +40,7 @@ function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom
         }
       }
       if (personalSubmenu) {
-        const branch = document.createElement('a'); branch.href='#'; branch.textContent = 'Personal Expense or Withdrawal'; list.append(branch);
+        const branch = document.createElement('a'); branch.href='#'; branch.textContent = submenuLabel; list.append(branch);
         branch.onclick = event => { event.preventDefault(); event.stopPropagation(); branch.remove(); showOptions(); };
       } else if (!searchRequired) showOptions();
       search.oninput = () => { if (search.value === request.category) showOptions(); };
@@ -108,5 +108,8 @@ document.getElementById('run').onclick = async () => {
   await check('Checked reviewed checkbox is preserved without clicking Save',{checkboxReview:true},(r,s)=>!r.problem && !r.saveAttempted && s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
   await check('Icon-only review button uses its exact accessible label',{ariaReview:true},(r,s)=>!r.problem && s.reviewed && s.saves===1,{...request,category:expected.category,reviewOnly:true});
   await check('Review updates is never mistaken for mark reviewed',{noReview:true},(r,s)=>!!r.problem && r.stage==='preflight' && !r.saveAttempted && !s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 33 editor checks passed';
+  const refundExpected={...expected,type:'Deposit',category:'Uncategorized Income'};
+  for(const path of ['Deposit from Personal','Refund for Expense'])await check('Incoming refund uses '+path+' and preserves Deposit',{custom:true,personalSubmenu:true,submenuLabel:path,original:refundExpected},(r,s)=>!r.problem&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:[path]});
+  await check('Refund navigation cannot turn an outgoing purchase into a refund',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,refund:true,categoryPath:['Refund for Expense']});
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 36 editor checks passed';
 };

@@ -1,13 +1,15 @@
+import {approvedRefund} from './operator-decisions.js';
 import { compareLive } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
 export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
   if (sample || !business) throw new Error('Select a real Wave business and export first.');
-  if (!transaction || transaction.kind !== 'Merchant rule' || transaction.direction !== 'out' || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
+  if (!transaction || (!approvedRefund(transaction) && (transaction.kind !== 'Merchant rule' || transaction.direction !== 'out')) || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
   if (!categories.includes(transaction.proposed)) throw new Error('Collect the exact category name from Chart of Accounts first.');
   let entry;
-  if (shortlist.has(transaction.id)) entry = buildPlan(queue, [transaction.id], { business, sourceName: '' }).entries[0];
-  else if (loadedPlan) {
+  if(approvedRefund(transaction)){if(transaction.operatorDecision.business!==business)throw Error('Refund decision belongs to another business.');entry={category:transaction.proposed,requestReviewAfterMatch:true};}
+  if (!entry && shortlist.has(transaction.id)) entry = buildPlan(queue, [transaction.id], { business, sourceName: '' }).entries[0];
+  else if (!entry && loadedPlan) {
     const validations = validatePlan(loadedPlan, queue, business);
     const index = loadedPlan.entries.findIndex(e => e.ids.length === 1 && e.ids[0] === transaction.id);
     if (index >= 0 && validations[index].state === 'Unchanged in export') entry = loadedPlan.entries[index];
@@ -15,8 +17,10 @@ export function prepareCategoryEdit(transaction, snapshot, { business, sample, s
   if (!entry || entry.category !== transaction.proposed || !entry.requestReviewAfterMatch) throw new Error('Tick this transaction’s Plan checkbox, or import its unchanged draft plan.');
   if (!snapshot?.fields || snapshot.identity?.business !== business || snapshot.problems?.length || compareLive(transaction, snapshot).checks.some(c => c.state !== 'Match')) throw new Error('All live fields must match the export before Apply.');
   const groups = (categoryGroups || []).filter(group => group.accounts.some(account => account.name === entry.category));
-  const categoryPath = groups.length === 1 && groups[0].name === 'Equity' ? ['Personal Expense or Withdrawal'] : [];
-  return { business, id: transaction.id, category: entry.category, categoryPath, expected: { ...snapshot.fields } };
+  const personal=groups.length===1&&groups[0].name==='Equity';
+  if(approvedRefund(transaction)&&(groups.length!==1||!['Expenses','Equity'].includes(groups[0].name)))throw Error('Collect category names before applying this refund.');
+  const categoryPath=approvedRefund(transaction)?[personal?'Deposit from Personal':'Refund for Expense']:personal?['Personal Expense or Withdrawal']:[];
+  return { business, id: transaction.id, category: entry.category, categoryPath,refund:approvedRefund(transaction), expected: { ...snapshot.fields } };
 }
 
 export function verifyCategoryResult(transaction, snapshot, business, category) {
@@ -229,12 +233,12 @@ export async function editWaveTransaction(request, testContext) {
           return [];
         }
         const path = request.categoryPath || [];
-        if (path.length > 1 || path.some(name => name !== 'Personal Expense or Withdrawal')) throw new Error('Unsupported category navigation path.');
+        if (path.length > 1 || path.some(name => !['Personal Expense or Withdrawal','Refund for Expense','Deposit from Personal'].includes(name)) || (path.some(name=>['Refund for Expense','Deposit from Personal'].includes(name))&&(!request.refund||request.expected.type!=='Deposit'))) throw new Error('Unsupported category navigation path.');
         // Equity categories live behind Wave's personal-expense submenu.
-        let options = await waitOptions(request.category);
+        let options = request.refund?[]:await waitOptions(request.category);
         if (!options.length && path.length) {
           const branches = await waitOptions(path[0]);
-          if (branches.length !== 1 || !enabled(branches[0])) throw new Error('Cannot identify the Personal Expense or Withdrawal submenu. Copy diagnostics.');
+          if (branches.length !== 1 || !enabled(branches[0])) throw new Error('Cannot identify the '+path[0]+' submenu. Copy diagnostics.');
           assertFields(request.expected.category); branches[0].click();
           await wait(150);
           options = await waitOptions(request.category);

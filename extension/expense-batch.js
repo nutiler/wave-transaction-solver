@@ -1,10 +1,11 @@
+import {approvedRefund} from './operator-decisions.js';
 import {activity,paintActivity} from './activity.js';
 import {debugSlot,debugLink,showUsageSection} from './workspace-ui.js';
 import {compareLive} from './model.js';
 import {prepareCategoryEdit,verifyCategoryResult} from './editor.js';
-export function expenseCandidates(queue,allowedIds=null){return queue.filter(t=>(!allowedIds || allowedIds.has(t.id)) && t.kind==='Merchant rule' && t.direction==='out' && t.amount>0 && t.primary && t.postings?.length===2 && t.categories?.length===1 && typeof t.proposed==='string');}
+export function expenseCandidates(queue,allowedIds=null){return queue.filter(t=>(!allowedIds || allowedIds.has(t.id)) && (t.kind==='Merchant rule' && t.direction==='out'||approvedRefund(t)) && t.amount>0 && t.primary && t.postings?.length===2 && t.categories?.length===1 && typeof t.proposed==='string');}
 export function prepareExpenseBatch(t,snapshot,options){
- if(!expenseCandidates([t]).length || options.sample || !options.business)throw Error('Only approved-rule single-category purchases can run.');
+ if(!expenseCandidates([t]).length || options.sample || !options.business)throw Error('Only approved purchases or explicitly chosen merchant refunds can run.');
  const target=verifyCategoryResult(t,snapshot,options.business,t.proposed);
  if(!target.reviewedVerified){
   const actions=(snapshot?.controls || []).filter(c=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(c));
