@@ -1,3 +1,5 @@
+import {installBulkInspector} from './inspection-view.js';
+import {remainingWork,liveRunQueue} from './inspection.js';
 import {activity,paintActivity,withActivity} from './activity.js';
 import {suggestionCandidates,waveSuggestionAction,installSuggestionReview} from './suggestions.js';
 import {installWorkspace,showUsageSection} from './workspace-ui.js';
@@ -25,7 +27,8 @@ await paintActivity();
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 const extensionMode = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
-let workspace=null,suggestionReview=null,liveListReport=()=>null;
+let inspectionTab=null;
+let workspace=null,suggestionReview=null,bulkInspector=null,liveListReport=()=>null;
 let rules = defaultRules.map(r => ({ ...r, aliases: [...r.aliases] })), dataset = null, queue = [], business = null, chosen = null, liveTab = null, sampleMode = false;
 const shortlist = new Set();
 let sourceName = '', loadedPlan = null;
@@ -53,7 +56,7 @@ function updateSteps() {
   stepStatus('merchant',`${rules.length} rules saved`,rules.length>0,true);
   stepStatus('proposals',proposalPack ? Object.values(proposalDecisions).filter(d=>d==='accepted').length+' proposals accepted' : 'Import proposal pack');
   stepStatus('history','Optional suggestions');
-  stepStatus('queue',dataset ? `${queue.length.toLocaleString()} proposals to inspect` : 'Import CSV first');
+  stepStatus('queue',dataset ? (liveListReport()?remainingWork(queue,liveListReport(),{business,from:workFrom(),receipts:editReceipts}).length+' live records remaining':'Collect live backlog first') : 'Import CSV first');
   stepStatus('transfers',transferPairs(queue).length+' candidate pairs');
   stepStatus('live',liveStepLabel,liveStepLabel==='Fields match');
   stepStatus('plan',shortlist.size ? `${shortlist.size} records in draft` : 'Choose proposals');
@@ -250,8 +253,12 @@ function renderQueue() {
   listReview.render();suggestionReview?.render();
   expenseReview.render();
   const text = $('search').value.toLowerCase(), kind = $('kind').value, from = $('from').value, through = $('through').value;
-  const list = queue.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
-  $('queueInfo').textContent = `Showing ${Math.min(list.length, 150)} of ${list.length.toLocaleString()} matches from ${workFrom()}. Transactions before that date are treated as completed and excluded from the working queue and draft. Both sides of in-period transfer pairs are listed. Current-period reviewed status still needs a live check.`;
+  const report=liveListReport(),historical=$('queueScope')?.value==='history';
+  const source=historical?queue:remainingWork(queue,report,{business,from:workFrom(),receipts:editReceipts});
+  const list = source.filter(t => (!kind || t.kind === kind) && (!from || t.date >= from) && (!through || t.date <= through) && `${t.id} ${t.description} ${t.primary?.account || ''} ${t.categories.join(' ')} ${t.proposed}`.toLowerCase().includes(text));
+  $('queueInfo').textContent = !historical && !report?'Collect the live Not Reviewed list in step 2. CSV history is not an unfinished-work list.':`Showing ${Math.min(list.length,150)} of ${list.length} ${historical?'CSV candidates (reviewed status unknown)':'remaining live records'} from ${workFrom()}. ${!historical && report.completeness!=='count-confirmed'?'Partial collection; the remaining count is incomplete.':!historical?'Based on your last collection; rescan after completing work.':'Advanced history view only; not a live backlog.'}`;
+  $('counts').textContent=historical?source.length+' historical CSV candidates':source.length+' records in your last live backlog after verified session results';
+  bulkInspector?.render();
   $('rows').replaceChildren();
   for (const t of list.slice(0, 150)) {
     const tr = make('tr'), date = make('td', t.date); date.append(make('small', t.id));
@@ -260,7 +267,7 @@ function renderQueue() {
     const action = make('td'); action.append(make('strong', t.kind), make('p', t.proposed), make('small', t.reason));
     const button = make('button', 'Inspect', 'secondary'); button.setAttribute('aria-label', `Inspect transaction ${t.id}`); button.onclick = () => select(t);
     const cell = make('td');
-    if (actionable(t)) {
+    if (historical && actionable(t)) {
       const label = make('label', undefined, 'plan-choice'), check = make('input'); check.type = 'checkbox'; check.checked = shortlist.has(t.id); check.setAttribute('aria-label', `Plan transaction ${t.id}`);
       check.onchange = () => {
         const ids = t.partner ? [t.id, t.partner.id] : [t.id];
@@ -270,6 +277,7 @@ function renderQueue() {
       label.append(check, make('span', 'Plan')); cell.append(label);
     }
     cell.append(button);
+    if(!historical && t.kind==='Merchant rule'){const runKnown=make('button','Run with approved rules','secondary');runKnown.onclick=()=>expenseReview.open(new Set([t.id]));cell.append(runKnown);}
     tr.append(date, desc, make('td', t.amount === null ? '—' : `${t.direction === 'out' ? 'Out' : 'In'} ${(t.amount / 100).toFixed(2)}`), current, action, cell); $('rows').append(tr);
   }
 }
@@ -313,7 +321,7 @@ function select(t, scroll = true) {
   $('open').disabled = !extensionMode || sampleMode; $('read').disabled = !extensionMode || sampleMode;
   $('counterpart').disabled = !extensionMode || sampleMode;
   $('comparison').replaceChildren(); $('diagnostics').hidden = true; $('diagnosticToggle').hidden = true; $('copyDiagnostics').hidden = true; $('liveCopyStatus').textContent = '';
-  $('liveStatus').textContent = !extensionMode ? 'Live checks require the installed Chrome extension.' : sampleMode ? 'Fictional samples cannot be opened in Wave.' : !business ? 'First select your Wave tab and click Use selected business in section 1 above. Then open this transaction.' : 'Not checked. Live state must be compared with this export.';
+  $('liveStatus').textContent = !extensionMode ? 'Live checks require the installed Chrome extension.' : sampleMode ? 'Fictional samples cannot be opened in Wave.' : !business ? 'First select your Wave tab and click Use selected business in section 1 above. Then open this transaction.' : t.kind!=='Merchant rule'?'Read the live details to understand this exception. Approve a suitable purchase rule in step 3, or resolve it manually in Wave. Batch execution is in step 4.':'Read live details, prepare the category change, then Apply. You can also run it with approved expenses in step 4.';
   if (scroll) $('live').scrollIntoView({ behavior: 'smooth' });
   rememberSoon();
 }
@@ -380,6 +388,7 @@ function updateApply() {
   const supported = chosen?.kind === 'Merchant rule' && !sampleMode;
   $('applyPanel').hidden = !supported;
   $('apply').disabled = true;
+  if($('prepareChange')){$('prepareChange').hidden=!supported || shortlist.has(chosen?.id) || !!editReceipts[receiptKey()]?.saveAttempted;$('prepareChange').disabled=applying || !!bulkInspector?.busy() || !lastLiveSnapshot;}
   $('verifyApply').hidden = !editReceipts[receiptKey()]?.saveAttempted;
   $('resetAttempt').hidden = !supported || !editReceipts[receiptKey()]?.saveAttempted;
   $('resetAttempt').disabled = applying || !extensionMode || !business;
@@ -388,7 +397,7 @@ function updateApply() {
   const receipt = editReceipts[receiptKey()];
   if (receipt?.saveAttempted) { $('applyStatus').textContent = receipt.message; return; }
   try {
-    if (!extensionMode || !liveTab || applying) throw new Error('Open the transaction in Wave and wait for its live check.');
+    if (!extensionMode || !liveTab || applying || bulkInspector?.busy()) throw new Error('Open the transaction in Wave and wait for its live check.');
     currentEditRequest(); $('apply').disabled = false;
     $('applyStatus').textContent = 'Ready. Apply rechecks this record before clicking Wave controls.';
   } catch (e) { $('applyStatus').textContent = e.message; }
@@ -421,7 +430,7 @@ async function verifyReceipt(key, tabId, transaction, expectedBusiness) {
   }
 }
 $('apply').onclick = handle(async () => {
-  if (listCollecting) throw Error('Finish or stop the live-list collection before editing transactions.');
+  if (listCollecting || bulkInspector?.busy()) throw Error('Finish collection or bulk inspection before editing transactions.');
   if (applying || editReceipts[receiptKey()]?.saveAttempted) throw new Error('This record already has an Apply attempt. Use Recheck saved result.');
   const transaction = chosen, expectedBusiness = business, tabId = liveTab, key = receiptKey();
   currentEditRequest();
@@ -540,7 +549,8 @@ async function restoreSession() {
   $('sessionStatus').textContent = 'Previous session restored locally. Live comparisons require a fresh check.';
   updateSteps();
   for (const key of stepKeys) if (typeof saved.folds?.[key] === 'boolean') $(`fold-${key}`).open = saved.folds[key];
-  await listReview.ready;for(const panel of document.querySelectorAll('#usageWorkspace .workflow-group section>.step'))if(typeof saved.usagePanels?.[panel.id]==='boolean')panel.open=saved.usagePanels[panel.id];workspace?.restore(saved.workflowStage);
+  await listReview.ready;
+ await bulkInspector.restore();for(const panel of document.querySelectorAll('#usageWorkspace .workflow-group section>.step'))if(typeof saved.usagePanels?.[panel.id]==='boolean')panel.open=saved.usagePanels[panel.id];workspace?.restore(saved.workflowStage);
 }
 if (extensionMode) editReceipts = (await chrome.storage.local.get('solverEditReceipts')).solverEditReceipts || {};
 if(extensionMode){
@@ -553,11 +563,11 @@ async function captureTransferMenu(t){
  const tabs=await chrome.tabs.query({url:'https://next.waveapps.com/*'});
  return captureTransferMenuFromTabs(tabs,expectedBusiness,t.id,liveTab,async tabId=>(await chrome.scripting.executeScript({target:{tabId},func:readTransferMenu}))[0]?.result);
 }
-const expenseReview=installExpenseBatch({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting}),receipt:t=>editReceipts[business+':'+t.id],apply:(...args)=>withActivity('Checking and saving expense',()=>runExpenseBatch(...args)),inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
-const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();workspace?.refresh();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();workspace?.refresh();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
-liveListReport=listReview.report;
-suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),report:()=>listReview.report(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:(...args)=>withActivity('Confirming Wave suggestion',()=>runWaveSuggestion(...args)),recheck:t=>withActivity('Rechecking saved suggestion',()=>runWaveSuggestion(t,'recheck')),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
-const transferReview=installTransferReview({getState:()=>({queue,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:(...args)=>withActivity('Reading transfer menu',()=>captureTransferMenu(...args)),applyTransfer:(...args)=>withActivity('Checking and saving transfer',()=>runTransfer(...args)),receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
+const expenseReview=installExpenseBatch({getState:()=>({queue:liveRunQueue(queue,liveListReport(),business,workFrom()),dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,allowedIds:allowedExpenseIds,busy:applying || listCollecting || !!bulkInspector?.busy()}),receipt:t=>editReceipts[business+':'+t.id],apply:(...args)=>withActivity('Checking and saving expense',()=>runExpenseBatch(...args)),inspect:t=>select(t),availability:()=>{const report=liveListReport();return {report,audit:liveMerchantAudit(report,rules,dataset?.transactions,queue,business,workFrom())};}});
+const listReview=installLiveList({getState:()=>({business,dataset,queue,rules,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || !!bulkInspector?.busy()}),onRunning:value=>{listCollecting=value;expenseReview.render();suggestionReview?.render();workspace?.refresh();},onScope:ids=>{allowedExpenseIds=ids;},refreshExpenses:()=>{expenseReview.render();suggestionReview?.render();renderHistory();bulkInspector?.render();workspace?.refresh();if(workspace)renderQueue();},showExpenses:ids=>expenseReview.open(ids),refreshRules:async()=>{if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+liveListReport=()=>{const report=listReview.report(),reviewed=bulkInspector?.reviewedIds();return report && reviewed?.size?{...report,records:report.records.map(r=>reviewed.has(r.id)?{...r,reviewed:'Reviewed'}:r)}:report;};
+suggestionReview=installSuggestionReview({getState:()=>({queue,rules,dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting || !!bulkInspector?.busy()}),report:()=>liveListReport(),receipt:t=>editReceipts[business+':suggestion:'+t.id],run:(...args)=>withActivity('Confirming Wave suggestion',()=>runWaveSuggestion(...args)),recheck:t=>withActivity('Rechecking saved suggestion',()=>runWaveSuggestion(t,'recheck')),inspect:t=>select(t),refresh:async()=>{const previousCapture=listReview.report()?.capturedAt;await listReview.collect();const collected=listReview.report();if(!collected || collected.capturedAt===previousCapture || collected.suggestionDetectionVersion!==2)throw Error('A fresh suggestion scan was not completed. Inspect live-list diagnostics and try again.');if(extensionMode){const saved=(await chrome.storage.local.get('solverRules')).solverRules;if(saved!==undefined){if(!Array.isArray(saved))throw Error('Saved merchant rules are unreadable.');saved.forEach(validateRule);rules=saved;}}renderRules();analyze(true);}});
+const transferReview=installTransferReview({getState:()=>({queue:liveRunQueue(queue,liveListReport(),business,workFrom()),dataset,business,workFrom:workFrom(),extensionMode,sample:sampleMode,busy:applying || listCollecting || !!bulkInspector?.busy()}),inspect:t=>select(t),openMenuRecord:async t=>{select(t,false);await openRecord(t.id);},captureMenu:(...args)=>withActivity('Reading transfer menu',()=>captureTransferMenu(...args)),applyTransfer:(...args)=>withActivity('Checking and saving transfer',()=>runTransfer(...args)),receipt:pair=>editReceipts[transferReceiptKey(pair)],read:async (t,current)=>{if(!current())return null;const expectedBusiness=business;const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+expectedBusiness+'/transactions/'+t.id);if(!current())return null;return waitForLiveSnapshot(()=>captureLive(tab.id,expectedBusiness,t.id),current);}});
 const proposalReview=installProposalReview({
   getState:()=>({dataset,business,sample:sampleMode,csvText,rules,queue,workFrom:workFrom(),pack:proposalPack,decisions:proposalDecisions,packFileName:proposalFileName}),
   categories:()=>categoryNames(sampleMode?null:catalog,dataset?.categories || []),
@@ -565,7 +575,8 @@ const proposalReview=installProposalReview({
   accepted:async result=>{ if(extensionMode)await chrome.storage.local.set({solverRules:result.rules}); rules=result.rules;proposalDecisions=result.decisions;renderRules();analyze(true,false); },
   rejected:async decisions=>{proposalDecisions=decisions;await rememberSession();updateSteps();}
 });
-workspace=installWorkspace({getState:()=>({business,dataset,report:liveListReport(),rules,busy:applying || listCollecting,expenseMatches:expenseCandidates(queue,allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(queue).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:rememberSoon});
+bulkInspector=installBulkInspector({getState:()=>({business,dataset,queue,csvText,workFrom:workFrom(),report:listReview.report(),extensionMode,sample:sampleMode,busy:applying || listCollecting}),read:async(t,current)=>{const tab=await openBackgroundTab(chrome.tabs,'https://next.waveapps.com/'+business+'/transactions/'+t.id,inspectionTab);inspectionTab=tab.id;return waitForLiveSnapshot(()=>captureLive(tab.id,business,t.id),current);},inspect:t=>select(t),onChange:()=>{renderQueue();updateSteps();}});
+workspace=installWorkspace({getState:()=>({business,dataset,report:liveListReport(),rules,busy:applying || listCollecting || !!bulkInspector?.busy(),workFrom:workFrom(),expenseMatches:expenseCandidates(liveRunQueue(queue,liveListReport(),business,workFrom()),allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(liveRunQueue(queue,liveListReport(),business,workFrom())).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:stage=>{rememberSoon();if(stage==='planning')renderQueue();}});
 renderRules();
 try { await restoreSession(); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
 restoring = false;
@@ -577,6 +588,8 @@ try {
  await proposalReview.render();transferReview.render();
  updateSteps();
 } finally {startupPending=false;startupActivity.finish();document.querySelector('main').inert=false;}
+const prepareChange=make('button','Prepare this category change','secondary');prepareChange.id='prepareChange';prepareChange.onclick=handle(async()=>{if(chosen?.kind!=='Merchant rule' || !actionable(chosen))throw Error('Choose an approved-rule purchase first.');if(!lastLiveSnapshot)throw Error('Read live details before preparing this change.');shortlist.add(chosen.id);renderPlan();updateApply();await rememberSession();});$('apply').before(prepareChange);
+const queueScope=make('select');queueScope.id='queueScope';queueScope.setAttribute('aria-label','Remaining work scope');for(const [value,label] of [['live','Latest live backlog'],['history','Advanced: all CSV candidates']]){const option=make('option',label);option.value=value;queueScope.append(option);}queueScope.onchange=()=>renderQueue();$('search').parentElement.prepend(queueScope);renderQueue();
 for (const key of stepKeys) $(`fold-${key}`).addEventListener('toggle',rememberSoon);
 for(const id of ['liveList','waveSuggestions','expenseBatch'])$(id).addEventListener('toggle',rememberSoon);
 for (const id of [...filterIds, ...draftIds]) $(id).addEventListener('input',rememberSoon);
@@ -588,7 +601,7 @@ function transferReceiptKey(pair){return business+':transfer:'+pair.key;}
 async function runTransfer(pair,mode=false){
  const reset=mode==='reset',automatic=mode==='auto',recheck=mode===true || reset || (automatic && !!editReceipts[transferReceiptKey(pair)]?.saveAttempted);
  if(automatic && recheck && !editReceipts[transferReceiptKey(pair)]?.verified)throw Error('An uncertain transfer attempt is locked. Recheck it before running automation.');
- if(listCollecting)throw Error('Finish or stop the live-list collection before editing transactions.');
+ if(listCollecting || bulkInspector?.busy())throw Error('Finish collection or bulk inspection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select a real Wave business and pair first.');
  const expectedBusiness=business,data=dataset,from=workFrom(),key=transferReceiptKey(pair);
  if(!transferPairs(queue).some(p=>p.key===pair.key))throw Error('This pair is no longer eligible in the working queue.');
@@ -682,7 +695,7 @@ async function runTransfer(pair,mode=false){
 let expenseWorkerTab=null;
 async function runExpenseBatch(t,mode='run'){
  if(mode==='run' && !editReceipts[business+':suggestion:'+t.id]?.attempted && !editReceipts[business+':suggestion:'+t.id]?.reviewedVerified && suggestionCandidates(listReview.report(),queue,rules,business,workFrom()).some(record=>record.id===t.id && record.proposed===t.proposed))return runWaveSuggestion(t);
- if(listCollecting)throw Error('Finish or stop the live-list collection before editing transactions.');
+ if(listCollecting || bulkInspector?.busy())throw Error('Finish collection or bulk inspection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select your Wave business and real export.');
  const expectedBusiness=business,data=dataset,from=workFrom(),target=t.proposed,key=business+':'+t.id,previous=editReceipts[key];
  if(!expenseCandidates(queue,allowedExpenseIds).some(record=>record.id===t.id && record.proposed===target))throw Error('The approved expense rule is no longer eligible.');
@@ -734,7 +747,7 @@ async function runExpenseBatch(t,mode='run'){
 }
 
 async function runWaveSuggestion(t,mode='run'){
- if(applying || listCollecting || !extensionMode || sampleMode || !business)throw Error('Finish other runs and collect the real Wave list first.');
+ if(applying || listCollecting || bulkInspector?.busy() || !extensionMode || sampleMode || !business)throw Error('Finish other runs and collect the real Wave list first.');
  const expectedBusiness=business,data=dataset,from=workFrom(),key=business+':suggestion:'+t.id,previous=editReceipts[key];
  if(mode==='run' && previous?.attempted)throw Error('Suggestion has a saved attempt. Recheck it before any further action.');
  const current=()=>business===expectedBusiness && dataset===data && workFrom()===from;
