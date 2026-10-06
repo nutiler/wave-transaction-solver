@@ -23,3 +23,6 @@ Thumbs.db
 .github/workflows/tests.yml
 
 local-analysis/
+
+# Private downloaded statements and collection manifests
+data/

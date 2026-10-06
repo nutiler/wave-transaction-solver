@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Local export analysis and verified batches of approved-rule expenses and existing transfer pairs in Wave.",
   "permissions": [
     "storage",
@@ -19,5 +19,12 @@
   },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
-  }
+  },
+  "optional_permissions": [
+    "webRequest"
+  ],
+  "optional_host_permissions": [
+    "https://account.venmo.com/*",
+    "https://venmo.com/*"
+  ]
 }
