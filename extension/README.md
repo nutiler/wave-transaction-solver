@@ -350,3 +350,9 @@ PayPal PDFs are parsed entirely locally with bundled PDF.js 5.6.205 (Apache-2.0)
 Venmo keeps recipient, note, profile and funding details, preserves string IDs (including interoperable alphanumeric IDs), and distinguishes bank payouts from purchases. Wallet-only or unstated funding is not assumed to create a bank purchase. Unknown profiles, pending payments, loan wording and fee-bearing transfers remain for separate review. A recipient name alone never establishes business purpose.
 
 Sources and approvals persist per selected business in local IndexedDB, separately from existing solver session data. This feature has no external upload, does not create accounts/categories/tags and adds no host permissions. Source data, evidence packages and reports belong in ignored local data folders. Only synthetic fixtures are included in the repository.
+
+### Known merchants and reviewed source matches (0.27.1)
+
+The source solvers reuse approved merchant aliases to connect differing source and bank names. Identity matching does not remove account/category restrictions from category approval: known patterns without a matched Wave record are shown as hints, and a scoped rule cannot silently overwrite an existing category. A recognized existing export category is displayed rather than a blank judgment. User-edited source fields remain distinct from automatically displayed hints.
+
+**Unfinished purchase review** hides source records with a single reviewed Wave candidate. **Reviewed Wave matches** keeps them available as reference with purchase approval disabled. A candidate remains a proposed association until its link is confirmed. The newest recorded reviewed state across the Not Reviewed and full-history collections is used; unknown status and absence from a list never establish completion. Refresh live collections when the state may have changed.
