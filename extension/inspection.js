@@ -18,14 +18,14 @@ export function compareInspectedRecord(t,snapshot,business){
  return {id:t.id,date:t.date,description:t.description,account:t.primary?.account,level:'dialog',state,checks:result.checks,reviewed:result.reviewed,problems,reason:state==='inspected-match'?'All readable export fields match. Reviewed status: '+result.reviewed+'.':state==='changed'?'Dialog fields differ from the CSV. Review the differences.':'Inspection incomplete. '+problems.join(' ')};
 }
 export function remainingWork(queue,report,{business,from='2025-01-01',receipts={}}={}){
- if(!report || report.business!==business)return [];
+ if(!report || report.filter==='ALL' || report.business!==business)return [];
  const pending=new Set((report.records || []).filter(r=>r.id && r.reviewed!=='Reviewed' && r.date>=from).map(r=>r.id));
  const completed=new Set();for(const [key,r] of Object.entries(receipts)){if(!key.startsWith(business+':'))continue;if(r.reviewedVerified)completed.add(key.split(':').at(-1));if(r.verified && Array.isArray(r.ids))r.ids.forEach(id=>completed.add(id));}
  return queue.filter(t=>pending.has(t.id) && !completed.has(t.id));
 }
 
 export function liveRunQueue(queue,report,business,from='2025-01-01'){
- if(!report || report.business!==business || report.running || report.completeness!=='count-confirmed')return [];
+ if(!report || report.filter==='ALL' || report.business!==business || report.running || report.completeness!=='count-confirmed')return [];
  const ids=new Set((report.records || []).filter(r=>typeof r.id==='string' && r.date>=from && r.reviewed!=='Reviewed' && ['Wave transaction ID','Unique full-field export match'].includes(r.identity)).map(r=>r.id));
  const partners=new Set(queue.filter(t=>ids.has(t.id) && t.kind==='Transfer candidate').map(t=>t.partner?.id));return queue.filter(t=>ids.has(t.id) || partners.has(t.id));
 }

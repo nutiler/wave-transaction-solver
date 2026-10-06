@@ -4,7 +4,7 @@ import {matchingRules,matchesDescription,nonPurchaseReason} from './rules.js';
 import {expenseCandidates} from './expense-batch.js';
 import {waveListScan} from './list-scan.js';
 import {openBackgroundTab} from './workflow.js';
-export function scopedListIds(report){return new Set((report?.records || []).filter(r=>typeof r.id==='string' && /^\d+$/.test(r.id) && r.reviewed!=='Reviewed' && ['Wave transaction ID','Unique full-field export match'].includes(r.identity)).map(r=>r.id));}
+export function scopedListIds(report){if(report?.filter==='ALL')return new Set();return new Set((report?.records || []).filter(r=>typeof r.id==='string' && /^\d+$/.test(r.id) && r.reviewed!=='Reviewed' && ['Wave transaction ID','Unique full-field export match'].includes(r.identity)).map(r=>r.id));}
 export function liveExpenseLinks(report,queue=[],transactions=[],from='2025-01-01'){
  const ids=scopedListIds(report),eligible=new Set(expenseCandidates(queue,ids).map(t=>t.id)),exports=new Set(transactions.map(t=>t.id));
  const result={known:0,needsReview:0,missingExport:0,completedPeriod:0,unresolved:0,reviewed:0};
@@ -30,7 +30,7 @@ export function liveMerchantAudit(report,rules=[],transactions=[],queue=[],busin
  const buckets=rows.reduce((counts,row)=>(counts[row.bucket]=(counts[row.bucket]||0)+1,counts),{});
  return {buckets,business,rulesLoaded:rules.length,businessRules:rules.filter(r=>!r.business || r.business===business).length,rows,known:rows.filter(r=>r.state==='known').length,blocked:rows.filter(r=>r.state==='blocked').length,unmatched:rows.filter(r=>r.state==='unmatched').length};
 }
-export function installLiveList({getState,onRunning,onScope,refreshExpenses,refreshRules,showExpenses}){
+export function installLiveList({getState,onRunning,onScope,refreshExpenses,refreshRules,showExpenses,openInspector}){
  const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
  const scanDebug=debugSlot('scanTools','Live list and merchant-rule diagnostics'),debugActions=make('div'),debugResults=make('div');debugActions.className='bar';scanDebug.append(debugActions,debugResults);
  const section=make('section'),fold=make('details');fold.className='step';fold.id='liveList';const summary=make('summary','Live Not Reviewed list');summary.setAttribute('role','heading');summary.setAttribute('aria-level','2');fold.append(summary);const body=make('div');body.className='step-body';
@@ -42,7 +42,7 @@ export function installLiveList({getState,onRunning,onScope,refreshExpenses,refr
  const prepare=make('button','Prepare known expenses');
  const expenses=make('button','Open known-expense runner');expenses.className='secondary';expenses.onclick=async()=>{if(busy || checkingRules || getState().busy)return;try{await refreshRules?.();}catch(e){status.textContent=e.message;return;}refreshExpenses();if(showExpenses){showExpenses();return;}showUsageSection('expenseBatch');const panel=document.getElementById('expenseBatch');panel.open=true;panel.scrollIntoView({block:'start',behavior:'smooth'});const heading=panel.querySelector('summary');heading.tabIndex=-1;heading.focus({preventScroll:true});};
  const ruleNotice=make('p');ruleNotice.setAttribute('role','status');
- const inspectCollection=make('button','Compare and inspect this collection');inspectCollection.className='secondary';inspectCollection.onclick=()=>showUsageSection('bulkInspector');const bar=make('div');bar.className='bar';bar.append(start,stop,inspectCollection);debugActions.append(copy,copyRules);const status=make('p');status.setAttribute('role','status');const results=make('div');
+ const inspectCollection=make('button','Compare and inspect this collection');inspectCollection.className='secondary';inspectCollection.onclick=()=>{showUsageSection('bulkInspector');openInspector?.('NOT_VERIFIED');};const bar=make('div');bar.className='bar';bar.append(start,stop,inspectCollection);debugActions.append(copy,copyRules);const status=make('p');status.setAttribute('role','status');const results=make('div');
  const actions=make('div');actions.className='bar';actions.append(checkRules,prepare,expenses,debugLink('scanTools'));const filters=make('div');filters.className='bar';filters.append(ruleView,view);const options=make('details');options.className='scan-options';options.append(make('summary','More scan options'),actions,download,filters,scopeLabel);body.append(make('p','Collect the live list first. Then continue to Review rules to approve new matches. Collection does not edit Wave.'),bar,status,ruleNotice,results,options);fold.append(body);section.append(fold);document.getElementById('expenseBatch').parentElement.before(section);
  let reports={},scopes={},busy=false,tabId=null,limit=100,currentBusiness=null,listOpen=false;
  const selectedReport=()=>reports[getState().business];

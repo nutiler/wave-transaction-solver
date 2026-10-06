@@ -3,10 +3,11 @@ export function waveListScan(request,testContext){
  const doc=testContext?.document || document,loc=testContext?.location || location,win=testContext?.window || window,style=testContext?.getComputedStyle || getComputedStyle;
  const pause=testContext?.wait || (ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=testContext?.now || Date.now;
  const key='__dandelionWaveListScanV1',tidy=s=>String(s || '').replace(/\s+/g,' ').trim();
- const valid=()=>{const u=new URL(loc.href);return u.origin==='https://next.waveapps.com' && u.pathname.replace(/\/$/,'')==='/'+request.business+'/transactions' && u.searchParams.get('status')==='NOT_VERIFIED';};
+ const mode=request.mode==='ALL'?'ALL':'NOT_VERIFIED';
+ const valid=()=>{const u=new URL(loc.href);return u.origin==='https://next.waveapps.com' && u.pathname.replace(/\/$/,'')==='/'+request.business+'/transactions' && (mode==='ALL'?u.search==='':u.searchParams.get('status')==='NOT_VERIFIED');};
  if(request.action==='stop'){if(win[key])win[key].stop=true;return win[key]?.report || null;}
  if(request.action==='poll')return win[key]?.report || null;
- if(!/^[0-9a-f-]{36}$/i.test(request.business || '') || !valid())throw Error('Open the selected business Transactions list with status=NOT_VERIFIED.');
+ if(!/^[0-9a-f-]{36}$/i.test(request.business || '') || !valid())throw Error(mode==='ALL'?'Open the selected business Transactions list with no URL filters.':'Open the selected business Transactions list with status=NOT_VERIFIED.');
  if(win[key]?.report.running)throw Error('A list collection is already running in this tab.');
  const visible=el=>el && !el.hidden && !el.closest('[hidden],[aria-hidden="true"]') && style(el).display!=='none' && style(el).visibility!=='hidden' && el.getClientRects().length>0;
  const clean=el=>{if(!el)return '';const inputs=[...el.querySelectorAll('input:not([type="checkbox"]):not([type="hidden"])')];if(inputs.length===1)return tidy(inputs[0].value);const labels=el.querySelectorAll('.wv-select__label');if(labels.length===1)return tidy(labels[0].textContent);const clone=el.cloneNode(true);clone.querySelectorAll('svg,script,input,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(n=>n.remove());return tidy(clone.textContent);};
@@ -15,7 +16,7 @@ export function waveListScan(request,testContext){
  const fingerprint=r=>JSON.stringify([r.date,tidy(r.description).toLowerCase(),tidy(r.account).toLowerCase(),r.amountCents]);
  const known=new Map();for(const t of request.known || []){if(typeof t.id!=='string' || !/^\d+$/.test(t.id))continue;const k=fingerprint(t);if(!known.has(k))known.set(k,[]);known.get(k).push(t.id);}
  const records=new Map(),problems=new Set();
- const state={stop:false,report:{format:'wave-solver-live-list',version:1,suggestionDetectionVersion:2,business:request.business,url:loc.href,filter:'NOT_VERIFIED',filterChipObserved:false,startedAt:new Date(now()).toISOString(),capturedAt:null,running:true,status:'Starting',records:[],expectedTotal:null,completeness:'unconfirmed',problems:[],rowDiagnostics:[]}};win[key]=state;
+ const state={stop:false,report:{format:'wave-solver-live-list',version:1,suggestionDetectionVersion:2,business:request.business,url:loc.href,filter:mode,filterChipObserved:false,startedAt:new Date(now()).toISOString(),capturedAt:null,running:true,status:'Starting',records:[],expectedTotal:null,completeness:'unconfirmed',problems:[],rowDiagnostics:[]}};win[key]=state;
  const publish=status=>{state.report.status=status;state.report.records=[...records.values()];state.report.problems=[...problems];state.report.capturedAt=new Date(now()).toISOString();};
  const collect=()=>{
   const tables=[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).filter(el=>{const text=clean(el);return /Description/i.test(text) && /Category/i.test(text) && /Amount/i.test(text);});
@@ -32,10 +33,12 @@ export function waveListScan(request,testContext){
   const rows=dataRows(root),occurrences=new Map();
   state.report.tableDiagnostics={headers,headerHtml:table.querySelector('thead')?.outerHTML.slice(0,5000) || '',rowSamples:rows.slice(0,3).map(row=>row.outerHTML.slice(0,7000)),nearbyTables:[...doc.querySelectorAll('table,[role="table"],[role="grid"]')].filter(visible).slice(0,4).map(t=>({class:t.className,rows:t.querySelectorAll('tr,[role="row"]').length,rowSamples:[...t.querySelectorAll('tr,[role="row"]')].filter(row=>!row.closest('thead')).slice(0,2).map(row=>row.outerHTML.slice(0,7000)),html:t.outerHTML.slice(0,3500)}))};
   state.report.filterChipObserved=[...doc.querySelectorAll('button,span,a,div')].some(el=>visible(el) && /^(Not Reviewed|Not Verified)$/i.test(clean(el)));
+  if(mode==='ALL'){const filters=[...doc.querySelectorAll('button,[role=button]')].filter(visible).map(clean).filter(text=>/^[1-9]\d* filters?$/i.test(text));const searches=[...doc.querySelectorAll('input')].filter(visible).filter(input=>/search transactions/i.test(input.getAttribute('placeholder') || input.getAttribute('aria-label') || '') && input.value.trim());if(state.report.filterChipObserved || filters.length || searches.length)throw Error('The all-transactions list still has active filters or a search. Clear them in Wave and collect again.');}
+
   for(const row of rows){
    const cells=[...row.querySelectorAll(':scope > td,:scope > [role="cell"],:scope > [role="gridcell"]')];if(!cells.length)continue;
    const get=(name,fallback)=>clean(cells[index(name)>=0?index(name):fallback]);
-   const r={id:null,identity:'unresolved',date:date(get('Date',1)),description:get('Description',2),account:get('Account',3),category:get('Category',4),amountText:get('Amount',5),amountCents:amount(get('Amount',5)),reviewed:'Unknown',reviewEvidence:null,sourceFilter:'NOT_VERIFIED'};
+   const r={id:null,identity:'unresolved',date:date(get('Date',1)),description:get('Description',2),account:get('Account',3),category:get('Category',4),amountText:get('Amount',5),amountCents:amount(get('Amount',5)),reviewed:'Unknown',reviewEvidence:null,sourceFilter:mode};
    if(!r.date || !r.description || r.amountCents===null){problems.add('Some visible rows could not be parsed; inspect table diagnostics.');if(state.report.rowDiagnostics.length<5)state.report.rowDiagnostics.push({problem:'Unreadable row fields',html:row.outerHTML.slice(0,9000)});continue;}
    const suggestionButtons=[...row.querySelectorAll('button,[role="button"]')].filter(visible).filter(button=>[button.getAttribute('aria-label'),button.getAttribute('title'),tidy(button.textContent),...((button.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>doc.getElementById(id)?.textContent)),...[...button.querySelectorAll('svg title,[role="tooltip"]')].map(el=>el.textContent)].some(text=>/^(?:ConfirmAutocatIcon|Confirm (?:the )?auto.updated category)$/i.test(tidy(text))));
    r.waveSuggestion=suggestionButtons.length===1;r.suggestionControlDisabled=suggestionButtons.some(button=>button.disabled || button.getAttribute('aria-disabled')==='true');if(suggestionButtons.length)r.suggestionControls=suggestionButtons.map(button=>button.outerHTML.slice(0,3500));
@@ -102,7 +105,7 @@ export function waveListScan(request,testContext){
  state.done=(async()=>{
   const started=now();let stable=0,last='',ready=false,loadPending=null;
   try{
-   for(let n=0;n<450;n++){
+   for(let n=0;n<(mode==='ALL'?3000:450);n++){
     if(state.stop){publish('Stopped; partial collection retained');break;}
     if(!valid()){publish('Stopped because the business or filter changed');problems.add('The Wave list navigated away during collection.');break;}
     const table=collect();if(!table){if(ready || now()-started>30000)throw Error('Transaction table was not readable.');await pause(700);continue;}const firstTable=!ready;ready=true;
@@ -111,7 +114,7 @@ export function waveListScan(request,testContext){
     const marker=JSON.stringify([records.size,scroller.scrollHeight,scroller.scrollTop]);stable=bottom && marker===last?stable+1:0;last=marker;
     publish('Collecting: '+records.size+' rows; '+state.report.records.filter(r=>r.id).length+' identified');
     const loading=[...doc.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible);
-    if(records.size>=20000 || now()-started>420000){publish('Collection limit reached; partial results retained');break;}
+    if(records.size>=(mode==='ALL'?100000:20000) || now()-started>(mode==='ALL'?1800000:420000)){publish('Collection limit reached; partial results retained');break;}
     const more=loadButtons();if(more.length>1)throw Error('Multiple Load More Transactions controls found.');
     if(loadPending){
      if(records.size>loadPending.count || !more.length){loadPending=null;stable=0;}
@@ -123,7 +126,7 @@ export function waveListScan(request,testContext){
      await pause(700);continue;
     }
     if(bottom && stable>=6 && !loading){await verifyTotal();if(state.stop || !valid()){publish('Stopped during count verification; partial results retained');break;}const identified=state.report.records.filter(r=>r.id).length;if(state.report.expectedTotal!==null && identified===state.report.expectedTotal){state.report.completeness='count-confirmed';publish('Complete: identified transaction count matches '+(state.report.totalEvidence || 'the list total'));}else{state.report.completeness='bottom-reached';publish('Reached bottom after repeated stable checks; total not independently confirmed');}break;}
-    if(records.size>=20000 || now()-started>420000){publish('Collection limit reached; partial results retained');break;}
+    if(records.size>=(mode==='ALL'?100000:20000) || now()-started>(mode==='ALL'?1800000:420000)){publish('Collection limit reached; partial results retained');break;}
     scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,Math.floor(scroller.clientHeight*0.7)),scroller.scrollHeight-scroller.clientHeight);
     await pause(bottom?1200:650);
    }
