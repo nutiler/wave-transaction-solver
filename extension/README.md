@@ -31,6 +31,12 @@ Preparation uses the latest explicit reviewed evidence and the current Not Revie
 
 Development checks: `node --test`; `/extension/editor-fixture.html` exercises real DOM editing against synthetic dialogs; `/extension/command-fixture.html` simulates preparation, local confirmation, reload, group exceptions, queued execution and lost-response recovery. None changes real Wave records. All financial files, source evidence and derived review packages remain ignored locally.
 
+### New transactions after your last export (0.30.1)
+
+Prepare workspace scans Wave but does not download a new accounting export or execute choices. The Command center displays the number of approved-rule items ready to queue. Click **Queue approved-rule suggestions (N)**, then **Execute queued decisions** to apply and review those records.
+
+A prominent warning lists records missing from the imported CSV and the CSV's latest transaction date. Use **Open Wave data export** to request the emailed ZIP, extract its accounting.csv, then **Import fresh CSV** directly in the Command center. Importing automatically prepares the updated live backlog. Existing rules, source evidence and queued decisions remain saved; changed queued snapshots still need attention. Live-only records cannot be executed without their export postings. Import does not change Wave.
+
 ## Advanced tools and earlier workflows
 
 The reference sections below describe retained collection, analysis, manual runners and troubleshooting capabilities. They are under Advanced tools unless available in Session or Rule library. The daily workflow above replaces the previous immediate per-group execution flow.

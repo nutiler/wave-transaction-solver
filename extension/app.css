@@ -72,3 +72,5 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--input);border:1
 
 /* Navigation scrolls normally so it cannot cover the decision fields. */
 .workspace-nav{position:static}.command-body>p{margin:8px 0}.command-body>.bar{margin:10px 0}.command-lead{font-size:13px}#usage-transactions>.group-title{display:none}@media(min-width:601px){.usage-steps{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+.command-import-warning{margin:12px 0;border-color:#aa875b;background:#443d32}.command-import-warning p{margin:0 0 10px;color:#ffe4b8}.command-import-warning .bar{margin:0}

@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.30.1 — Make new-transaction readiness explicit
+
+- Show a prominent missing-export warning and the imported CSV's latest transaction date.
+- Add direct fresh-CSV import and the existing Wave export shortcut in the Command center. Import prepares the backlog again while preserving rules, source evidence and queued choices.
+- Show approved-rule ready counts and explicit queue/execute guidance. Preparation remains read-only; live-only rows remain excluded from execution until exported.
+- Add synthetic coverage for a newer known merchant becoming eligible after CSV import without losing existing queued decisions.
+
+
 ## 0.30.0 — Prepare, confirm locally, execute queue
 
 - Added a primary Command center with prepared source/rule/history suggestions, ranked searchable categories, explicit incoming treatments, original descriptions, item/recipient enrichment, group exclusions, deferral and local undo/edit.
