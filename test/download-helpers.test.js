@@ -50,3 +50,9 @@ test('Wave email waits expire or stop without creating a second export',async()=
  await assert.rejects(waitWaveMail({current:()=>false,read:async()=>{throw Error('should not read');}}),/Stopped/);
  let failures=0;await assert.rejects(waitWaveMail({read:async()=>{failures++;throw Error('Wrong mailbox');},pause:async()=>{}}),/Wrong mailbox/);assert.equal(failures,3);
 });
+
+test('A captured CSV text response completes native observation immediately and releases both listeners',async()=>{
+ const d=downloads(),file=new File(['synthetic CSV'],'paypal.csv');
+ const result=await observeNativeDownload({downloads:d,inbox:folder(),accept:()=>false,trigger:async()=>({file})});
+ assert.equal(result.file,file);assert.equal(result.provided,true);assert.equal(d.made.size,0);assert.equal(d.changed.size,0);
+});

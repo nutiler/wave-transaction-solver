@@ -27,3 +27,9 @@ test('Stop after a response prevents file writes and completed-file checkpoints'
 test('A validated existing all-transactions interval can satisfy contained years without redundant requests',async()=>{const broad={...report,start:'2024-01-01',end:'2026-01-01'},calls=[];const result=await collectPayPalReports({periods:[report],read:async()=>({reports:[broad]}),download:async()=>{calls.push('download');return 'synthetic';},save:async()=>({hash:'verified',name:'synthetic'}),verifySaved:async()=>true,persist:async()=>{},request:async()=>calls.push('create')});assert.deepEqual(calls,['download']);assert.equal(result.waiting,undefined);});
 
 test('Financial counterparties and an event-type conflict cannot become ordinary purchases',()=>{assert.equal(importPayPalCSV(csv().replace('Fictional Tools','Fictional Bank')).records[0].kind,'Financial review');assert.equal(importPayPalCSV(csv().replace('Fictional Tools','PayPal Credit')).records[0].kind,'Financing');const c=importPayPalCSV(csv()).records[0];const pdf={...c,sourceFormat:undefined,type:'Payment Refund',kind:'Refund'};assert.equal(modelEvidenceFiles([{provider:'paypal',records:[c,pdf]}])[0].conflict,true);});
+
+test('Duplicate ready report rows download one validated copy by its exact ephemeral token',async()=>{
+ const first={...report,rowToken:'fictional-row-1'},second={...report,rowToken:'fictional-row-2'},calls=[];let persisted;
+ const result=await collectPayPalReports({periods:[report],read:async()=>({reports:[first,second]}),download:async r=>{calls.push(r.rowToken);return 'synthetic';},save:async()=>({hash:'verified',name:'synthetic'}),verifySaved:async()=>true,persist:async value=>persisted=value,request:async()=>assert.fail('No duplicate report request')});
+ assert.deepEqual(calls,['fictional-row-1']);assert.equal(result.saved,1);assert.equal(persisted[paypalReportKey(report)].rowToken,undefined);
+});

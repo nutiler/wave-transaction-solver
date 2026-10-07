@@ -29,15 +29,14 @@ export async function verifyPayPalFile(root,entry) {
 // Save every available CSV before creating more reports in PayPal's bounded report list.
 export async function collectPayPalReports({periods,entries={},read,download,save,persist,request,verifySaved=async()=>false,current=()=>true,progress=()=>{}}) {
  const next={...entries};let info=await read(),saved=0;
- async function store(report){const key=paypalReportKey(report);if(next[key]?.hash&&await verifySaved(next[key]))return;if(!current())return;progress(report,'Downloading CSV');const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;await persist(next);saved++;}
+ async function store(report){const key=paypalReportKey(report);if(next[key]?.hash&&await verifySaved(next[key]))return;if(!current())return;progress(report,'Downloading CSV');const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);saved++;}
  for(const report of eligiblePayPalReports(info)){await store(report);if(!current())return {entries:next,saved,stopped:true};}
  for(const period of periods) {
   if(!current())return {entries:next,saved,stopped:true};const key=paypalReportKey(period),entry=next[key];
   if(entry?.hash&&await verifySaved(entry))continue;
   let covered=false;for(const savedReport of Object.values(next)){if(savedReport.type==='All transactions'&&savedReport.format==='CSV'&&savedReport.start<=period.start&&savedReport.end>=period.end&&savedReport.hash&&await verifySaved(savedReport)){covered=true;break;}}if(covered)continue;
   info=await read();const matches=(info.reports||[]).filter(r=>paypalReportKey(r)===key);
-  if(matches.length>1)throw Error('More than one report has the requested identity. Choose the exact report in PayPal.');
-  if(matches[0]?.ready){await store(matches[0]);continue;}
+  const readyMatch=matches.find(r=>r.ready);if(readyMatch){await store(readyMatch);continue;}
   if(matches.length||['requesting','requested'].includes(entry?.status))return {entries:next,saved,waiting:period,uncertain:!matches.length};
   progress(period,'Creating annual CSV report');next[key]={...period,status:'requesting',requestedAt:new Date().toISOString()};await persist(next);
   // A persisted intent prevents duplicate Create Report clicks if the page or extension closes.

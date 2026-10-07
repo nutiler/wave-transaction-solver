@@ -1,11 +1,20 @@
 // Export-only UI adapters; no account, payment, inbox mutation or financial-edit actions.
 export async function amazonDownloadPage(request={},testContext) {
+ let submitted=false;
+ try{
  const doc=testContext?.document||document,loc=testContext?.location||location,win=doc.defaultView||window,pause=testContext?.pause||(()=>new Promise(r=>setTimeout(r,250)));
  const text=e=>String(e?.innerText||e?.textContent||'').trim().replace(/\s+/g,' '),visible=e=>e?.isConnected&&!e.hidden&&e.getClientRects().length&&win.getComputedStyle(e).visibility!=='hidden',all=s=>[...(testContext?.root||doc).querySelectorAll(s)].filter(visible);
- if(loc.origin!=='https://www.amazon.com'||loc.pathname!=='/b2b/aba/reports'||new URL(loc.href).searchParams.get('reportType')!=='items_report_1')throw Error('Open the Amazon Business Orders report for this helper. Regular Amazon uses a separate export path.');
- if(!all('h1,h2,h3,span').some(e=>/^Business analytics$/i.test(text(e)))||!all('h1,h2,h3,span').some(e=>/^Orders report$/i.test(text(e))))throw Error('Wait for the Amazon Business Orders report page.');
+ if(loc.origin!=='https://www.amazon.com'||loc.pathname!=='/b2b/aba/reports'||!['items_report_1','orders_report_1'].includes(new URL(loc.href).searchParams.get('reportType')))throw Error('Open the Amazon Business Orders report for this helper. Regular Amazon uses a separate export path.');
+ if(!all('h1,h2,h3,h4,span,p,div').some(e=>/^Business analytics$/i.test(text(e)))||!all('h1,h2,h3,h4,span,p,div').some(e=>/^Orders report$/i.test(text(e))))throw Error('Wait for the Amazon Business Orders report page.');
  const label=e=>{if(e.getAttribute('aria-label'))return e.getAttribute('aria-label');if(e.labels?.length){const clone=e.labels[0].cloneNode(true);clone.querySelectorAll('input,select,button').forEach(n=>n.remove());return text(clone);}return '';};
- const field=name=>{const candidates=all('input:not([type="hidden"]):not([type="password"])').filter(e=>new RegExp('^'+name+'$','i').test(label(e)));if(candidates.length===1)return candidates[0];const labels=all('label').filter(e=>text(e)===name),near=labels.flatMap(l=>[...l.parentElement.querySelectorAll('input:not([type="hidden"])')].filter(visible));return near.length===1?near[0]:null;};
+ const field=name=>{
+  const pattern=new RegExp('^'+name+'$','i'),inputs=all('input:not([type="hidden"]):not([type="password"])');
+  const candidates=inputs.filter(e=>pattern.test(label(e)));if(candidates.length===1)return candidates[0];
+  const nearby=all('label,p,span').filter(e=>pattern.test(text(e))).flatMap(l=>{
+   for(let parent=l.parentElement,depth=0;parent&&depth<3;parent=parent.parentElement,depth++){const fields=[...parent.querySelectorAll('input:not([type="hidden"]):not([type="password"])')].filter(visible);if(fields.length===1)return fields;if(fields.length>1)break;}return [];
+  });const unique=[...new Set(nearby)];if(unique.length===1)return unique[0];
+  const named=inputs.filter(e=>pattern.test(String(e.name||e.id).replace(/[_-]/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2')));return named.length===1?named[0]:null;
+ };
  const read=()=>({format:'wave-solver-amazon-controls',version:1,businessReport:true,startFound:!!field('Start date'),endFound:!!field('End date'),start:field('Start date')?.value||'',end:field('End date')?.value||'',submit:all('button,input[type="submit"]').filter(e=>(e.value||text(e))==='Submit').length,generate:all('button,a,[role="button"]').filter(e=>/^Generate report$/i.test(text(e))).map(e=>({enabled:!e.disabled&&e.getAttribute('aria-disabled')!=='true'})),historyFound:all('a,button').some(e=>/^Download history$/i.test(text(e)))});
  if(!request.action||request.action==='read')return read();
  if(request.action==='history'){const links=all('a,button').filter(e=>/^Download history$/i.test(text(e)));if(links.length!==1)throw Error('Download history control is not uniquely visible.');links[0].click();return {opened:true};}
@@ -13,24 +22,45 @@ export async function amazonDownloadPage(request={},testContext) {
  const valid=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;if(!valid(request.start)||!valid(request.end)||request.end<request.start)throw Error('Invalid requested Amazon dates.');
  const nativeRanges=all('select').filter(e=>[...e.options].some(o=>text(o)==='Custom Range'));
  if(nativeRanges.length===1&&!nativeRanges[0].disabled){const select=nativeRanges[0],custom=[...select.options].filter(o=>text(o)==='Custom Range');if(custom.length===1){Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set.call(select,custom[0].value);select.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();}}
- else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled){const ranges=all('button,[role="combobox"]').filter(e=>/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom Range)$/i.test(text(e)));if(ranges.length===1){ranges[0].click();await pause();let options=all('[role="option"]').filter(e=>text(e)==='Custom Range');if(!options.length)options=all('a,button').filter(e=>text(e)==='Custom Range');if(options.length===1){options[0].click();await pause();}}}
+ else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled){
+  const ranges=all('button,[role="combobox"]').filter(e=>e.id==='date_range_selector_range'||/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
+  if(ranges.length===1){const range=ranges[0];range.click();await pause();const menu=doc.getElementById(range.getAttribute('aria-controls'));
+   let options=(menu?[...menu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
+   options=options.filter(e=>!options.some(parent=>parent!==e&&parent.contains(e)));
+   if(options.length===1){options[0].click();for(let i=0;i<12;i++){await pause();if(field('Start date')&&field('End date'))break;}}
+  }
+ }
  const start=field('Start date'),end=field('End date');if(!start||!end||start.disabled||end.disabled||start.readOnly||end.readOnly)return {notSubmitted:true,message:'Choose Custom Range so Start date and End date are visible, then Resume. Nothing generated.'};
- const form=v=>v.slice(5,7)+'/'+v.slice(8,10)+'/'+v.slice(0,4),readDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:v.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/,'$3-$1-$2');
+ const form=v=>v.slice(5,7)+'/'+v.slice(8,10)+'/'+v.slice(0,4),readDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:v.replace(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,(match,m,d,y)=>y+'-'+m.padStart(2,'0')+'-'+d.padStart(2,'0'));
  for(const [e,value] of [[start,request.start],[end,request.end]]){Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(e,e.type==='date'?value:form(value));for(const kind of ['input','change','blur'])e.dispatchEvent(new win.Event(kind,{bubbles:true}));}
  await pause();if(readDate(field('Start date')?.value)!==request.start||readDate(field('End date')?.value)!==request.end)return {notSubmitted:true,message:'Amazon did not retain the requested dates. Nothing generated.'};
  const submit=all('button,input[type="submit"]').filter(e=>(e.value||text(e))==='Submit');if(submit.length!==1||submit[0].disabled)return {notSubmitted:true,message:'Cannot identify an enabled Submit button. Nothing generated.'};submit[0].click();
  let generate=[];for(let i=0;i<40;i++){await pause();generate=all('button,a,[role="button"]').filter(e=>/^Generate report$/i.test(text(e))&&!e.disabled&&e.getAttribute('aria-disabled')!=='true');if(generate.length===1)break;}
  if(generate.length!==1||readDate(field('Start date')?.value)!==request.start||readDate(field('End date')?.value)!==request.end)return {notSubmitted:true,message:'The requested Amazon range has not loaded with Generate report enabled. Resume when it is ready.'};
- generate[0].click();return {submitted:true};
+ submitted=true;generate[0].click();return {submitted:true};
+ }catch(error){
+  if(!request.bridge)throw error;
+  const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
+  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
+ }
 }
 export async function waveExportPage(request={},testContext) {
+ let submitted=false;
+ try{
  const doc=testContext?.document||document,loc=testContext?.location||location,win=doc.defaultView||window,text=e=>String(e?.innerText||e?.textContent||'').trim().replace(/\s+/g,' '),visible=e=>e?.isConnected&&!e.hidden&&e.getClientRects().length&&win.getComputedStyle(e).visibility!=='hidden',all=s=>[...(testContext?.root||doc).querySelectorAll(s)].filter(visible);
  if(loc.origin!=='https://accounting.waveapps.com'||!/^\/settings\/export\/\d+\/$/.test(loc.pathname)||loc.origin+loc.pathname!==request.exportURL)throw Error('The selected export page does not match the configured Wave business.');
  const exact=all('button,a,input[type="submit"]').filter(e=>/^Export all transactions as CSV$/i.test(e.value||text(e)));
  let choices=exact;if(!choices.length){const headings=all('h1,h2,h3,h4,legend').filter(e=>/^Accounting$/i.test(text(e))),panels=headings.map(e=>e.closest('section,fieldset')||e.parentElement).filter(e=>e&&!/Receipts|Payroll/i.test(text(e)));choices=[...new Set(panels.flatMap(p=>[...p.querySelectorAll('button,a,input[type="submit"]')].filter(visible).filter(e=>/^(Export all transactions as CSV|Export accounting as CSV|Export all my data as CSV)$/i.test(e.value||text(e)))))];}
- const info={format:'wave-solver-wave-export-controls',version:1,accountingExportButtons:choices.length,labels:all('button,input[type="submit"]').map(e=>e.value||text(e)).filter(v=>/export|csv/i.test(v)).slice(0,10)};if(request.action==='read')return info;if(request.action!=='request')throw Error('Unsupported Wave export helper action.');if(choices.length!==1||choices[0].disabled)return {notSubmitted:true,message:'Cannot identify the Accounting CSV export button. Read and copy export controls; nothing requested.'};choices[0].click();return {submitted:true};
+ const info={format:'wave-solver-wave-export-controls',version:1,accountingExportButtons:choices.length,labels:all('button,input[type="submit"]').map(e=>e.value||text(e)).filter(v=>/export|csv/i.test(v)).slice(0,10)};if(request.action==='read')return info;if(request.action!=='request')throw Error('Unsupported Wave export helper action.');if(choices.length!==1||choices[0].disabled)return {notSubmitted:true,message:'Cannot identify the Accounting CSV export button. Read and copy export controls; nothing requested.'};submitted=true;choices[0].click();return {submitted:true};
+ }catch(error){
+  if(!request.bridge)throw error;
+  const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
+  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
+ }
 }
 export async function waveMailPage(request={},testContext) {
+ let submitted=false;
+ try{
  const doc=testContext?.document||document,loc=testContext?.location||location,win=doc.defaultView||window,text=e=>String(e?.innerText||e?.textContent||'').trim().replace(/\s+/g,' '),visible=e=>e?.isConnected&&!e.hidden&&e.getClientRects().length&&win.getComputedStyle(e).visibility!=='hidden',all=s=>[...(testContext?.root||doc).querySelectorAll(s)].filter(visible);
  if(loc.origin!=='https://mail.google.com'||loc.pathname!=='/mail/u/'+request.mailIndex+'/')throw Error('Open the selected Gmail mailbox, then Resume.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.mailbox||''))throw Error('Set the mailbox address for Wave export lookup.');
@@ -46,4 +76,9 @@ export async function waveMailPage(request={},testContext) {
  exports.sort((a,b)=>(b.stamp||b.expiry)-(a.stamp||a.expiry));const info={format:'wave-solver-wave-mail-controls',version:1,mailboxMatched:owner,subjectShown,readyLinks:exports.length,searchPage:search};if(request.action==='read')return info;
  if(request.action==='openLatest'){if(!search)throw Error('Open the Wave export email search first.');const rows=all('tr[role="row"],[role="row"]').filter(row=>text(row).includes(subject)&&/Wave|no-reply@waveapps.com/i.test(text(row)));if(!rows.length)return {waiting:true};rows[0].click();return {opened:true};}
  if(!['download','getDownload'].includes(request.action))throw Error('Unsupported Wave email helper action.');if(!exports.length)return {waiting:true};if(exports.length>1&&exports[0].stamp===exports[1].stamp&&exports[0].expiry===exports[1].expiry)throw Error('Several equally recent export links exist. Open the exact new message manually.');if(request.action==='getDownload')return {url:exports[0].target};exports[0].link.click();return {clicked:true};
+ }catch(error){
+  if(!request.bridge)throw error;
+  const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
+  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
+ }
 }
