@@ -1,5 +1,16 @@
 # Dandelion's Wave Transaction Solver
 
+## Daily work: live Wave first (0.31.0)
+
+Choose your business once, then use **Command center → Scan Wave → queue known suggestions or confirm groups → Run queued decisions**. No accounting CSV is required for ordinary category and review work. Scanning reads new transaction dialogs in a background tab, with progress and a stop control. It never changes categories, descriptions or reviewed state. Confirming saves decisions locally; execution checks each record again and verifies its saved result.
+
+New records are stored as observed Wave fields with string IDs and zero fabricated ledger postings. Direction, amount, account, category, USD currency and single-category structure must be readable. Unknown accounts, splits, loans, transfers and unreadable records stay in Exceptions. Incoming money needs an explicit refund, income or personal-deposit treatment. Account-number labels are never treated as Wave account IDs. Existing matching Wave suggestions can still be confirmed and reviewed through approved rules.
+
+**Optional data: history and purchase details** contains folder, CSV and export shortcuts. CSV history improves historical suggestions and the existing transfer/allocation tools; Amazon, PayPal and Venmo sources add item/recipient evidence. None is a daily prerequisite. Existing imports, rules, decisions and save-attempt locks are preserved. New source links or changed baselines still need approval. Connections and Rule library are secondary views; collectors and older runners are under Advanced tools.
+
+On the first scan without a saved history, the solver also collects Chart of Accounts names and account sections. If Wave’s markup cannot establish an account type or transaction structure, it holds that record rather than guessing. Previously read, unchanged new records are cached for preparation; execution always reads Wave again.
+
+
 ## Install in Chrome
 
 1. Open `chrome://extensions` and enable **Developer mode**.
@@ -11,35 +22,30 @@
 
 No Node server is needed to run the extension. The earlier localhost application is separate.
 
-## Daily workflow (0.30.0)
+## Decision queue
 
 1. Reload the extension in Chrome, then open **Command center**. Your rules, imported export, source decisions and queued choices are preserved.
-2. For the latest files, click **Load data folder** and select your private `data` directory. It imports `wave/accounting.csv` (or `accounting.csv` at the selected folder root), reads available source evidence, and prepares a fresh count-confirmed Not Reviewed collection. If your saved imports are already current, click **Prepare workspace** instead.
+2. Click **Scan Wave**. Optionally expand **Optional data: history and purchase details**, click **Load data folder** and select your private `data` directory. It optionally imports `wave/accounting.csv` (or `accounting.csv` at the selected folder root), reads available source evidence, and prepares a fresh count-confirmed Not Reviewed collection. You can always click **Scan Wave** without importing data.
 3. Review the category and description suggestions. Type in **Category** to search exact names, choose the treatment for money in, or edit the description. Expand **Included records** to exclude an exception. **Confirm locally** queues your choice and opens the next group; **Set aside** saves difficult work for later. C confirms, S defers, Z undoes the last local confirmation; shortcuts stay off while typing.
-4. **Pending queue** lets you inspect, Edit or Undo choices. **Queue approved-rule suggestions** stages supported approved-rule or stated-policy choices locally; it does not execute anything or approve new historical proposals.
-5. Click **Execute queued decisions** (or Ctrl+Enter) when ready. Saves run sequentially through the existing live checks, editor and saved-result verification. Existing Wave suggestions matching an approved rule can use the thumbs-up path when no description change is requested. Unsupported Review updates layouts remain explained preflight exceptions. The overall backlog is collected once after the batch. Stop finishes the current record. No native Wave bulk-save API is claimed.
+4. **Pending queue** lets you inspect, Edit or Undo choices. **Queue known suggestions** stages supported approved-rule or stated-policy choices locally; it does not execute anything or approve new historical proposals.
+5. Click **Run queued decisions** (or Ctrl+Enter) when ready. Saves run sequentially through the existing live checks, editor and saved-result verification. Existing Wave suggestions matching an approved rule can use the thumbs-up path when no description change is requested. Unsupported Review updates layouts remain explained preflight exceptions. The overall backlog is collected once after the batch. Stop finishes the current record. No native Wave bulk-save API is claimed.
 
-**Confirm only changes local state.** It makes no Wave calls, does no full scan/source/history analysis, and coalesces rapid local writes. A prepared snapshot and the pending queue are cached separately per business. Changed imports, rules, source choices or category catalogs require preparation again, without discarding queued decisions. Execution revalidates their original export and source evidence.
+**Confirm only changes local state.** It makes no Wave calls, does no full scan/source/history analysis, and coalesces rapid local writes. A prepared snapshot and the pending queue are cached separately per business. Changed imports, rules, source choices or category catalogs require preparation again, without discarding queued decisions. Execution revalidates their original CSV or live-field snapshot and source evidence.
 
 Source additions retain the original bank description and use item classifications, recipients or payment notes. Product identity alone does not prove business use. Proposed additions are capped at 255 characters; the editor checks Wave's actual field limit before changing anything. Refunds use their purchase category with Wave's refund or personal-deposit submenu; incoming records require an explicit treatment. Existing merchant rules remain outgoing-only. Human-confirmed income and personal deposit choices are scoped to their exact records.
 
-**Exceptions** separates unsupported structures and changed or uncertain attempts from ordinary review. Fee-adjusted candidates show explicit source gross, net and fees. Unequal pairs cannot use the equal-amount transfer executor; they require a supported split/fee allocation in Wave. Loan principal/interest, mixed-category purchases, ambiguous source allocations and missing CSV records remain exceptions rather than invented classifications.
+**Exceptions** separates unsupported structures and changed or uncertain attempts from ordinary review. Fee-adjusted candidates show explicit source gross, net and fees. Unequal pairs cannot use the equal-amount transfer executor; they require a supported split/fee allocation in Wave. Loan principal/interest, mixed-category purchases, ambiguous source allocations and unreadable live records remain exceptions rather than invented classifications.
 
 An execution checkpoint is saved before each record. Safe preflight failures go to attention and permit later records; uncertain saves stop the run and stay locked across reloads. **Recheck saved result** reads the existing record without repeating the save. An interrupted executing receipt also stays locked until rechecked. Completed saves are not automatically replayed.
 
 Preparation uses the latest explicit reviewed evidence and the current Not Reviewed backlog. A historical scan with Unknown statuses does not prove reviewed bookkeeping; absence from Not Reviewed is not a saved-result verification. Transactions before your working period remain excluded. Existing rules and legacy receipts are preserved.
 
-Development checks: `node --test`; `/extension/editor-fixture.html` exercises real DOM editing against synthetic dialogs; `/extension/command-fixture.html` simulates preparation, local confirmation, reload, group exceptions, queued execution and lost-response recovery. None changes real Wave records. All financial files, source evidence and derived review packages remain ignored locally.
+Development checks: `node --test`; `/extension/editor-fixture.html` exercises real DOM editing against synthetic dialogs; `/extension/command-fixture.html` (append `#live-only` for no-CSV checks) simulates preparation, local confirmation, reload, group exceptions, queued execution and lost-response recovery. None changes real Wave records. All financial files, source evidence and derived review packages remain ignored locally.
 
-### New transactions after your last export (0.30.1)
-
-Prepare workspace scans Wave but does not download a new accounting export or execute choices. The Command center displays the number of approved-rule items ready to queue. Click **Queue approved-rule suggestions (N)**, then **Execute queued decisions** to apply and review those records.
-
-A prominent warning lists records missing from the imported CSV and the CSV's latest transaction date. Use **Open Wave data export** to request the emailed ZIP, extract its accounting.csv, then **Import fresh CSV** directly in the Command center. Importing automatically prepares the updated live backlog. Existing rules, source evidence and queued decisions remain saved; changed queued snapshots still need attention. Live-only records cannot be executed without their export postings. Import does not change Wave.
 
 ## Advanced tools and earlier workflows
 
-The reference sections below describe retained collection, analysis, manual runners and troubleshooting capabilities. They are under Advanced tools unless available in Session or Rule library. The daily workflow above replaces the previous immediate per-group execution flow.
+The reference sections below describe retained collection, analysis, manual runners and troubleshooting capabilities. They are under Advanced tools unless available in Connections or Rule library. The daily workflow above replaces the previous immediate per-group execution flow.
 
 ### Earlier workspace layout
 
@@ -49,7 +55,7 @@ The blue theme uses consistent buttons, checkboxes, collapsible cards, and scrol
 
 ## Reloading after an update
 
-The solver now saves the working session locally in IndexedDB, including the imported CSV. Selected business, transaction, filters, draft shortlist, unfinished rule form, and chart names return after a reload. Existing matching Wave tabs are reconnected. Import a fresh CSV for new bookkeeping work; the restored export is labeled with its original import time. Clear imported session removes the saved CSV and draft plan while preserving rules, selected business, and chart names. No additional permissions are required.
+The solver now saves the working session locally in IndexedDB, including the imported CSV. Selected business, transaction, filters, draft shortlist, unfinished rule form, and chart names return after a reload. Existing matching Wave tabs are reconnected. Scan Wave for new bookkeeping work; the optional restored export is labeled with its original import time. Clear imported session removes the saved CSV and draft plan while preserving rules, selected business, and chart names. No additional permissions are required.
 
 Reload the extension at chrome://extensions. Its existing solver tab refreshes automatically. Clicking the extension icon also reuses and refreshes the existing solver tab. When upgrading from 0.3.1 or earlier, select the business and import once after installing this version because earlier versions did not save the session.
 

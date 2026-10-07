@@ -16,7 +16,7 @@ See [the extension guide](extension/README.md) for account-name collection, rule
 
 ## Workspace
 
-**Bookkeeping** contains Session, Command center and Rule library. **Advanced tools** holds collectors, legacy runners, historical analysis and diagnostics. Sessions and rules stay saved while switching workspaces. The blue interface uses consistent controls and scrollable tables across window sizes.
+**Bookkeeping** opens the Command center for **Scan Wave → confirm groups → Run queued decisions**. Ordinary daily work does not require a CSV import. Connections and Rule library are secondary views; history and purchase-source imports are optional. **Advanced tools** holds collectors, legacy runners, historical analysis and diagnostics. Sessions and rules stay saved while switching workspaces. The blue interface uses consistent controls and scrollable tables across window sizes.
 
 ## Local data
 

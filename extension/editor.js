@@ -1,11 +1,13 @@
+import {simpleRecord,assertLiveStructure} from './live-records.js';
 import {approvedCommandRecord} from './command-center.js';
 import {approvedRefund} from './operator-decisions.js';
 import { compareLive } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
 export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
-  if (sample || !business) throw new Error('Select a real Wave business and export first.');
-  if (!transaction || (!approvedRefund(transaction)&&!approvedCommandRecord(transaction) && (transaction.kind !== 'Merchant rule' || transaction.direction !== 'out')) || transaction.postings.length !== 2 || transaction.categories.length !== 1 || !transaction.primary || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
+  assertLiveStructure(transaction,snapshot);
+  if (sample || !business) throw new Error('Select a real Wave business first.');
+  if (!transaction || (!approvedRefund(transaction)&&!approvedCommandRecord(transaction) && (transaction.kind !== 'Merchant rule' || transaction.direction !== 'out')) || !simpleRecord(transaction) || transaction.amount <= 0) throw new Error('Apply currently supports only single-category merchant purchases.');
   if (!categories.includes(transaction.proposed)) throw new Error('Collect the exact category name from Chart of Accounts first.');
   let entry;
   if(approvedRefund(transaction)||approvedCommandRecord(transaction)){if((transaction.commandDecision||transaction.operatorDecision).business!==business)throw Error('Refund decision belongs to another business.');entry={category:transaction.proposed,requestReviewAfterMatch:true};}
@@ -22,10 +24,11 @@ export function prepareCategoryEdit(transaction, snapshot, { business, sample, s
   if(approvedRefund(transaction)&&(groups.length!==1||!['Expenses','Equity'].includes(groups[0].name)))throw Error('Collect category names before applying this refund.');
   const treatment=transaction.commandDecision?.treatment||transaction.intent;
   const categoryPath=treatment==='refund'?[personal?'Deposit from Personal':'Refund for Expense']:treatment==='personal-deposit'?['Deposit from Personal']:treatment==='income'?[]:personal?['Personal Expense or Withdrawal']:[];
-  return { business, id: transaction.id, category: entry.category, categoryPath,refund:approvedRefund(transaction)||['refund','personal-deposit'].includes(transaction.commandDecision?.treatment),description:transaction.approvedDescription,expected: { ...snapshot.fields } };
+  return { business,liveOnly:transaction.origin==='wave-live', id: transaction.id, category: entry.category, categoryPath,refund:approvedRefund(transaction)||['refund','personal-deposit'].includes(transaction.commandDecision?.treatment),description:transaction.approvedDescription,expected: { ...snapshot.fields } };
 }
 
 export function verifyCategoryResult(transaction, snapshot, business, category) {
+  try{assertLiveStructure(transaction,snapshot);}catch(e){return {categoryVerified:false,reviewedVerified:false,descriptionVerified:false,message:e.message};}
   const description=transaction.approvedDescription??transaction.description;
   const result = compareLive({ ...transaction, description,categories: [category] }, snapshot);
   const categoryVerified = snapshot.identity?.business === business && !snapshot.problems?.length && result.checks.every(c => c.state === 'Match');
@@ -101,6 +104,7 @@ export async function editWaveTransaction(request, testContext) {
   }
   function assertFields(category) {
     identity(); const dialog = root();
+    if(request.liveOnly){const currencySet=new Set();for(let container=control(dialog,'Amount').parentElement;container&&container!==dialog;container=container.parentElement){if([...container.querySelectorAll('label,span')].some(el=>!el.children.length&&['Date','Description','Account','Type','Category'].includes(tidy(el.textContent))))break;for(const el of [...container.querySelectorAll('*')].filter(el=>visible(el)&&!el.children.length&&/^(?:USD|CAD|EUR|GBP|AUD)$/i.test(tidy(el.textContent))))currencySet.add(tidy(el.textContent).toUpperCase());if(currencySet.size)break;}const currencies=[...currencySet];if(currencies.length!==1||currencies[0]!=='USD'||buttons(dialog,['Split transaction']).length!==1||buttons(dialog,['Remove split','Add split','Add another split','Delete split']).length)throw Error('Live-only currency or record structure changed. Nothing further clicked.');}
     for (const name of ['Date','Description','Account','Type','Amount','Category']) {
       const actual = value(control(dialog, name)), expected = name === 'Category' ? category : name==='Description'&&descriptionUpdated?request.description:request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };

@@ -1,7 +1,8 @@
+import {simpleRecord} from './live-records.js';
 // Rules match descriptive words, never arbitrary substrings or reference codes.
 export const normalize = value => String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function merchantText(description) {
-  return String(description).replace(/\s+["“][\s\S]*$/, '').replace(/\s+(?:REF(?:ERENCE)?\b\s*(?:#|NUMBER\s*:)?|CARD\s|ATM ID\s|WEB ID\s|[SP]\d{10,})[\s\S]*$/i, '')
+  return String(description).replace(/\s+["“][\s\S]*$/, '').replace(/\s+(?:REF(?:ERENCE)?\b\s*(?:#|NUMBER\s*:)?|CARD\s+(?!payment\b)|ATM ID\s|WEB ID\s|[SP]\d{10,})[\s\S]*$/i, '')
     .replace(/^(?:PURCHASE(?: INTL)?|RECURRING PAYMENT|DEBIT CARD) AUTHORIZED ON \d{2}\/\d{2}\s*/i, '')
     .replace(/^Recurring Payment\s*-\s*/i, '').trim();
 }
@@ -51,7 +52,7 @@ export function ruleFor(description, rules, transaction = null, business = null)
   return new Set(matches.map(r => r.category)).size === 1 ? matches[0] : undefined;
 }
 export function nonPurchaseReason(t) {
-  if (!t.primary || !t.amount || t.existingTransfer || t.postings.length !== 2 || t.categories.length !== 1) return 'Multiple, missing, or split accounting postings';
+  if (!t.amount || !simpleRecord(t)) return 'Multiple, missing, or split accounting postings';
   if (/loan/i.test(t.primary.type)) return 'Loan account movement';
   if (t.direction !== 'out') return /return|refund|credit reversal/i.test(t.description) ? 'Incoming refund or return' : 'Incoming movement';
   if (/\b(return|refund|reversal)\b/i.test(t.description)) return 'Refund or reversal wording';

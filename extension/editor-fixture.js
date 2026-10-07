@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
+function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -16,6 +16,7 @@ function fixture({ checkboxReview=null, ariaReview=false, noReview=false, custom
     } else field.value = original[name.toLowerCase()];
     wrapper.append(label,field); dialog.append(wrapper);
   }
+  if(liveSimple){const button=document.createElement('button');button.textContent=liveSplit?'Add another split':'Split transaction';dialog.append(button);const code=document.createElement('span');code.textContent=currency;dialog.querySelector('[aria-label=Amount]').parentElement.append(code);}
   let selected = original.category, reviewed = confirmedReviewed, saves = 0;
   const category = dialog.querySelector('[aria-label="Category"]');
   category.onchange = () => { selected = category.value; if (reviewEnablesOnCategory) mark.disabled = false; };
@@ -114,5 +115,8 @@ document.getElementById('run').onclick = async () => {
   const changedDescription='Test Store — fictional source detail';
   await check('Description enrichment uses approved text without changing original identity',{custom:true},(r,s)=>!r.problem&&s.saves===1,{...request,description:changedDescription});
   await check('Blank description is rejected before category changes or Save',{},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,description:' '});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 38 editor checks passed';
+  await check('Live-only simple record applies and reviews with explicit USD',{liveSimple:true},(r,s)=>!r.problem&&s.saves===1,{...request,liveOnly:true});
+  await check('A newly split live-only record cannot click Save',{liveSimple:true,liveSplit:true},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
+  await check('A changed live-only currency cannot click Save',{liveSimple:true,currency:'CAD'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 41 editor checks passed';
 };

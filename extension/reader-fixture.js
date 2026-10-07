@@ -5,6 +5,7 @@ const target = document.getElementById('fixture'), output = document.getElementB
 const url = 'https://next.waveapps.com/11111111-1111-1111-1111-111111111111/transactions/1000000000000000001?status=NOT_VERIFIED';
 const field = (name, value, type = 'text') => `<div><label for="${name}">${name}</label><input id="${name}" type="${type}" value="${value}"></div>`;
 const nativeFields = field('Date','2026-10-02','date') + field('Description','PURCHASE AUTHORIZED ON 10/01 Amazon web service aws.amazon.co WA LONG REFERENCE') + field('Account','Sample Checking') + field('Type','Withdrawal') + field('Amount','2.01') + field('Category','Computer Hosting');
+const nativeUSD=nativeFields.replace(field('Amount','2.01'),field('Amount','2.01').replace('</div>','<span>USD</span></div>'));
 const modal = (body = nativeFields, attrs = 'role="dialog"') => `<section ${attrs}><h2>Edit transaction</h2>${body}<button>Save</button><button>Cancel</button></section>`;
 let passed = 0, failed = 0;
 function check(name, html, assert, pageUrl = url) {
@@ -20,6 +21,9 @@ function check(name, html, assert, pageUrl = url) {
 }
 function equal(actual, expected) { if (actual !== expected) throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); }
 check('Native labels, full description, exact ID, no review inference from filter', modal(), s => { equal(s.fields.amount,'2.01'); equal(s.fields.date,'2026-10-02'); equal(s.fields.account,'Sample Checking'); equal(s.identity.transaction,'1000000000000000001'); equal(s.fields.description.includes('LONG REFERENCE'),true); equal(s.reviewed,'Unknown'); });
+check('Live-only structure and explicit currency are observed read-only',modal(nativeUSD+'<button>Split transaction</button>'),s=>{equal(s.currency,'USD');equal(s.structure.singleCategory,true);equal(s.structure.split,false);});
+check('Split controls prevent a live-only simple-record baseline',modal(nativeFields+'<span>USD</span><button>Add another split</button>'),s=>{equal(s.structure.singleCategory,false);equal(s.structure.split,true);});
+check('Missing currency is unknown rather than assumed USD',modal(),s=>equal(s.currency,null));
 check('ARIA-named controls', modal('<input aria-label="Date" value="2026-10-02"><input aria-label="Amount" value="2.01"><input aria-label="Description" value="Amazon"><button aria-label="Category">Computer Hosting</button>'), s => { equal(s.fields.category,'Computer Hosting'); equal(s.fields.amount,'2.01'); });
 check('Custom dropdown wrappers and calendar decoration', modal('<div><div>Date</div><div><input value="2026-10-02"><button>Calendar</button></div></div><div><div>Amount</div><div><button>USD</button><input value="2.01"></div></div><div><div>Category</div><button role="combobox">Computer Hosting</button></div>'), s => { equal(s.fields.date,'2026-10-02'); equal(s.fields.amount,'2.01'); equal(s.fields.category,'Computer Hosting'); });
 check('Visible duplicate named fields fail closed', modal('<input aria-label="Amount" value="2.01"><input aria-label="Amount" value="3.01">'), s => { equal(s.fields.amount,''); equal(s.problems.some(p=>p.includes('multiple visible')),true); });
@@ -100,5 +104,10 @@ await chartCheck('Liabilities counter 19 accepts 20 exact rows with 18 edit icon
   }
   for(const tab of target.querySelectorAll('[role="tab"]')) tab.onclick=()=>select(Number(tab.dataset.group)); select(0);
   const result=await readWaveChart(business,chartContext); validateCatalog(result,business); equal(result.groups[1].accounts.length,20); equal(result.groups[1].expected,19); equal(result.groups[1].accounts.filter(a=>a.counted).length,18);
+});
+await chartCheck('Account sections retain cash/card identities without classifying loan sections as cards',async()=>{
+ target.innerHTML=chartGroups.map((name,index)=>'<li role=tab aria-selected='+String(index===0)+' data-group='+index+'>'+name+'<span>3</span></li>').join('')+'<div id=sectionRows></div>';
+ function select(index){for(const tab of target.querySelectorAll('[role=tab]'))tab.setAttribute('aria-selected',String(Number(tab.dataset.group)===index));document.getElementById('sectionRows').innerHTML='<table>'+['Cash and Bank','Credit Cards','Loans and Lines of Credit'].map((section,i)=>'<tr><td colspan=4>'+section+'<svg><title>help icon</title></svg></td></tr><tr><td></td><td><span class=chart-of-accounts-table__account-name-column><span>'+chartGroups[index]+' sample '+i+'</span></span></td><td></td><td><svg class=chart-of-accounts-table__actions__edit-icon></svg></td></tr>').join('')+'</table>';}
+ for(const tab of target.querySelectorAll('[role=tab]'))tab.onclick=()=>select(Number(tab.dataset.group));select(0);const result=await readWaveChart(business,chartContext);validateCatalog(result,business);equal(result.groups[0].accounts[0].section,'Cash and Bank');equal(result.groups[0].accounts[1].section,'Credit Cards');equal(result.groups[0].accounts[2].section,'Loans and Lines of Credit');
 });
 target.replaceChildren(); document.getElementById('summary').textContent = `${passed} passed, ${failed} failed. These mocks do not establish compatibility with live Wave.`;

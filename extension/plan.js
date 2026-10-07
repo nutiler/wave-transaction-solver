@@ -1,4 +1,5 @@
 export function recordSnapshot(t) {
+  if(t.origin==='wave-live')return {origin:t.origin,business:t.liveBusiness,id:t.id,date:t.date,description:t.description,account:t.primary?.account,accountId:t.primary?.accountId||null,accountType:t.primary?.type,amountCents:t.amount,direction:t.direction,categories:[...t.categories],postings:[],liveBaseline:t.liveBaseline};
   return { id: t.id, date: t.date, description: t.description, account: t.primary?.account || null, accountId: t.primary?.accountId || null, accountType: t.primary?.type || null, amountCents: t.amount, direction: t.direction, categories: [...t.categories].sort(), postings: t.postings.map(p => ({ account: p.account, accountId: p.accountId, type: p.type, group: p.group, debitCents: p.debit, creditCents: p.credit, modified: p.modified })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))) };
 }
 export function actionable(t) { return ['Merchant rule', 'Transfer candidate'].includes(t.kind) && !!t.proposed && !!t.primary; }

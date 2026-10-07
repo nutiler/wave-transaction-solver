@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.30.1",
-  "description": "Local export analysis and verified batches of approved-rule expenses and existing transfer pairs in Wave.",
+  "version": "0.31.0",
+  "description": "Live Wave scanning, local decision queues and verified category/review batches. Optional history and purchase evidence.",
   "permissions": [
     "storage",
     "scripting"

@@ -8,7 +8,7 @@ export function validateCatalog(catalog, business) {
     const group = groups[0];
     if (!Number.isInteger(group.expected) || group.expected < 0 || !Array.isArray(group.accounts) || group.accounts.length < group.expected) throw new Error(`${name}: fewer account names than the Wave tab count.`);
     for (const account of group.accounts) {
-      if (typeof account.name !== 'string' || !account.name.trim() || account.name.length > 300 || account.key !== JSON.stringify([name, account.name]) || keys.has(account.key) || (account.counted !== undefined && typeof account.counted !== 'boolean') || (account.number !== null && (typeof account.number !== 'string' || account.number.length > 100))) throw new Error('Invalid or duplicate chart account.');
+      if ((account.section!==undefined&&account.section!==null&&(typeof account.section!=='string'||account.section.length>200)) || typeof account.name !== 'string' || !account.name.trim() || account.name.length > 300 || account.key !== JSON.stringify([name, account.name]) || keys.has(account.key) || (account.counted !== undefined && typeof account.counted !== 'boolean') || (account.number !== null && (typeof account.number !== 'string' || account.number.length > 100))) throw new Error('Invalid or duplicate chart account.');
       keys.add(account.key);
     }
   }

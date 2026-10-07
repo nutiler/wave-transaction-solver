@@ -73,4 +73,6 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--input);border:1
 /* Navigation scrolls normally so it cannot cover the decision fields. */
 .workspace-nav{position:static}.command-body>p{margin:8px 0}.command-body>.bar{margin:10px 0}.command-lead{font-size:13px}#usage-transactions>.group-title{display:none}@media(min-width:601px){.usage-steps{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
-.command-import-warning{margin:12px 0;border-color:#aa875b;background:#443d32}.command-import-warning p{margin:0 0 10px;color:#ffe4b8}.command-import-warning .bar{margin:0}
+
+/* Daily navigation is a set of destinations, not mandatory setup steps. */
+.usage-steps{gap:10px}.usage-step{min-height:62px;padding:12px}.usage-step:not(:last-child)::after{content:none}.command-layout[data-mode=pending],.command-layout[data-mode=exceptions]{grid-template-columns:minmax(0,1fr)}.command-body>.setup-options{margin:10px 0}.command-body>.setup-options button{margin:8px 8px 0 0}

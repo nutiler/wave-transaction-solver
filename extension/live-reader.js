@@ -87,6 +87,10 @@ export function readWavePage(testContext) {
     clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
     return (tidy(clone.textContent) || tidy(el.getAttribute('aria-label'))).replace(/^[✓✔]\s*/, '');
   };
+  const structuralButtons=[...root.querySelectorAll('button,[role=button]')].filter(visible).map(buttonText);
+  const split=structuralButtons.some(text=>/^(?:Remove split|Add (?:another )?split|Delete split)$/i.test(text))||/^(?:Split transaction|Multiple categories)$/i.test(result.fields.category||'');
+  const currencies=new Set();for(const label of fieldLabels.filter(el=>tidy(el.textContent).toLowerCase()==='amount')){for(let container=label.parentElement;container&&container!==root;container=container.parentElement){if(fieldLabels.some(other=>other!==label&&container.contains(other)&&tidy(other.textContent).toLowerCase()!=='amount'))break;for(const el of [...container.querySelectorAll('*')].filter(el=>visible(el)&&!el.children.length&&/^(?:USD|CAD|EUR|GBP|AUD)$/i.test(tidy(el.textContent))))currencies.add(tidy(el.textContent).toUpperCase());if(currencies.size)break;}}result.currency=currencies.size===1?[...currencies][0]:null;
+  result.structure={singleCategory:!split&&!!result.fields.category&&structuralButtons.filter(text=>/^Split transaction$/i.test(text)).length===1,split};
   result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(buttonText).filter(text => /^(Save|Cancel|Reviewed|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));
   // Do not infer reviewed status from the list filter, bold font or suggestion dots.
   // An action checkbox saying "Mark as reviewed" is not proof of saved state.

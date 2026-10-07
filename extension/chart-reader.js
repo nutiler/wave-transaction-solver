@@ -25,12 +25,12 @@ export async function readWaveChart(expectedBusiness, testContext) {
   function readRows(groupName) {
     structuredRows = false; unreadableRows = 0;
     const rows = new Map();
-    function add(number, name, counted = true) {
+    function add(number, name, counted = true, section = null) {
       if (!name || /^Last transaction/i.test(name)) return;
       // The first column is an optional account number, not a Wave API ID.
       // Use a local name key so blank and repeated account numbers are supported.
       const key = JSON.stringify([groupName, name]);
-      rows.set(key, { key, number: number || null, name, counted });
+      rows.set(key, { key, number: number || null, name, counted,section });
     }
     const waveRows = [...doc.querySelectorAll('tr')].filter(row => visible(row) && row.querySelector('.chart-of-accounts-table__account-name-column'));
     if (waveRows.length) {
@@ -41,7 +41,8 @@ export async function readWaveChart(expectedBusiness, testContext) {
         const nameNode = [...nameColumn.children].find(el => el.tagName === 'SPAN' && visible(el));
         if (!nameNode || !tidy(nameNode.textContent)) { unreadableRows++; continue; }
         const editable = !!row.querySelector('.chart-of-accounts-table__actions__edit-icon');
-        add(tidy(cells[0]?.textContent), tidy(nameNode.textContent), editable);
+        let section=null;for(let previous=row.previousElementSibling;previous;previous=previous.previousElementSibling){if(previous.querySelector('.chart-of-accounts-table__account-name-column'))continue;const clone=previous.cloneNode(true);clone.querySelectorAll('svg,[aria-hidden=true],.sr-only,button').forEach(el=>el.remove());const text=tidy(clone.textContent);if(/^(?:Cash and Bank|Credit Cards?)$/i.test(text)){section=text;break;}if(previous.querySelector('td[colspan]')){section=text&&text.length<=200?text:null;break;}}
+        add(tidy(cells[0]?.textContent), tidy(nameNode.textContent), editable,section);
       }
       if (rows.size !== waveRows.length) unreadableRows++;
       return [...rows.values()];
