@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "description": "Live Wave scanning, local decision queues and verified category/review batches. Optional history and purchase evidence.",
   "permissions": [
     "storage",
@@ -21,11 +21,15 @@
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
   },
   "optional_permissions": [
-    "webRequest"
+    "webRequest",
+    "downloads"
   ],
   "optional_host_permissions": [
     "https://account.venmo.com/*",
     "https://venmo.com/*",
-    "https://www.paypal.com/reports/*"
+    "https://www.paypal.com/reports/*",
+    "https://www.amazon.com/b2b/aba/*",
+    "https://accounting.waveapps.com/settings/export/*",
+    "https://mail.google.com/mail/*"
   ]
 }
