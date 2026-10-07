@@ -10,7 +10,7 @@ A local Chrome extension that prepares Wave exports and Amazon, PayPal and Venmo
 4. Open your Wave business and launch Dandelion's Wave Transaction Solver.
 5. Import accounting.csv from Wave's data export.
 
-Amazon order CSVs, PayPal monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. The Command center combines that evidence with your saved rules and working snapshot. New suggestions remain proposals until you confirm them.
+Amazon order CSVs, PayPal activity CSVs or monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. The Command center combines that evidence with your saved rules and working snapshot. New suggestions remain proposals until you confirm them.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 

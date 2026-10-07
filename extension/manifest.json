@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Live Wave scanning, local decision queues and verified category/review batches. Optional history and purchase evidence.",
   "permissions": [
     "storage",
@@ -25,6 +25,7 @@
   ],
   "optional_host_permissions": [
     "https://account.venmo.com/*",
-    "https://venmo.com/*"
+    "https://venmo.com/*",
+    "https://www.paypal.com/reports/*"
   ]
 }
