@@ -4,7 +4,7 @@ import {venmoDigest} from './venmo.js';
 export const amazonReportURL='https://www.amazon.com/b2b/aba/reports?reportType=items_report_1&dateSpanSelection=MONTH_TO_DATE';
 export const amazonPrivacyURL='https://www.amazon.com/hz/privacy-central/data-requests/preview.html';
 export const amazonReportOrigins=['https://www.amazon.com/b2b/aba/*'];
-export const waveHelperOrigins=['https://accounting.waveapps.com/settings/export/*','https://mail.google.com/mail/*'];
+export const waveHelperOrigins=['https://accounting.waveapps.com/settings/export/*','https://mail.google.com/mail/*','https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/*'];
 export function validRange(start,end){const valid=d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.isFinite(Date.parse(d+'T00:00:00Z'))&&new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;if(!valid(start)||!valid(end)||end<start)throw Error('Choose valid start and end dates.');return {start,end};}
 export function amazonDownloadName(filename,range){const name=String(filename||'').split(/[\\/]/).at(-1);const m=name.match(/^orders_from_(\d{8})_to_(\d{8})_.*\.csv$/i);return !!m&&m[1]===range.start.replaceAll('-','')&&m[2]===range.end.replaceAll('-','');}
 export function amazonDownloadItem(item,range){if(!amazonDownloadName(item.filename,range))return false;return [item.referrer,item.url].some(value=>{try{return new URL(value).origin==='https://www.amazon.com';}catch{return false;}});}
@@ -29,3 +29,32 @@ export async function unpackWaveZIP(input){const bytes=input instanceof Uint8Arr
 export function sameWaveHistory(previous,next){const byID=new Map(next.transactions.map(t=>[t.id,t])),shared=previous.transactions.filter(t=>byID.has(t.id));if(!previous.transactions.length||shared.length<Math.max(1,Math.ceil(previous.transactions.length*0.8)))return false;return shared.every(t=>{const n=byID.get(t.id);return t.date===n.date&&t.direction===n.direction&&t.amount===n.amount&&t.description===n.description&&t.primary?.account===n.primary?.account;});}
 export async function saveWaveArchive(root,bytes,{business,confirmed=false}={}){if(!/^[0-9a-f-]{36}$/i.test(business||''))throw Error('Select the Wave business first.');const parsed=await unpackWaveZIP(bytes),wave=await root.getDirectoryHandle('wave',{create:true});let previous=null;try{previous=await(await wave.getFileHandle('accounting.csv')).getFile();}catch(e){if(e.name!=='NotFoundError')throw e;}const matched=previous?sameWaveHistory(importAccounting(await previous.text()),parsed.dataset):false;if(!matched&&!confirmed)return {needsConfirmation:true,count:parsed.dataset.transactions.length,accounts:[...new Set(parsed.dataset.transactions.map(t=>t.primary?.account).filter(Boolean))]};
  const snapshots=await wave.getDirectoryHandle('exports',{create:true}),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join(''),dir=await snapshots.getDirectoryHandle('export-'+hash.slice(0,16),{create:true});await saveDistinctFile(dir,'wave-export','.zip',bytes);for(const file of parsed.files)await saveDistinctFile(dir,file.name.slice(0,-4),'.csv',file.bytes);if(previous){const history=await wave.getDirectoryHandle('history',{create:true});await saveDistinctFile(history,'accounting','.csv',new Uint8Array(await previous.arrayBuffer()));}await writeFile(wave,'accounting.csv',new TextEncoder().encode(parsed.text));await writeFile(dir,'manifest.local.json',JSON.stringify({format:'wave-solver-wave-export',version:1,business,hash,importedAt:new Date().toISOString(),files:parsed.files.map(f=>f.name),transactionCount:parsed.dataset.transactions.length,historyMatched:matched},null,2));return {hash,count:parsed.dataset.transactions.length,path:'wave/accounting.csv',historyMatched:matched};}
+// Signed export URLs live only in memory, never in checkpoints or diagnostics.
+export async function fetchWaveArchive(value,{fetcher=fetch,current=()=>true,maxBytes=40*1024*1024,timeoutMs=60000}={}){
+ let url;try{url=new URL(value);}catch{throw Error('The Wave export link is invalid.');}
+ if(url.origin!=='https://wave-prod-accounting.s3.amazonaws.com'||!waveDownloadURL(value)||Number(url.searchParams.get('Expires'))*1000<=Date.now()||!Number.isFinite(Number(url.searchParams.get('Expires')))||!url.searchParams.has('Expires'))throw Error('The Wave export link is invalid or expired.');
+ if(!current())throw Error('Stopped before fetching the Wave ZIP.');
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),timeoutMs),stop=setInterval(()=>{if(!current())controller.abort();},200);
+ let reader;try{
+  const response=await fetcher(url.href,{credentials:'omit',redirect:'error',signal:controller.signal,referrerPolicy:'no-referrer'});
+  if(!response.ok||!response.body)throw Error('Wave did not return a downloadable ZIP.');
+  const length=Number(response.headers.get('content-length'));if(length>maxBytes)throw Error('Use a Wave ZIP under 40 MB.');
+  reader=response.body.getReader();const parts=[];let size=0;
+  while(true){if(!current())throw Error('Stopped while fetching the Wave ZIP.');const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>maxBytes)throw Error('Use a Wave ZIP under 40 MB.');parts.push(part.value);}
+  if(!current())throw Error('Stopped before importing the Wave ZIP.');const bytes=new Uint8Array(size);let offset=0;for(const part of parts){bytes.set(part,offset);offset+=part.length;}return bytes;
+ }catch(e){await reader?.cancel().catch(()=>{});if(!current())throw Error('Stopped. Resume uses the existing export request.');if(e.message==='Use a Wave ZIP under 40 MB.')throw e;throw Error('Could not fetch the Wave ZIP directly. Resume or download it from the email and select the ZIP here.');}
+ finally{clearTimeout(timeout);clearInterval(stop);}
+}
+export async function waitWaveMail({read,openLatest,refresh,current=()=>true,onProgress=()=>{},pause=ms=>new Promise(r=>setTimeout(r,ms)),now=()=>Date.now(),timeoutMs=600000,refreshMs=5000}){
+ const started=now();let refreshed=started,initialFailures=0;
+ while(now()-started<timeoutMs){
+  if(!current())throw Error('Stopped. Export request saved for Resume.');
+  const seconds=Math.floor((now()-started)/1000);onProgress('Waiting for Wave export email · '+seconds+' seconds · search refreshes every 5 seconds');
+  let info;try{info=await read();initialFailures=0;}catch(e){if(initialFailures++>=2)throw e;await pause(1000);continue;}
+  if(info.readyLinks)return {ready:true};
+  if(info.searchPage)await openLatest();
+  if(now()-refreshed>=refreshMs){await refresh();refreshed=now();}
+  await pause(1000);
+ }
+ return {waiting:true};
+}

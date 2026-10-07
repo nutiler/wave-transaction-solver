@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {deflateRawSync} from 'node:zlib';
-import {validRange,amazonDownloadName,amazonDownloadItem,waveDownloadURL,waveMailSearch,observeNativeDownload,readInboxFile,findAmazonInbox,saveAmazonReport,saveDistinctFile,crc32,unpackWaveZIP,saveWaveArchive,sameWaveHistory} from '../extension/download-files.js';
+import {validRange,amazonDownloadName,amazonDownloadItem,waveDownloadURL,waveMailSearch,observeNativeDownload,readInboxFile,findAmazonInbox,saveAmazonReport,saveDistinctFile,crc32,unpackWaveZIP,saveWaveArchive,sameWaveHistory,fetchWaveArchive,waitWaveMail} from '../extension/download-files.js';
 import {importAccounting} from '../extension/model.js';
 const headers=['Transaction ID','Transaction Date','Account Name','Transaction Description','Debit Amount (Two Column Approach)','Credit Amount (Two Column Approach)','Account Group','Account Type'];
 const csv=(id='9000000000000000101',amount='10.00')=>[headers,[id,'2026-01-01','Fictional Card','Fictional Shop','',amount,'Liability','Credit Card'],[id,'2026-01-01','Fictional Parts','Fictional Shop',amount,'','Expense','Expense']].map(r=>r.join(',')).join('\n');
@@ -22,5 +22,31 @@ test('CRC mismatch, encryption and advertised decompression bombs are held befor
 test('First or mismatched Wave histories need explicit confirmation and never update accounting.csv silently',async()=>{const root=folder(),bytes=zipFiles(files()),business='00000000-0000-4000-8000-000000000123';const preview=await saveWaveArchive(root,bytes,{business});assert.equal(preview.needsConfirmation,true);assert.equal(root.dirs.get('wave').store.has('accounting.csv'),false);await saveWaveArchive(root,bytes,{business,confirmed:true});const before=await root.dirs.get('wave').store.get('accounting.csv').text();const mismatch=await saveWaveArchive(root,zipFiles(files(csv('9000000000000009999'))),{business});assert.equal(mismatch.needsConfirmation,true);assert.equal(await root.dirs.get('wave').store.get('accounting.csv').text(),before);});
 test('Matching history updates latest CSV only after preserving ZIP, all four files and previous CSV',async()=>{const root=folder(),business='00000000-0000-4000-8000-000000000123',bytes=zipFiles(files());await saveWaveArchive(root,bytes,{business,confirmed:true});const next=zipFiles(files(csv()));const result=await saveWaveArchive(root,next,{business});assert.equal(result.historyMatched,true);const wave=root.dirs.get('wave');assert.equal(wave.dirs.get('history').store.size,1);const exportDir=[...wave.dirs.get('exports').dirs.values()][0];assert.equal(exportDir.store.size,6);assert.ok(exportDir.store.has('bill_items.csv'));assert.ok(![...exportDir.store.values()].some(f=>f.name.includes('Signature')));});
 test('History matching checks ID coverage and financial identity, not category choices',()=>{const previous=importAccounting(csv()),next=importAccounting(csv().replace('Fictional Parts','Fictional Supplies'));assert.equal(sameWaveHistory(previous,next),true);assert.equal(sameWaveHistory(previous,importAccounting(csv('9000000000000009999'))),false);assert.equal(sameWaveHistory(previous,importAccounting(csv('9000000000000000101','11.00'))),false);});
-
 test('Stopping before a native download prevents the provider trigger entirely',async()=>{const d=downloads();let clicked=false;await assert.rejects(observeNativeDownload({downloads:d,inbox:folder(),accept:()=>true,current:()=>false,trigger:async()=>clicked=true}),/Stopped/);assert.equal(clicked,false);assert.equal(d.made.size,0);});
+test('Wave ZIP fetch validates fresh exact-origin links, omits credentials and hides signed failures',async()=>{
+ const url='https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/fictional-export.zip?Expires='+Math.floor((Date.now()+3600000)/1000)+'&Signature=fictional-secret';
+ let calls=0;const bytes=zipFiles(files());assert.deepEqual(await fetchWaveArchive(url,{fetcher:async(value,options)=>{calls++;assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.referrerPolicy,'no-referrer');return new Response(bytes);}}),bytes);
+ for(const bad of [url.replace('wave-prod-accounting.s3.amazonaws.com','evil.example'),url.replace(/Expires=\d+/,'Expires=1'),url.replace(/Expires=\d+/,'Expires=NaN'),url.replace('accounting_exports','receipts'),url.replace('https:','http:')])await assert.rejects(fetchWaveArchive(bad,{fetcher:()=>{calls++;}}),/invalid|expired/);
+ assert.equal(calls,1);await assert.rejects(fetchWaveArchive(url,{fetcher:async()=>{throw Error(url);}}),e=>!e.message.includes('Signature')&&/directly/.test(e.message));
+});
+test('Wave ZIP fetch enforces advertised and streamed byte limits and supports Stop',async()=>{
+ const url='https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/fictional-export.zip?Expires=1999999999';
+ await assert.rejects(fetchWaveArchive(url,{fetcher:async()=>new Response('large',{headers:{'content-length':'100'}}),maxBytes:2}),/under 40 MB/);
+ await assert.rejects(fetchWaveArchive(url,{fetcher:async()=>new Response('large'),maxBytes:2}),/under 40 MB/);
+ let called=false;await assert.rejects(fetchWaveArchive(url,{current:()=>false,fetcher:async()=>{called=true;}}),/Stopped/);assert.equal(called,false);
+ let current=true;await assert.rejects(fetchWaveArchive(url,{current:()=>current,fetcher:async()=>{current=false;return new Response('small');}}),/Stopped/);
+});
+test('Wave ZIP fetch timeout aborts without exposing its URL',async()=>{
+ const url='https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/fictional-export.zip?Expires=1999999999';
+ await assert.rejects(fetchWaveArchive(url,{timeoutMs:5,fetcher:async(value,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error(value))))}),e=>/directly/.test(e.message)&&!e.message.includes('Expires'));
+});
+test('Wave email search refreshes empty results for more than 30 seconds and finds late mail',async()=>{
+ let time=0,refreshes=0,opens=0;const result=await waitWaveMail({now:()=>time,pause:async ms=>time+=ms,refresh:async()=>refreshes++,openLatest:async()=>opens++,read:async()=>({searchPage:true,readyLinks:refreshes>=7?1:0})});
+ assert.equal(result.ready,true);assert.equal(refreshes,7);assert.ok(time>=35000);assert.ok(opens>30);
+});
+test('Wave email waits expire or stop without creating a second export',async()=>{
+ let time=0,refreshes=0;const result=await waitWaveMail({timeoutMs:31000,now:()=>time,pause:async ms=>time+=ms,refresh:async()=>refreshes++,openLatest:async()=>{},read:async()=>({searchPage:true,readyLinks:0})});
+ assert.equal(result.waiting,true);assert.equal(refreshes,6);
+ await assert.rejects(waitWaveMail({current:()=>false,read:async()=>{throw Error('should not read');}}),/Stopped/);
+ let failures=0;await assert.rejects(waitWaveMail({read:async()=>{failures++;throw Error('Wrong mailbox');},pause:async()=>{}}),/Wrong mailbox/);assert.equal(failures,3);
+});

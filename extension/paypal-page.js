@@ -13,9 +13,28 @@ export async function paypalPage(request={},testContext) {
  const reportRows=()=>all('table,[role="table"]').filter(table=>{const headers=[...table.querySelectorAll('thead th,thead td,[role="columnheader"]')].map(text);return ['Report type','Date range','Format','Action'].every(label=>headers.some(h=>h.toLowerCase()===label.toLowerCase()));}).flatMap(table=>[...table.querySelectorAll('tr,[role="row"]')].filter(visible).map(row=>({row,report:identity(row)})).filter(r=>r.report));
  const labelText=e=>{const copy=e.cloneNode(true);copy.querySelectorAll('select,input,button,[role="combobox"]').forEach(child=>child.remove());return text(copy);};
  const label=e=>{const aria=e.getAttribute('aria-label'),ids=(e.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean);return aria||ids.map(id=>text(doc.getElementById(id))).filter(Boolean).join(' ')||(e.labels?[...e.labels].map(labelText).join(' '):'');};
- const field=pattern=>{const candidates=all('select,input:not([type="hidden"]):not([type="password"]),[role="combobox"],button').filter(e=>pattern.test(label(e)||'')||['Transaction type','Date range','Format','Start date','End date'].some(name=>pattern.test(name)&&text(e).toLowerCase().startsWith(name.toLowerCase()+' ')));if(candidates.length===1)return candidates[0];const nearby=all('label,legend').filter(e=>pattern.test(labelText(e))).flatMap(l=>{const parent=l.parentElement;if(!parent)return [];return [...parent.querySelectorAll('select,input:not([type="hidden"]):not([type="password"]),[role="combobox"],button')].filter(visible);});const unique=[...new Set(nearby)];return unique.length===1?unique[0]:null;};
- const chosen=e=>e?.tagName==='SELECT'?text(e.selectedOptions[0]):String(e?.value??text(e)).replace(/^(Transaction type|Date range|Format)\s+/i,'');
- const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||''};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
+ const field=pattern=>{
+  const controls='select,input:not([type="hidden"]):not([type="password"]),[role="combobox"],button';
+  const known=['Transaction type','Date range','Format','Start date','End date','From','To','Start','End'];
+  const candidates=all(controls).filter(e=>pattern.test(label(e)||'')||known.some(name=>pattern.test(name)&&text(e).toLowerCase().startsWith(name.toLowerCase()+' ')));
+  if(candidates.length===1)return candidates[0];
+  const nearby=all('label,legend').filter(e=>pattern.test(labelText(e))).flatMap(l=>[...l.parentElement.querySelectorAll(controls)].filter(visible)),unique=[...new Set(nearby)];
+  if(unique.length===1)return unique[0];
+  const dateFields=all('input:not([type="hidden"]):not([type="password"])').filter(e=>pattern.test(String(e.name||e.id).replace(/[_-]/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^(start|end)$/i,'$1 date')));
+  if(dateFields.length===1)return dateFields[0];
+  // PayPal also uses a small clickable DIV containing the label and selected value.
+  const boxes=all('span,div,p,label').filter(e=>pattern.test(text(e))).map(e=>{
+   for(let parent=e.parentElement,depth=0;parent&&depth<3;parent=parent.parentElement,depth++){
+    const value=text(parent);if(value.length>150||/Create Report|Activity report/i.test(value))break;
+    const nested=[...parent.querySelectorAll(controls)].filter(visible);if(nested.length===1)return nested[0];
+    if(parent.matches('[role="button"],[role="combobox"],[tabindex]')||parent.tagName==='DIV'&&value!==text(e)&&value.toLowerCase().startsWith(text(e).toLowerCase()))return parent;
+   }return null;
+  }).filter(Boolean);
+  const distinct=[...new Set(boxes)];return distinct.length===1?distinct[0]:null;
+ };
+ const startPattern=/^(Start date|From date|From|Start)$/i,endPattern=/^(End date|To date|To|End)$/i;
+ const chosen=e=>e?.tagName==='SELECT'?text(e.selectedOptions[0]):String(e?.value??text(e)).replace(/^(Transaction type|Date range|Format)\s*/i,'');
+ const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||''};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
  if(!request.action||request.action==='read')return snapshot();
  if(request.action==='refresh'){const found=exact(clickable(),'Refresh');if(found.length!==1||found[0].disabled)throw Error('Cannot identify the report Refresh button.');found[0].click();await pause();return snapshot();}
  if(request.action==='create') {
@@ -26,10 +45,32 @@ export async function paypalPage(request={},testContext) {
    e.click();await pause();let choices=exact(all('[role="option"],[role="menuitem"]'),wanted);if(!choices.length)choices=exact(all('button'),wanted);if(!choices.length)choices=exact(all('li'),wanted);if(choices.length!==1)return false;choices[0].click();await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();
   }
   if(!await select(/^Transaction type$/i,'All transactions')||!await select(/^Format$/i,'CSV'))return {notSubmitted:true,message:'Set Transaction type to All transactions and Format to CSV in PayPal, then Resume. Nothing requested.'};
-  const range=field(/^Date range$/i);if(range&&(!field(/^(Start date|From)$/i)||!field(/^(End date|To)$/i))) {for(const option of ['Custom','Custom date range','Custom range']){if(await select(/^Date range$/i,option))break;}}
-  const start=field(/^(Start date|From)$/i),end=field(/^(End date|To)$/i);if(!start||!end||start.tagName!=='INPUT'||end.tagName!=='INPUT')return {notSubmitted:true,message:'Choose Custom date range in PayPal so its Start date and End date inputs are visible, then Resume. Nothing requested.'};
-  for(const [input,iso] of [[start,request.start],[end,request.end]]){const value=input.type==='date'?iso:(request.dateOrder==='dmy'?iso.slice(8,10)+'/'+iso.slice(5,7):iso.slice(5,7)+'/'+iso.slice(8,10))+'/'+iso.slice(0,4);const setter=Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set;setter.call(input,value);input.dispatchEvent(new win.Event('input',{bubbles:true}));input.dispatchEvent(new win.Event('change',{bubbles:true}));input.dispatchEvent(new win.Event('blur',{bubbles:true}));}
-  await pause();if(date(field(/^(Start date|From)$/i)?.value)!==request.start||date(field(/^(End date|To)$/i)?.value)!==request.end||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'Report controls did not retain the requested dates/type/format. Nothing requested.'};
+  const range=field(/^Date range$/i);
+  if(range&&(!field(startPattern)||!field(endPattern))){
+   if(range.tagName==='SELECT'){for(const option of ['Custom','Custom date range','Custom range']){if(await select(/^Date range$/i,option))break;}}
+   else{range.click();await pause();if(!field(startPattern)||!field(endPattern)){
+    let custom=all('[role="option"],[role="menuitem"],button,li').filter(e=>/^(Custom|Custom date range|Custom range)$/i.test(text(e)));
+    if(custom.length===1){custom[0].click();await pause();}
+   }}
+  }
+  const start=field(startPattern),end=field(endPattern);
+  if(!start||!end||start.tagName!=='INPUT'||end.tagName!=='INPUT'||[start,end].some(e=>e.disabled||e.readOnly))return {notSubmitted:true,message:'Open Date range and choose Custom dates. Read/copy report controls with the date panel open, then Resume. Nothing requested.'};
+  for(const [input,iso] of [[start,request.start],[end,request.end]]){
+   const value=input.type==='date'?iso:(request.dateOrder==='dmy'?iso.slice(8,10)+'/'+iso.slice(5,7):iso.slice(5,7)+'/'+iso.slice(8,10))+'/'+iso.slice(0,4);
+   Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
+   for(const kind of ['input','change','blur'])input.dispatchEvent(new win.Event(kind,{bubbles:true}));
+  }
+  await pause();
+  if(date(field(startPattern)?.value)!==request.start||date(field(endPattern)?.value)!==request.end)return {notSubmitted:true,message:'PayPal did not retain the requested start/end dates. Nothing requested.'};
+  // Commit an open custom-date panel before creating the report.
+  let panel=start.parentElement;while(panel&&!panel.contains(end))panel=panel.parentElement;
+  const apply=panel&&panel!==doc.body?[...panel.querySelectorAll('button,[role="button"]')].filter(visible).filter(e=>/^(Apply|Done|Save|Set dates|Confirm)$/i.test(text(e))):[];
+  if(apply.length>1)return {notSubmitted:true,message:'Custom date panel has multiple confirmation controls. Apply the dates manually, then Resume.'};
+  if(apply.length===1){if(apply[0].disabled)return {notSubmitted:true,message:'Custom dates cannot be applied yet. Nothing requested.'};apply[0].click();await pause();}
+  const selectedRange=chosen(field(/^Date range$/i))||'',rangeDates=selectedRange.match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4}/g)||[];
+  const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
+  const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
+  if(!(rangeMatches||inputsMatch&&/^(Custom|Custom date range|Custom range)$/i.test(selectedRange))||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'PayPal’s displayed dates/type/format do not match the requested report. Nothing requested.'};
   const create=exact(clickable(),'Create Report');if(create.length!==1||create[0].disabled)return {notSubmitted:true,message:'Create Report is unavailable. Check the date range in PayPal, then Resume.'};
   create[0].click();await pause();return {submitted:true};
  }
