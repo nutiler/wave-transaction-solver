@@ -56,3 +56,7 @@ test('A captured CSV text response completes native observation immediately and 
  const result=await observeNativeDownload({downloads:d,inbox:folder(),accept:()=>false,trigger:async()=>({file})});
  assert.equal(result.file,file);assert.equal(result.provided,true);assert.equal(d.made.size,0);assert.equal(d.changed.size,0);
 });
+
+test('A clicked provider with no recognizable download exits the start wait and releases listeners',async()=>{const d=downloads();let clock=0;const result=await observeNativeDownload({downloads:d,inbox:folder(),accept:()=>false,trigger:async()=>{},timeoutMs:120000,startTimeoutMs:15000,now:()=>clock,pause:async ms=>clock+=ms});assert.deepEqual(result,{waiting:true,notStarted:true});assert.equal(clock,15000);assert.equal(d.made.size,0);assert.equal(d.changed.size,0);});
+
+test('A recognized in-progress download keeps its full completion wait beyond the startup deadline',async()=>{const d=downloads();let clock=10000,checkpoint;const result=await observeNativeDownload({downloads:d,inbox:folder(),accept:item=>item.filename==='owned.csv',trigger:async()=>d.emit({id:8,startTime:new Date(clock).toISOString(),filename:'owned.csv',state:'in_progress'}),checkpoint:async value=>checkpoint=value,timeoutMs:5000,startTimeoutMs:1000,now:()=>clock,pause:async ms=>clock+=ms});assert.deepEqual(result,{waiting:true});assert.equal(clock,15000);assert.equal(checkpoint.downloadId,8);assert.equal(d.made.size,0);assert.equal(d.changed.size,0);});

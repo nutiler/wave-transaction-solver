@@ -25,6 +25,21 @@ await import('./paypal-app.js');
 $('fixtureRun').onclick=async()=>{const log=[],check=(v,name)=>{if(!v)throw Error(name);log.push('PASS '+name);};try{
  check($('run').disabled,'Missing destination keeps collection disabled');await $('folder').onclick();check(!$('run').disabled,'Saved folder and report tab enable Resume');$('year').value=String(new Date().getFullYear());const originalURL=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;const initialRun=$('run').onclick();check(!$('read').disabled&&!$('readDownload').disabled,'Diagnostics remain available during an active collection');await initialRun;check($('status').textContent.includes('Annual collection finished'),'Available older CSV then annual creation complete');check(creates===1&&downloads===2,'Current-year request created and CSVs saved; PDF skipped');check(URL.createObjectURL===originalURL&&HTMLAnchorElement.prototype.click===originalClick,'Native blob hooks restored');check($('mockType').value==='All transactions'&&$('mockFormat').value==='CSV','Type and format changed and verified');check($('files').textContent.includes('2018/')&&$('files').textContent.includes(new Date().getFullYear()+'/'),'Older and new ranges displayed');const before=downloads;await $('run').onclick();check(downloads===before&&creates===1,'Resume verifies hashes and makes no duplicate downloads or requests');check(!$('run').disabled&&$('stop').disabled,'Busy state released');await $('read').onclick();check(JSON.parse($('diagnostics').textContent).reports.length===3,'Diagnostics parse exact report table rows');check(!$('diagnostics').textContent.includes('https://'),'Diagnostics contain no download links');
  let rejected=false;try{await paypalPage({action:'read'},{...context,location:{...location,pathname:'/signin'}});}catch{rejected=true;}check(rejected,'Signed-out route rejected');$('mockCreate').disabled=true;const outcome=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2025-01-01',end:'2025-12-31'},context);check(outcome.notSubmitted&&creates===1,'Disabled Create never submits a report');$('mockCreate').disabled=false;
+ // Provider action handlers may live on the inner PUI label, not its BUTTON.
+ const originalCreateAction=$('mockCreate').onclick;$('mockCreate').onclick=null;
+ $('mockCreate').setAttribute('data-testid','ActivityCreateReport');
+ $('mockCreate').innerHTML='<div id="button_:fixture">Create Report</div>';
+ $('mockCreate').firstElementChild.onclick=originalCreateAction;
+ const nestedBefore=creates;
+ const nestedPrepared=await paypalPage({action:'prepare',type:'All transactions',format:'CSV',start:'2022-01-01',end:'2022-12-31'},context);
+ check(nestedPrepared.prepared&&creates===nestedBefore,'Preparation never clicks the nested Create Report label');
+ const nestedCreated=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2022-01-01',end:'2022-12-31'},context);
+ check(nestedCreated.clicked&&nestedCreated.submitted&&creates===nestedBefore+1,'Nested PUI Create Report receives one click and its exact report row confirms submission');
+ const nestedReport=(await paypalPage({action:'read'},context)).reports.find(r=>r.start==='2022-01-01');
+ const nestedControl=reportRows.at(-1).querySelector('button'),downloadHandler=nestedControl.onclick;nestedControl.onclick=null;nestedControl.innerHTML='<div>Download</div>';nestedControl.firstElementChild.onclick=downloadHandler;
+ const nestedDownloads=downloads,nestedCSV=await paypalPage({action:'download',...nestedReport},context);
+ check(nestedCSV.text.includes('FAKE20220101')&&downloads===nestedDownloads+1,'Nested Download handler produces a captured CSV instead of waiting for a nonexistent browser download');
+ reportRows.pop().remove();$('mockCreate').replaceChildren(document.createTextNode('Create Report'));$('mockCreate').onclick=originalCreateAction;creates=nestedBefore;
  // Observed provider BUTTONs have an empty value property and anchor-based menus.
  const nativeType=$('mockType').closest('label'),nativeFormat=$('mockFormat').closest('label');nativeType.hidden=nativeFormat.hidden=true;
  const dropdowns=document.createElement('section');dropdowns.innerHTML='<div><label for="dropdownMenuButton_Transactiontype">Transaction type</label><button type="button" id="dropdownMenuButton_Transactiontype">Balance affecting</button><ul hidden aria-labelledby="dropdownMenuButton_Transactiontype"><li><a><span>Balance affecting</span></a></li><li><a><span>All transactions</span></a></li></ul></div><div><label for="dropdownMenuButton_Format">Format</label><button type="button" id="dropdownMenuButton_Format">PDF</button><ul hidden aria-labelledby="dropdownMenuButton_Format"><li><a><span>PDF</span></a></li><li><a><span>CSV</span></a></li></ul></div>';mock.append(dropdowns);
@@ -142,6 +157,17 @@ oldRange.hidden=oldStart.hidden=oldEnd.hidden=false;$('mockCreate').onclick=orig
  check(batchRefreshes===1&&$('status').textContent.includes('Annual collection finished'),'Submitted rows become Download through automatic Refresh, then the batch finishes');
  check(saved.get('paypal:downloader').entries['All transactions:2021-01-01:2021-12-31:CSV'].hash,'The oldest requested CSV is validated and saved locally');
  check(mockTabs.size===1&&mockTabs.has(1),'Completed batch closes its working tab after all requested files save');
+ // Full capacity: preserve unsaved nested CSV controls, then actually click Create.
+ while(reportRows.length<12)addReport((2000+reportRows.length)+'-01-01',(2000+reportRows.length)+'-12-31');
+ const newest=reportRows.find(row=>row.textContent.includes('2024-01-01'));newest.remove();reportRows.splice(reportRows.indexOf(newest),1);addReport('2012-01-01','2012-12-31');
+ delete saved.get('paypal:downloader').entries['All transactions:2024-01-01:2024-12-31:CSV'];
+ for(const row of reportRows){const control=row.querySelector('button');if(control?.onclick){const handler=control.onclick;control.onclick=null;control.innerHTML='<div>Download</div>';control.firstElementChild.onclick=handler;}}
+ const capacityReports=(await paypalPage({action:'read'},context)).reports;let preservedBeforeCreate=false,fullCreate=0;
+ $('mockRefresh').onclick=null;$('mockCreate').onclick=null;$('mockCreate').innerHTML='<div id="button_:capacity">Create Report</div>';
+ $('mockCreate').firstElementChild.onclick=()=>{fullCreate++;preservedBeforeCreate=capacityReports.filter(report=>report.format==='CSV').every(report=>!!saved.get('paypal:downloader').entries[[report.type,report.start,report.end,report.format].join(':')]?.hash);addReport($('mockStart').value,$('mockEnd').value);};
+ $('year').value='2024';await $('run').onclick();
+ check(preservedBeforeCreate&&fullCreate===1&&$('status').textContent.includes('Annual collection finished'),'A full twelve-row list saves nested older CSVs, then clicks nested Create once and finishes without manual Resume');
+
 $('fixtureResult').textContent=log.join('\n');
  }catch(e){$('fixtureResult').textContent=log.join('\n')+'\nFAIL '+e.message;}};
 

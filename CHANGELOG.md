@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.42.0 - Activate nested PayPal actions and explain full-list preservation
+
+- Click the visible inner label of PayPal Create Report and Download controls so handlers on either the label or its enclosing button receive one click. Verify the exact submitted report row as before.
+- A full twelve-report list explicitly shows which existing CSV is being saved before new reports can be created. Preserve this stage in both the helper status and activity display while observing native downloads.
+- A click without any recognizable CSV download exits the startup wait after fifteen seconds with a specific missing-download message; genuine recorded downloads retain their longer completion wait and Resume checkpoint.
+- Synthetic coverage reproduces nested action handlers, preparation without submission, exact submission confirmation, CSV capture and full-list preservation. Signed-in PayPal remains an integration check.
+
 ## 0.41.0 - Keep PayPal requests within the confirmed seven-year window
 
 - Clip the oldest requested year to the rolling seven-year cutoff and skip entirely unavailable years. Subsequent completed years remain Jan 1 through Dec 31; the current year ends today.

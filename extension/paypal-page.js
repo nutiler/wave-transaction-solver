@@ -8,6 +8,7 @@ export async function paypalPage(request={},testContext) {
  const visible=e=>!!e&&e.isConnected&&!e.hidden&&e.getAttribute('aria-hidden')!=='true'&&e.getClientRects().length>0&&win.getComputedStyle(e).visibility!=='hidden';
  const all=selector=>[...doc.querySelectorAll(selector)].filter(visible),clickable=()=>all('button,a,[role="button"]');
  const exact=(elements,value)=>elements.filter(e=>text(e).toLowerCase()===value.toLowerCase());
+ const actionTarget=control=>{const candidates=[...control.querySelectorAll('div,span')].filter(visible).filter(e=>text(e)===text(control));const leaves=candidates.filter(e=>!candidates.some(child=>child!==e&&e.contains(child)));return leaves.length===1?leaves[0]:control;};
  const activate=e=>{if(!e)return;const common={bubbles:true,cancelable:true,view:win,button:0,detail:1};if(win.PointerEvent)e.dispatchEvent(new win.PointerEvent('pointerdown',{...common,buttons:1,pointerId:1,pointerType:'mouse',isPrimary:true}));e.dispatchEvent(new win.MouseEvent('mousedown',{...common,buttons:1}));if(win.PointerEvent)e.dispatchEvent(new win.PointerEvent('pointerup',{...common,buttons:0,pointerId:1,pointerType:'mouse',isPrimary:true}));e.dispatchEvent(new win.MouseEvent('mouseup',{...common,buttons:0}));if(typeof e.click==='function')e.click();else e.dispatchEvent(new win.MouseEvent('click',common));};
  if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('Open the signed-in PayPal Activity download page.');
  if(!all('h1,h2,h3,h4,span,p,div').some(e=>/^Activity report$/i.test(text(e))))throw Error('PayPal reports are not ready. Wait for the Activity report page to load.');
@@ -150,7 +151,7 @@ export async function paypalPage(request={},testContext) {
   if(!(rangeMatches||inputsMatch&&/^(Custom|Custom date range|Custom range)$/i.test(selectedRange))||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'PayPal’s displayed dates/type/format do not match the requested report. Nothing requested.'};
   if(request.action==='prepare')return {prepared:true};
   const create=exact(clickable(),'Create Report');if(create.length!==1||create[0].disabled)return {notSubmitted:true,message:'Create Report is unavailable. Check the date range in PayPal, then Resume.'};
-  submitted=true;create[0].click();await pause();const confirmed=reportRows().some(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');return {clicked:true,submitted:confirmed};
+  submitted=true;activate(actionTarget(create[0]));await pause();const confirmed=reportRows().some(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');return {clicked:true,submitted:confirmed};
  }
  if(request.action!=='download')throw Error('Unsupported PayPal report action.');
  const selected=reportRows().filter(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV'&&x.report.ready);
@@ -167,7 +168,7 @@ export async function paypalPage(request={},testContext) {
  const original=win.URL.createObjectURL,originalClick=win.HTMLAnchorElement.prototype.click,urls=new Set(),captures=[];let error=null;
  win.URL.createObjectURL=function(blob){const url=original.call(this,blob);if(blob instanceof win.Blob&&blob.size<=30*1024*1024){urls.add(url);captures.push(blob.text().then(value=>{if(value.startsWith('PK'))throw Error('PayPal returned a ZIP; extract its CSVs manually into data/paypal.');return value;}));}return url;};
  win.HTMLAnchorElement.prototype.click=function(){if(urls.has(this.href))return;return originalClick.call(this);};
- try{submitted=true;control.click();for(let i=0;i<20&&!captures.length;i++)await pause();if(captures.length!==1)throw Error('No single CSV blob was produced. Download the report manually and drop it in data/paypal.');const value=await captures[0];if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('PayPal left the report page during download. Nothing saved.');return {text:value};}catch(e){error=e;throw error;}finally{win.URL.createObjectURL=original;win.HTMLAnchorElement.prototype.click=originalClick;}
+ try{submitted=true;activate(actionTarget(control));for(let i=0;i<20&&!captures.length;i++)await pause();if(captures.length!==1)throw Error('No single CSV blob was produced. Download the report manually and drop it in data/paypal.');const value=await captures[0];if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('PayPal left the report page during download. Nothing saved.');return {text:value};}catch(e){error=e;throw error;}finally{win.URL.createObjectURL=original;win.HTMLAnchorElement.prototype.click=originalClick;}
  }catch(error){
   if(!request.bridge)throw error;
   const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
