@@ -498,3 +498,12 @@ A Create click alone does not mark a report submitted. The collector reads and r
 Resume migrates earlier click-only checkpoints: ten seconds of complete refreshed list reads can prove an old range absent and allow its creation. A full twelve-row list, loading state or unrecognized row cannot establish absence and stays protected. CSV files are never cleared during this recovery. Missing annual reports are created before existing CSV downloads when list capacity allows; ready exports are preserved before adding to a full list. Completed years use Jan 1 through Dec 31, with the existing seven-year cutoff and current-year partial range.
 
 The date adapter uses observed calendar TD date IDs and nested anchors, dismisses the date popup before Create, and still verifies the displayed range. Advanced diagnostics remain usable during a run. Validation uses synthetic data and browser fixtures; no real signed-in PayPal report was created during development.
+
+
+### Exact PayPal calendar years and button dropdowns (0.39)
+
+Reload the extension and reopen the PayPal helper. The observed Transaction type and Format controls are BUTTONs with empty value properties. Their visible labels now supply the selected values; linked anchor menus and nested labels are selected and verified. Native SELECT controls still work. Disabled and ambiguous options never create reports.
+
+The selected starting year is requested exactly from Jan 1 through Dec 31, including 2019. The planner no longer clips January to a rolling cutoff; PayPal may explicitly reject dates outside its available history. Current-year requests end today. Creation rejects cross-year ranges, including Jan 1 to next Jan 1. Historical cross-year CSVs remain evidence, but only an exact saved All transactions / CSV range satisfies an annual request.
+
+Control preparation happens before preserving existing CSVs from a full list, so an unavailable dropdown or date field fails promptly instead of starting an unrelated download wait. Resume can recover legacy unconfirmed clicks after repeatedly refreshing a full list whose rows are all ready. A previously observed submission missing from a full list, a visible pending report, loading or unrecognized rows still prevent automatic recreation. Development tests are synthetic and do not claim signed-in PayPal success.

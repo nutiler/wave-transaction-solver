@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.39.0 - Read PayPal button dropdowns and request exact calendar years
+
+- Read Transaction type and Format BUTTONs from visible text rather than their empty value property. Select anchor/nested-label menu options in the linked dropdown and verify the resulting label; disabled or ambiguous options remain blocked.
+- Request Jan 1 through Dec 31 for every completed year starting with the selected year, including 2019. Do not clip the requested start or generate January-to-January ranges. Current-year requests end today; provider date rejection remains explicit.
+- Require an exact saved All transactions CSV range for annual completion. Older cross-year reports remain saved evidence without suppressing the exact annual request.
+- Verify report settings before preserving downloads from a full report list. Resume can recover old unconfirmed clicks from a repeatedly refreshed full ready list, while protecting previously confirmed or still-pending reports.
+- Synthetic tests reproduce the supplied empty-valued BUTTON controls, anchor menus, disabled options, 2019 dates, cross-year rejection and full-list recovery. Signed-in PayPal remains an integration check.
+
 ## 0.38.0 - Verify PayPal report submissions and recover absent requests
 
 - Create is a click intent until the exact All transactions / CSV / date-range row appears. Confirm each annual request for up to 30 seconds; the ten-minute download wait starts only for visible report rows. Missing rows produce a specific unconfirmed message.

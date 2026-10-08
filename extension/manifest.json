@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "description": "Live Wave scanning, local decision queues and verified category/review batches. Optional history and purchase evidence.",
   "permissions": [
     "storage",
