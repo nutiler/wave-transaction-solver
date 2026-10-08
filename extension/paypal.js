@@ -6,7 +6,7 @@ export function paypalPeriods(fromYear,today) {
  paypalDate(today);const current=Number(today.slice(0,4));if(!Number.isInteger(fromYear)||fromYear<2000||fromYear>current)throw Error('Choose a starting year through the current year.');
  const cutoff=new Date(today+'T00:00:00Z');const day=cutoff.getUTCDate();cutoff.setUTCFullYear(current-7);if(cutoff.getUTCDate()!==day)cutoff.setUTCDate(0);
  const earliest=cutoff.toISOString().slice(0,10),periods=[];
- for(let year=fromYear;year<=current;year++){const start=year+'-01-01',end=year===current?today:year+'-12-31';periods.push({start,end,partial:start!==year+'-01-01'||end!==year+'-12-31',type:'All transactions',format:'CSV'});}
+ for(let year=Math.max(fromYear,Number(earliest.slice(0,4)));year<=current;year++){const start=year===Number(earliest.slice(0,4))&&earliest>year+'-01-01'?earliest:year+'-01-01',end=year===current?today:year+'-12-31';periods.push({start,end,partial:start!==year+'-01-01'||end!==year+'-12-31',type:'All transactions',format:'CSV'});}
  return {periods,earliest,requestedStart:fromYear+'-01-01',limited:fromYear+'-01-01'<earliest};
 }
 export const paypalReportKey=r=>[r.type,r.start,r.end,r.format].join(':');

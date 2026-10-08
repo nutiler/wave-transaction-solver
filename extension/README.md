@@ -516,3 +516,10 @@ The provider arrow spans supplied during integration testing use `GlyphIcon vx_i
 Dropdown and date controls receive pointer/mouse-down/up and click events, with focus as a fallback for an unopened date menu. An already-open matching option is reused. Fields are reacquired after opening/rendering, and typing notifies key-up handlers before selecting the exact day. When the Date range summary contains two dates, the selected field must also match its committed summary date. A typed value whose summary remains unchanged is rejected.
 
 Read report controls now includes safe calendar metadata: displayed months, day counts and previous/next tags and disabled flags. It does not copy page HTML, credentials or download URLs. Synthetic fixtures cover the supplied arrow classes, pointer-only controls, two visible calendars, December 2025 to Jan 1/Dec 31 2019, following-year advancement and ignored day commits. A signed-in PayPal run is still required to establish live success.
+
+
+### PayPal seven-year cutoff (0.41)
+
+The user reported that PayPal’s seven-year limit caused the calendar-selection block for January 2019. New report plans now stay inside the rolling seven-year window. On October 8, 2026, the oldest request is October 8 through December 31, 2019; 2020 through 2025 use January 1 through December 31, and 2026 ends on the current date. The cutoff moves with each collection date and handles leap days. Entire unavailable years are skipped.
+
+Setup shows the exact oldest partial-year request. Saved files and older ready reports are preserved; those older exports can still provide evidence even though PayPal will not create a new report for that period. Exact-range confirmation and committed-calendar checks remain in force.

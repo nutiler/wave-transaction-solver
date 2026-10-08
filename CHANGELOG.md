@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.41.0 - Keep PayPal requests within the confirmed seven-year window
+
+- Clip the oldest requested year to the rolling seven-year cutoff and skip entirely unavailable years. Subsequent completed years remain Jan 1 through Dec 31; the current year ends today.
+- Show the exact oldest partial-year range in setup, instead of attempting an unavailable January date and failing calendar selection. Older ready CSVs remain collectible as evidence.
+- Cover the moving daily cutoff, leap-day adjustment, January boundaries and later starting years with regression tests.
+
 ## 0.40.0 - Use observed PayPal calendar arrows and verify committed dates
 
 - Activate dropdown and date controls with pointer/mouse-down/up and click events, including menus that act before click. Reuse an already-open matching menu instead of toggling it closed.
