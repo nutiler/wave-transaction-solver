@@ -40,7 +40,7 @@ export async function paypalPage(request={},testContext) {
  };
  const startPattern=/^(Start date|From date|From|Start)$/i,endPattern=/^(End date|To date|To|End)$/i;
  const chosen=e=>e?.tagName==='SELECT'?text(e.selectedOptions[0]):String(e?.value??text(e)).replace(/^(Transaction type|Date range|Format)\s*/i,'');
- const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||''};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
+ const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
  if(!request.action||request.action==='read')return snapshot();
  if(request.action==='refresh'){const found=exact(clickable(),'Refresh');if(found.length!==1||found[0].disabled)throw Error('Cannot identify the report Refresh button.');found[0].click();await pause();return snapshot();}
  if(request.action==='create') {
@@ -51,28 +51,67 @@ export async function paypalPage(request={},testContext) {
    e.click();await pause();let choices=exact(all('[role="option"],[role="menuitem"]'),wanted);if(!choices.length)choices=exact(all('button'),wanted);if(!choices.length)choices=exact(all('li'),wanted);if(choices.length!==1)return false;choices[0].click();await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();
   }
   if(!await select(/^Transaction type$/i,'All transactions')||!await select(/^Format$/i,'CSV'))return {notSubmitted:true,message:'Set Transaction type to All transactions and Format to CSV in PayPal, then Resume. Nothing requested.'};
-  const range=field(/^Date range$/i);
-  if(range&&(!field(startPattern)||!field(endPattern))){
-   if(range.tagName==='SELECT'){for(const option of ['Custom','Custom date range','Custom range']){if(await select(/^Date range$/i,option))break;}}
-   else{range.click();for(let i=0;i<12;i++){await pause();if(field(startPattern)&&field(endPattern))break;}if(!field(startPattern)||!field(endPattern)){
-    let custom=all('[role="option"],[role="menuitem"],button,li').filter(e=>/^(Custom|Custom date range|Custom range)$/i.test(text(e)));
-    if(custom.length===1){custom[0].click();await pause();}
-   }}
+  const rangeExact=()=>{const values=chosen(field(/^Date range$/i)).match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];return values.length===2&&date(values[0])===request.start&&date(values[1])===request.end;};
+  if(!rangeExact()){
+   const range=field(/^Date range$/i);
+   if(range&&(!field(startPattern)||!field(endPattern))){
+    if(range.tagName==='SELECT'){for(const option of ['Custom','Custom date range','Custom range']){if(await select(/^Date range$/i,option))break;}}
+    else{range.click();for(let i=0;i<12;i++){await pause();if(field(startPattern)&&field(endPattern))break;}if(!field(startPattern)||!field(endPattern)){
+     let custom=all('[role="option"],[role="menuitem"],button,li').filter(e=>/^(Custom|Custom date range|Custom range)$/i.test(text(e)));
+     if(custom.length===1){custom[0].click();await pause();}
+    }}
+   }
+   const start=field(startPattern),end=field(endPattern);
+   if(!start||!end||start.tagName!=='INPUT'||end.tagName!=='INPUT'||[start,end].some(e=>e.disabled))return {notSubmitted:true,message:'Open Date range and choose Custom dates. Read/copy report controls with the date panel open, then Resume. Nothing requested.'};
+
+   // Reacquire each controlled input after a real focus/blur and its framework render.
+   const sequence=date(end.value)&&request.start>date(end.value)?[[endPattern,request.end],[startPattern,request.start]]:[[startPattern,request.start],[endPattern,request.end]];
+   for(const [pattern,iso] of sequence){
+    const input=field(pattern);if(!input||input.disabled||input.readOnly)break;
+    const value=input.type==='date'?iso:(request.dateOrder==='dmy'?iso.slice(8,10)+'/'+iso.slice(5,7):iso.slice(5,7)+'/'+iso.slice(8,10))+'/'+iso.slice(0,4);
+    input.focus();Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
+    input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));input.blur();await pause();
+   }
+   const fieldsExact=()=>date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
+   // Some PayPal date pickers update visible text without committing the report range.
+   // Select real calendar days only when text entry failed to commit and no Apply panel exists.
+   let initialPanel=field(startPattern)?.parentElement;while(initialPanel&&!initialPanel.contains(field(endPattern)))initialPanel=initialPanel.parentElement;
+   const hasApply=initialPanel&&initialPanel!==doc.body&&[...initialPanel.querySelectorAll('button,[role="button"]')].filter(visible).some(e=>/^(Apply|Done|Save|Set dates|Confirm)$/i.test(text(e)));
+   const customSelected=/^(Custom|Custom date range|Custom range)$/i.test(chosen(field(/^Date range$/i)));
+   if(!fieldsExact()||!rangeExact()&&!hasApply&&!customSelected){
+    const monthNames=['january','february','march','april','may','june','july','august','september','october','november','december'];
+    const monthValue=e=>{const m=text(e).match(/^([A-Za-z]+)\s+(\d{4})$/),month=m&&monthNames.indexOf(m[1].toLowerCase());return m&&month>=0?Number(m[2])*12+month:null;};
+    const calendar=()=>{
+     let headings=all('h2,h3,h4,span,div,p,[aria-live]').filter(e=>monthValue(e)!==null);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
+     const found=[];for(const heading of headings){for(let panel=heading.parentElement,depth=0;panel&&panel!==doc.body&&depth<5;panel=panel.parentElement,depth++){
+      let days=[...panel.querySelectorAll('button,a,[role="button"],[role="gridcell"],td,span,div')].filter(visible).filter(e=>/^(?:[1-9]|[12]\d|3[01])$/.test(text(e)));days=days.filter(e=>!days.some(child=>child!==e&&e.contains(child)));
+      if(days.length>=7&&days.length<=42){found.push({heading,panel,days,month:monthValue(heading)});break;}
+     }}return found.length===1?found[0]:null;
+    };
+    const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"]');
+    async function pick(pattern,iso){
+     const input=field(pattern);if(!input)return false;input.click();await pause();let cal=calendar();
+     if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){buttons[0].click();await pause();cal=calendar();}}
+     if(!cal)return false;const target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;if(Math.abs(target-cal.month)>120)return false;
+     for(let step=0;cal.month!==target&&step<120;step++){
+      const direction=target<cal.month?-1:1,controls=[...cal.panel.querySelectorAll('button,a,[role="button"],[tabindex],svg,span')].filter(visible).filter(e=>!cal.days.includes(e));
+      let nav=controls.filter(e=>new RegExp(direction<0?'previous|prev|back':'next|forward','i').test([e.getAttribute('aria-label'),e.title,text(e)].join(' ')));
+      if(!nav.length){const header=cal.heading.parentElement,hr=cal.heading.getBoundingClientRect();nav=controls.filter(e=>header.contains(e)&&!text(e).match(/\d/)&&(()=>{const r=e.getBoundingClientRect();return direction<0?r.right<=hr.left:r.left>=hr.right;})());}
+      nav=nav.filter(e=>!nav.some(child=>child!==e&&e.contains(child)));
+      if(nav.length!==1||!enabled(nav[0]))return false;const previous=cal.month;nav[0].click();await pause();cal=calendar();if(!cal||cal.month!==previous+direction)return false;
+     }
+     if(cal.month!==target)return false;const day=Number(iso.slice(8,10)),days=cal.days.filter(e=>Number(text(e))===day&&enabled(e)&&!/(outside|other)[-_ ]?month/i.test(e.className||''));
+     if(days.length!==1)return false;days[0].click();await pause();return date(field(pattern)?.value)===iso;
+    }
+    for(const [pattern,iso] of sequence){if(!await pick(pattern,iso))return {notSubmitted:true,message:'PayPal did not commit the dates and its calendar could not select the exact day. Set the dates in its calendar, then Resume. Nothing requested.'};}
+   }
+   if(!fieldsExact())return {notSubmitted:true,message:'PayPal did not retain the requested start/end dates. Nothing requested.'};
+   // Commit an open custom-date panel before creating the report.
+   let panel=field(startPattern)?.parentElement;while(panel&&!panel.contains(field(endPattern)))panel=panel.parentElement;
+   const apply=panel&&panel!==doc.body?[...panel.querySelectorAll('button,[role="button"]')].filter(visible).filter(e=>/^(Apply|Done|Save|Set dates|Confirm)$/i.test(text(e))):[];
+   if(apply.length>1)return {notSubmitted:true,message:'Custom date panel has multiple confirmation controls. Apply the dates manually, then Resume.'};
+   if(apply.length===1){if(apply[0].disabled)return {notSubmitted:true,message:'Custom dates cannot be applied yet. Nothing requested.'};apply[0].click();await pause();}
   }
-  const start=field(startPattern),end=field(endPattern);
-  if(!start||!end||start.tagName!=='INPUT'||end.tagName!=='INPUT'||[start,end].some(e=>e.disabled||e.readOnly))return {notSubmitted:true,message:'Open Date range and choose Custom dates. Read/copy report controls with the date panel open, then Resume. Nothing requested.'};
-  for(const [input,iso] of [[start,request.start],[end,request.end]]){
-   const value=input.type==='date'?iso:(request.dateOrder==='dmy'?iso.slice(8,10)+'/'+iso.slice(5,7):iso.slice(5,7)+'/'+iso.slice(8,10))+'/'+iso.slice(0,4);
-   Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
-   for(const kind of ['input','change','blur'])input.dispatchEvent(new win.Event(kind,{bubbles:true}));
-  }
-  await pause();
-  if(date(field(startPattern)?.value)!==request.start||date(field(endPattern)?.value)!==request.end)return {notSubmitted:true,message:'PayPal did not retain the requested start/end dates. Nothing requested.'};
-  // Commit an open custom-date panel before creating the report.
-  let panel=start.parentElement;while(panel&&!panel.contains(end))panel=panel.parentElement;
-  const apply=panel&&panel!==doc.body?[...panel.querySelectorAll('button,[role="button"]')].filter(visible).filter(e=>/^(Apply|Done|Save|Set dates|Confirm)$/i.test(text(e))):[];
-  if(apply.length>1)return {notSubmitted:true,message:'Custom date panel has multiple confirmation controls. Apply the dates manually, then Resume.'};
-  if(apply.length===1){if(apply[0].disabled)return {notSubmitted:true,message:'Custom dates cannot be applied yet. Nothing requested.'};apply[0].click();await pause();}
   const selectedRange=chosen(field(/^Date range$/i))||'',rangeDates=selectedRange.match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];
   const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
   const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;

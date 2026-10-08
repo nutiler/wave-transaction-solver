@@ -16,13 +16,14 @@ $('fixtureRun').onclick=async()=>{const log=[],check=(ok,name)=>{if(!ok)throw Er
 
  const originalRange=$('mockRange').closest('label'),originalStart=$('mockStart').closest('label'),originalEnd=$('mockEnd').closest('label');
  originalRange.hidden=originalStart.hidden=originalEnd.hidden=true;
- const custom=document.createElement('div');custom.innerHTML='<p>Order Date</p><button id="date_range_selector_range" role="combobox" aria-controls="mockAmazonMenu">Month to date</button><ul id="mockAmazonMenu" role="listbox" hidden><li role="option"><a>Custom range</a></li></ul><div id="mockDates" hidden><div><p>Start date</p><input id="customStart"></div><div><p>End date</p><input id="customEnd"></div></div>';section.append(custom);
- const combo=custom.querySelector('button'),option=custom.querySelector('[role="option"]');
+ const custom=document.createElement('div');custom.innerHTML='<p>Order Date</p><button id="date_range_selector_range" role="combobox" aria-controls="mockAmazonMenu">Month to date</button><ul id="mockAmazonMenu" role="listbox" hidden><li role="option"><a><span>Custom Range</span></a></li></ul><div id="mockDates" hidden><div><p>Start date</p><input id="customStart"></div><div><p>End date</p><input id="customEnd"></div></div>';section.append(custom);
+ const combo=custom.querySelector('button'),option=custom.querySelector('a');
+ const unrelated=document.createElement('button');unrelated.textContent='Month to date';custom.append(unrelated);
  combo.onclick=()=>custom.querySelector('ul').hidden=false;
- option.onclick=()=>{combo.textContent='Custom range';custom.querySelector('ul').hidden=true;custom.querySelector('#mockDates').hidden=false;};
+ option.onclick=e=>{e.stopPropagation();combo.textContent='Custom range';custom.querySelector('ul').hidden=true;custom.querySelector('#mockDates').hidden=false;};
  const originalGenerate=$('mockGenerate').onclick;$('mockGenerate').onclick=()=>generations++;
  const customResult=await amazonDownloadPage({action:'generate',start:'2025-01-01',end:'2025-12-31'},context);
- check(customResult.submitted&&generations===2&&$('customStart').value==='01/01/2025'&&$('customEnd').value==='12/31/2025','Observed Amazon combobox opens scoped Custom range and locates paragraph-labeled dates');
+ check(customResult.submitted&&generations===2&&$('customStart').value==='01/01/2025'&&$('customEnd').value==='12/31/2025','Amazon clicks the child Custom Range handler and prioritizes the known date control over similar buttons');
  custom.remove();originalRange.hidden=originalStart.hidden=originalEnd.hidden=false;$('mockGenerate').onclick=originalGenerate;
  const providerError=await amazonDownloadPage({action:'read',bridge:true},{...context,location:{...amazonLocation,pathname:'/signin'}});
  check(!!providerError.helperError&&!providerError.helperError.retryable,'Injected provider failure returns actionable details instead of an empty result');
@@ -30,5 +31,18 @@ $('fixtureRun').onclick=async()=>{const log=[],check=(ok,name)=>{if(!ok)throw Er
  const info=await waveExportPage({action:'read',exportURL},waveContext);check(info.accountingExportButtons===1,'Accounting CSV export identified');await waveExportPage({action:'request',exportURL},waveContext);check(requests===1,'Wave request clicks its exact export button once');rejected=false;try{await waveExportPage({action:'request',exportURL:exportURL.replace('123456','654321')},waveContext);}catch{rejected=true;}check(rejected&&requests===1,'Another business export page rejected');
  const mail=document.createElement('section');mail.innerHTML='<button aria-label="Google Account: Fictional (fictional@example.invalid)">Synthetic mailbox</button><h2>Your transactions data export is ready</h2><article data-wave-message><span email="no-reply@waveapps.com">The Wave Team</span><a id="mockWaveLink">Download data export</a></article>';document.querySelector('main').append(mail);const expires=Math.floor((Date.now()+24*3600000)/1000),direct='https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/fictional-export.zip?Expires='+expires;const link=$('mockWaveLink');link.href='https://track.pstmrk.it/3s/'+encodeURIComponent(direct.replace('https://',''))+'/fake';let clicks=0;link.onclick=e=>{e.preventDefault();clicks++;};mail.querySelector('article').setAttribute('data-time',Date.now());const mailContext={...context,root:mail,location:{origin:'https://mail.google.com',pathname:'/mail/u/1/',href:'https://mail.google.com/mail/u/1/#inbox/fake'}},request={mailbox:'fictional@example.invalid',mailIndex:1,requestedAt:new Date().toISOString()};
  const safe=await waveMailPage({...request,action:'read'},mailContext);check(safe.readyLinks===1&&safe.mailboxMatched,'Fresh matching export email is identified');check(!JSON.stringify(safe).includes('Expires')&&!JSON.stringify(safe).includes('example.invalid'),'Email diagnostics omit addresses and signed URLs');await waveMailPage({...request,action:'download'},mailContext);check(clicks===1,'Fresh export link is clicked once');rejected=false;try{await waveMailPage({...request,mailbox:'other@example.invalid',action:'download'},mailContext);}catch{rejected=true;}check(rejected&&clicks===1,'Wrong Gmail mailbox cannot click the link');link.href=direct.replace('Expires='+expires,'Expires=1');check((await waveMailPage({...request,action:'read'},mailContext)).readyLinks===0,'Expired links excluded');link.href='https://evil.example/report.zip';check((await waveMailPage({...request,action:'read'},mailContext)).readyLinks===0,'Unapproved export destination excluded');link.href=direct;mail.querySelector('[email]').setAttribute('email','fake@example.invalid');check((await waveMailPage({...request,action:'read'},mailContext)).readyLinks===0,'Wrong sender excluded');
+ // Gmail header tooltips and the document title may expose the active identity instead of aria-label.
+ mail.querySelector('[email]').setAttribute('email','no-reply@waveapps.com');link.href=direct;
+ const profile=mail.querySelector('button');profile.removeAttribute('aria-label');profile.setAttribute('data-tooltip','Google Account: Fictional (fictional@example.invalid)');
+ check((await waveMailPage({...request,action:'read'},mailContext)).mailboxMatched,'Active Google Account tooltip verifies the mailbox');
+ profile.removeAttribute('data-tooltip');const oldTitle=document.title;document.title='Inbox (2) - fictional@example.invalid - Gmail';
+ check((await waveMailPage({...request,action:'read'},mailContext)).mailboxMatched,'Gmail mailbox title is a valid fallback when the account control has no email');
+ profile.setAttribute('title','Google Account: Other (other@example.invalid)');
+ check((await waveMailPage({...request,action:'read',diagnostics:true},mailContext)).identityStatus==='mismatch','Conflicting title and active account evidence stops lookup');
+ profile.removeAttribute('title');document.title=oldTitle;const decoy=document.createElement('div');decoy.dataset.email=request.mailbox;mail.append(decoy);
+ const waitingIdentity=await waveMailPage({...request,action:'read'},mailContext);
+ check(waitingIdentity.waiting&&!waitingIdentity.mailboxMatched,'A message or generic data-email cannot impersonate the active mailbox');
+ check(!JSON.stringify(waitingIdentity).includes(request.mailbox),'Mailbox diagnostics remain address-free');
+ decoy.remove();profile.setAttribute('aria-label','Google Account: Fictional (fictional@example.invalid)');
  $('fixtureResult').textContent=log.join('\n');
  }catch(e){$('fixtureResult').textContent=log.join('\n')+'\nFAIL '+e.message;}};

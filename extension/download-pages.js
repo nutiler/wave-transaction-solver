@@ -23,10 +23,11 @@ export async function amazonDownloadPage(request={},testContext) {
  const nativeRanges=all('select').filter(e=>[...e.options].some(o=>text(o)==='Custom Range'));
  if(nativeRanges.length===1&&!nativeRanges[0].disabled){const select=nativeRanges[0],custom=[...select.options].filter(o=>text(o)==='Custom Range');if(custom.length===1){Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set.call(select,custom[0].value);select.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();}}
  else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled){
-  const ranges=all('button,[role="combobox"]').filter(e=>e.id==='date_range_selector_range'||/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
+  const known=all('[id="date_range_selector_range"]'),ranges=known.length?known:all('button,[role="combobox"]').filter(e=>/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
   if(ranges.length===1){const range=ranges[0];range.click();await pause();const menu=doc.getElementById(range.getAttribute('aria-controls'));
-   let options=(menu?[...menu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
-   options=options.filter(e=>!options.some(parent=>parent!==e&&parent.contains(e)));
+   let options=(menu?[...menu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li,span,div')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li,span,div')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
+   // Click the innermost label: Amazon attaches its handler to the child, not necessarily the LI.
+   options=options.filter(e=>!options.some(child=>child!==e&&e.contains(child)));
    if(options.length===1){options[0].click();for(let i=0;i<12;i++){await pause();if(field('Start date')&&field('End date'))break;}}
   }
  }
@@ -64,16 +65,22 @@ export async function waveMailPage(request={},testContext) {
  const doc=testContext?.document||document,loc=testContext?.location||location,win=doc.defaultView||window,text=e=>String(e?.innerText||e?.textContent||'').trim().replace(/\s+/g,' '),visible=e=>e?.isConnected&&!e.hidden&&e.getClientRects().length&&win.getComputedStyle(e).visibility!=='hidden',all=s=>[...(testContext?.root||doc).querySelectorAll(s)].filter(visible);
  if(loc.origin!=='https://mail.google.com'||loc.pathname!=='/mail/u/'+request.mailIndex+'/')throw Error('Open the selected Gmail mailbox, then Resume.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.mailbox||''))throw Error('Set the mailbox address for Wave export lookup.');
- const account=all('[aria-label],[data-email]').filter(e=>/^Google Account:/i.test(e.getAttribute('aria-label')||'')||e.getAttribute('data-email')===request.mailbox),owner=account.some(e=>(e.getAttribute('aria-label')||e.getAttribute('data-email')||'').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi)?.some(email=>email.toLowerCase()===request.mailbox.toLowerCase()));
- if(!account.length&&request.action==='read')return {waiting:true,readyLinks:0,searchPage:new URL(loc.href).hash.startsWith('#search/')};
- if(!owner)throw Error('The Gmail account identity could not be matched to the selected export mailbox.');
+ // Identity must come from the active account control or Gmail's own mailbox title, never message text.
+ const emails=value=>(String(value||'').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi)||[]).map(v=>v.toLowerCase());
+ const account=all('a,button,[role="button"]').filter(e=>['aria-label','title','data-tooltip'].some(attr=>/^Google Account\s*:?/i.test(String(e.getAttribute(attr)||'').trim())));
+ const accountEmails=[...new Set(account.flatMap(e=>['aria-label','title','data-tooltip','data-email'].flatMap(attr=>emails(e.getAttribute(attr)))))];
+ const titleMatch=String(doc.title||'').match(/(?:^|\s[-\u2013\u2014]\s)([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})\s*[-\u2013\u2014]\s*Gmail\s*$/i),titleEmail=titleMatch?.[1]?.toLowerCase();
+ const expected=request.mailbox.toLowerCase(),identified=[...new Set([...accountEmails,...(titleEmail?[titleEmail]:[])])],owner=identified.length===1&&identified[0]===expected;
+ const identityInfo={format:'wave-solver-wave-mail-controls',version:2,mailboxMatched:owner,accountControls:account.length,identitySource:accountEmails.length?'account control':titleEmail?'Gmail title':'not available',identityStatus:!identified.length?'waiting':owner?'matched':'mismatch',readyLinks:0,searchPage:new URL(loc.href).hash.startsWith('#search/')};
+ if(!identified.length){if(request.action==='read')return {...identityInfo,waiting:true};throw Error('Wait for Gmail to show its active account identity, then Resume.');}
+ if(!owner){if(request.action==='read'&&request.diagnostics)return identityInfo;throw Error('The Gmail account identity could not be matched to the selected export mailbox. Check the mailbox address and Gmail /u/ account number in Business and mailbox settings.');}
  const subject='Your transactions data export is ready',search=new URL(loc.href).hash.startsWith('#search/');
  const subjectShown=all('h1,h2,.hP').some(e=>text(e)===subject);
  const exports=[];if(subjectShown){const senders=all('[email]');for(const sender of senders){if(sender.getAttribute('email')?.toLowerCase()!=='no-reply@waveapps.com')continue;const message=sender.closest('[data-message-id],.adn,[data-wave-message]');if(!message||!visible(message))continue;const links=[...message.querySelectorAll('a')].filter(visible).filter(a=>text(a)==='Download data export');for(const link of links){let target;try{target=new URL(link.href);if(target.protocol!=='https:'||target.username||target.password)continue;if(target.hostname==='track.pstmrk.it'){const part=target.pathname.match(/^\/3s\/([^/]+)\//)?.[1];if(!part)continue;const decoded=decodeURIComponent(part);target=new URL(decoded.startsWith('https://')?decoded:'https://'+decoded);}if(target.hostname!=='wave-prod-accounting.s3.amazonaws.com'||!/^\/accounting_exports\/[a-z0-9-]+\.zip$/i.test(target.pathname))continue;}catch{continue;}
  const expiry=Number(target.searchParams.get('Expires'))*1000,stamp=Number(message.getAttribute('data-time')||message.getAttribute('data-timestamp'))||Math.max(0,...[...message.querySelectorAll('[data-time],[data-timestamp],span[title]')].map(e=>Number(e.getAttribute('data-time')||e.getAttribute('data-timestamp'))||Date.parse(e.getAttribute('title')||'')||0));
  const requested=Date.parse(request.requestedAt||'');const fresh=Number.isFinite(expiry)&&expiry>Date.now()&&(stamp?stamp>=requested-120000:expiry>=requested+23*3600000);if(fresh)exports.push({link,target:target.href,stamp,expiry});}}
  }
- exports.sort((a,b)=>(b.stamp||b.expiry)-(a.stamp||a.expiry));const info={format:'wave-solver-wave-mail-controls',version:1,mailboxMatched:owner,subjectShown,readyLinks:exports.length,searchPage:search};if(request.action==='read')return info;
+ exports.sort((a,b)=>(b.stamp||b.expiry)-(a.stamp||a.expiry));const info={...identityInfo,subjectShown,readyLinks:exports.length,searchPage:search};if(request.action==='read')return info;
  if(request.action==='openLatest'){if(!search)throw Error('Open the Wave export email search first.');const rows=all('tr[role="row"],[role="row"]').filter(row=>text(row).includes(subject)&&/Wave|no-reply@waveapps.com/i.test(text(row)));if(!rows.length)return {waiting:true};rows[0].click();return {opened:true};}
  if(!['download','getDownload'].includes(request.action))throw Error('Unsupported Wave email helper action.');if(!exports.length)return {waiting:true};if(exports.length>1&&exports[0].stamp===exports[1].stamp&&exports[0].expiry===exports[1].expiry)throw Error('Several equally recent export links exist. Open the exact new message manually.');if(request.action==='getDownload')return {url:exports[0].target};exports[0].link.click();return {clicked:true};
  }catch(error){

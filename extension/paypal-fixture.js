@@ -50,7 +50,35 @@ $('fixtureRun').onclick=async()=>{const log=[],check=(v,name)=>{if(!v)throw Erro
  $('mockCreate').onclick=()=>creates++;
  const dateResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2022-01-01',end:'2022-12-31'},context);
  check(dateResult.submitted&&actualInputs[0].value==='01/01/2022'&&actualInputs[1].value==='12/31/2022','Read-only Date Range input opens From/To despite duplicate provider input IDs');
- actual.remove();oldRange.hidden=oldStart.hidden=oldEnd.hidden=false;$('mockCreate').onclick=originalCreate;
+ actual.remove();
+ // Controlled text fields are recreated after blur, just as a framework render would replace them.
+ const controlled=document.createElement('section');controlled.innerHTML='<div><label>Date range<input readonly value="Since last download"></label></div><div id="controlledPanel"></div>';mock.append(controlled);
+ let committed=['09/30/2026','10/07/2026'];const controlledSummary=controlled.querySelector('input');
+ const renderControlled=()=>{const panel=controlled.querySelector('#controlledPanel');panel.innerHTML='<div><label for="start">From</label><input id="start"></div><div><label for="end">To</label><input id="end"></div>';for(const [i,input] of [...panel.querySelectorAll('input')].entries()){input.value=committed[i];input.addEventListener('blur',()=>{const value=input.value;queueMicrotask(()=>{committed[i]=value;controlledSummary.value=committed.join('-');renderControlled();});});}};
+ renderControlled();$('mockCreate').onclick=()=>creates++;const beforeControlled=creates;
+ const controlledResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2023-01-01',end:'2023-12-31'},context);
+ check(controlledResult.submitted&&creates===beforeControlled+1&&controlledSummary.value==='01/01/2023-12/31/2023','Real blur commits both dates across recreated controlled inputs');controlled.remove();
+ // Reject text-only updates: only selecting actual calendar days commits the provider range.
+ const calendarHost=document.createElement('section');calendarHost.innerHTML='<div><label>Date range<input readonly value="09/30/2026-10/07/2026"></label></div><div><label for="start">From</label><input id="start"></div><div><label for="end">To</label><input id="end"></div><section id="mockCalendar" hidden></section>';mock.append(calendarHost);
+ let selectedDates=['09/30/2026','10/07/2026'],activeDate=0,shownMonth=2026*12+8,monthMoves=0,calendarDays=0,duplicateDay=false,freezeMonth=false;
+ const calendarSummary=calendarHost.querySelector('input'),calendarInputs=calendarHost.querySelectorAll('input:not([readonly])'),monthLabels=['January','February','March','April','May','June','July','August','September','October','November','December'];
+ const drawCalendar=()=>{const panel=calendarHost.querySelector('#mockCalendar');panel.hidden=false;panel.replaceChildren();const header=document.createElement('div'),previous=document.createElement('button'),heading=document.createElement('span'),next=document.createElement('button');previous.setAttribute('aria-label','Previous month');next.setAttribute('aria-label','Next month');previous.textContent='<';next.textContent='>';heading.textContent=monthLabels[shownMonth%12]+' '+Math.floor(shownMonth/12);header.append(previous,heading,next);panel.append(header);for(const [button,delta] of [[previous,-1],[next,1]])button.onclick=()=>{monthMoves++;if(!freezeMonth)shownMonth+=delta;drawCalendar();};const count=new Date(Math.floor(shownMonth/12),shownMonth%12+1,0).getDate();for(let d=1;d<=count;d++){const button=document.createElement('button');button.textContent=String(d);button.onclick=()=>{calendarDays++;selectedDates[activeDate]=String(shownMonth%12+1)+'/'+d+'/'+Math.floor(shownMonth/12);calendarInputs[activeDate].value=selectedDates[activeDate];calendarSummary.value=selectedDates.join('-');panel.hidden=true;};panel.append(button);}if(duplicateDay){const duplicate=document.createElement('button');duplicate.textContent='1';panel.append(duplicate);}};
+ for(const [i,input] of [...calendarInputs].entries()){input.value=selectedDates[i];input.onblur=()=>{input.value=selectedDates[i];};input.onclick=()=>{activeDate=i;const parts=selectedDates[i].split('/');shownMonth=Number(parts[2])*12+Number(parts[0])-1;drawCalendar();};}
+ const calendarBefore=creates;const calendarResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-11-01',end:'2024-12-31'},context);
+ check(calendarResult.submitted&&creates===calendarBefore+1&&calendarDays===2&&monthMoves>0&&calendarSummary.value==='11/1/2024-12/31/2024','Rejected typed dates fall back to bounded calendar navigation and exact committed range');
+ for(const input of calendarInputs)input.readOnly=true;
+ const readOnlyBefore=creates,readOnlyResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-10-01',end:'2024-10-31'},context);
+ check(readOnlyResult.submitted&&creates===readOnlyBefore+1&&calendarSummary.value==='10/1/2024-10/31/2024','Calendar-only read-only date inputs can select and verify the range');
+ for(const input of calendarInputs)input.readOnly=false;
+ duplicateDay=true;const ambiguous=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-09-01',end:'2024-09-30'},context);
+ check(ambiguous.notSubmitted&&creates===readOnlyBefore+1,'Duplicate calendar day candidates cannot create a report');
+ duplicateDay=false;freezeMonth=true;const movesBefore=monthMoves;const frozen=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-09-01',end:'2024-09-30'},context);
+ check(frozen.notSubmitted&&monthMoves===movesBefore+1&&creates===readOnlyBefore+1,'A calendar that fails to move stops after one navigation click');
+ const manuallyPrepared=creates;calendarHost.querySelector('#mockCalendar').hidden=true;calendarSummary.value='08/01/2024-08/31/2024';for(const input of calendarInputs)input.parentElement.hidden=true;
+ const preparedResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-08-01',end:'2024-08-31'},context);
+ check(preparedResult.submitted&&creates===manuallyPrepared+1,'Resume uses an already committed exact date range without requiring an open calendar');
+ calendarHost.remove();
+oldRange.hidden=oldStart.hidden=oldEnd.hidden=false;$('mockCreate').onclick=originalCreate;
  addReport('2025-01-01','2025-12-31');addReport('2025-01-01','2025-12-31');
  const duplicateReports=(await paypalPage({action:'read'},context)).reports.filter(r=>r.start==='2025-01-01');
  check(duplicateReports.length===2&&duplicateReports[0].rowToken!==duplicateReports[1].rowToken,'Duplicate report rows receive distinct ephemeral identities');

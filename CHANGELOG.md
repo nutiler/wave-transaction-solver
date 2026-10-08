@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.36.0 - Commit provider date selections and recognize Gmail identity variants
+
+- Amazon prioritizes its observed Order Date control and clicks the innermost Custom Range label, including handlers attached below the menu row.
+- PayPal commits one controlled date field at a time with real focus/blur, reacquires rendered fields, and falls back to bounded calendar navigation when typing fails. Exact displayed range, type and format still gate Create Report. Resume accepts an already committed range.
+- Gmail verifies the active account tooltip or its mailbox title, rejects conflicting evidence, and offers address-free mailbox identity diagnostics in Advanced.
+- Added synthetic regressions for nested menu handlers, replaced input nodes, calendar-only fields, ambiguous days, failed navigation, existing ranges and mailbox evidence boundaries. Signed-in provider testing remains the final integration check; financial data stays local.
+
 ## 0.30.1 — Make new-transaction readiness explicit
 
 - Show a prominent missing-export warning and the imported CSV's latest transaction date.

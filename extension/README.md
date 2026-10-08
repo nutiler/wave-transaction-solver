@@ -469,3 +469,12 @@ PayPal supports the read-only Date Range summary input shown on the Activity rep
 PayPal also observes native CSV downloads before clicking its selected Download control. Direct text/blob responses finish immediately; a native browser download can still be collected when navigation loses the injected response. Only new provider-scoped CSV downloads (or the saved pending ID) are examined. Files are read from the shared project data folder, validated for the selected report interval and saved under data/paypal. Pending download IDs persist for Resume and clear only after the CSV validates and saves. Connect PayPal now requests optional native-download access; Chrome's download Location must remain the shared data folder for this fallback.
 
 Tests simulate empty Chrome responses, copied standalone injected functions, the observed Amazon dropdown, PayPal's actual input-style date selector, duplicate report rows and a native CSV download that loses its script response. These are synthetic provider controls; the user's real signed-in downloads remain the final integration check.
+
+
+## Provider date and mailbox fixes (0.36)
+
+Reload the extension in chrome://extensions and reopen the helpers from the Command center. Amazon selects Order Date -> Custom Range itself, including nested menu handlers. PayPal fills and commits one date at a time; when typing is not accepted, it selects dates through a bounded calendar sequence. Reports are requested only after the exact committed range and All transactions / CSV settings match. A range already set manually can be resumed directly.
+
+Wave's Gmail reader also recognizes the active account tooltip and Gmail's mailbox title. Conflicting evidence still stops the lookup. Under Advanced / troubleshooting, Read mailbox identity shows matched, waiting or mismatch and the evidence source without copying account addresses, email bodies or signed links. If it says mismatch, check Business and mailbox settings against the signed-in Gmail address and its /u/ number. Resume preserves the existing export request.
+
+Date input changes now use real focus/blur rather than a synthetic blur event alone; see the [MDN blur documentation](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/blur). Synthetic browser fixtures cover the observed structures and failure boundaries. These checks do not claim that a signed-in provider export was downloaded during development.
