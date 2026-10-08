@@ -8,7 +8,7 @@ function setup({ready=false,failImport=false,failDownload=false,oldReports=true}
  return {b,rows,calls,archived,config,clock:()=>clock};
 }
 test('Fresh batch covers the entire available window with exact calendar years, including 2025',()=>{
- const b=batch();assert.equal(b.reports.length,8);assert.equal(b.reports[0].start,'2019-10-08');assert.equal(b.reports[0].end,'2019-12-31');assert.equal(b.reports.at(-1).end,'2026-10-08');
+ const b=batch();assert.equal(b.reports.length,8);assert.equal(b.reports[0].start,'2019-10-09');assert.equal(b.reports[0].end,'2019-12-31');assert.equal(b.reports.at(-1).end,'2026-10-08');
  assert.deepEqual(b.reports.find(r=>r.start.startsWith('2025')),{start:'2025-01-01',end:'2025-12-31',partial:false,type:'All transactions',format:'CSV',requestState:'planned',downloadState:'pending',importState:'pending'});
  for(const r of b.reports)assert.equal(r.start.slice(0,4),r.end.slice(0,4));
 });
@@ -54,17 +54,17 @@ test('Original download is saved and hash verified independently from parser fai
 
 
 test('The oldest partial year verifies successive boundary dates before a single Create; all other years stay exact',async()=>{
- const s=setup({ready:true}),originalPrepare=s.config.prepare,originalRequest=s.config.request,starts=[];
- const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){starts.push(r.start);assert.equal(r.oldestBoundary,true);if(r.start==='2019-10-08')return {notSubmitted:true,calendarBoundary:true,message:'PayPal could not lock the exact calendar day.'};return {prepared:true,start:r.start};}return originalPrepare(r);}});
- assert.deepEqual(starts,['2019-10-08','2019-10-09']);assert.equal(s.b.earliest,'2019-10-09');assert.equal(s.b.reports[0].originalStart,'2019-10-08');assert.equal(s.calls.filter(c=>c.startsWith('create 2019')).length,1);assert.ok(s.calls.includes('create 2019-10-09'));assert.equal(result.downloaded,8);assert.equal(s.b.reports[6].start,'2025-01-01');
+ const s=setup({ready:true,oldReports:false}),originalPrepare=s.config.prepare,starts=[];
+ const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){starts.push(r.start);assert.equal(r.oldestBoundary,true);if(r.start==='2019-10-09')return {notSubmitted:true,calendarBoundary:true,message:'PayPal could not lock the exact calendar day.'};return {prepared:true,start:r.start};}return originalPrepare(r);}});
+ assert.deepEqual(starts,['2019-10-09','2019-10-10']);assert.equal(s.b.earliest,'2019-10-10');assert.equal(s.b.reports[0].originalStart,'2019-10-09');assert.equal(s.calls.filter(c=>c.startsWith('create 2019')).length,1);assert.ok(s.calls.includes('create 2019-10-10'));assert.equal(result.downloaded,8);assert.equal(s.b.reports[6].start,'2025-01-01');
 });
 test('A visible calendar boundary adjustment is persisted and used for exact report matching and download',async()=>{
  const s=setup({ready:true}),result=await runFreshPayPalCollection({...s.config,prepare:async r=>({prepared:true,start:r.oldestBoundary?'2019-10-10':r.start,end:r.end})});
  assert.equal(s.b.reports[0].start,'2019-10-10');assert.equal(s.b.earliest,'2019-10-10');assert.equal(result.downloaded,8);assert.ok(s.calls.includes('download 2019-10-10'));
 });
 test('Non-boundary preparation failures are never treated as permission to change dates',async()=>{
- const s=setup({ready:true});let attempts=0;const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){attempts++;return {notSubmitted:true,message:'Unsupported date field'};}return {prepared:true};},download:async r=>r.start,importReport:async r=>({name:r.start+'.csv',count:1})});
- assert.equal(attempts,1);assert.equal(s.b.reports[0].start,'2019-10-08');assert.equal(result.downloaded,7);
+ const s=setup({ready:true,oldReports:false});let attempts=0;const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){attempts++;return {notSubmitted:true,message:'Unsupported date field'};}return {prepared:true};},download:async r=>r.start,importReport:async r=>({name:r.start+'.csv',count:1})});
+ assert.equal(attempts,1);assert.equal(s.b.reports[0].start,'2019-10-09');assert.equal(result.downloaded,7);
 });
 test('Sign-in pauses preparation immediately and Resume preserves later exact years',async()=>{
  const s=setup({ready:true});let attempts=0;const first=await runFreshPayPalCollection({...s.config,prepare:async()=>{attempts++;return {notSubmitted:true,message:'Open the signed-in PayPal report page.'};}});
@@ -73,4 +73,42 @@ test('Sign-in pauses preparation immediately and Resume preserves later exact ye
 test('Sign-in during download pauses with submission checkpoints intact',async()=>{
  const s=setup({ready:true});let downloads=0;const first=await runFreshPayPalCollection({...s.config,download:async()=>{downloads++;throw Error('Sign in to PayPal before downloading.');}});
  assert.equal(first.paused,true);assert.equal(downloads,1);assert.equal(s.b.reports[0].downloadState,'pending');assert.ok(s.b.reports.every(r=>r.requestState==='submitted'));const resumed=await runFreshPayPalCollection(s.config);assert.equal(resumed.downloaded,8);assert.equal(s.calls.filter(c=>c.startsWith('create ')).length,8);
+});
+
+
+test('Resume collects the exact ready 2019 report after rejected creation without opening date controls or shifting the seven-year date',async()=>{
+ const s=setup({ready:true}),oldest=s.b.reports[0];oldest.requestState='rejected';oldest.message='PayPal could not lock the exact calendar day. Nothing requested.';
+ for(const r of s.b.reports.slice(1)){r.requestState='submitted';r.downloadState='saved';r.importState='saved';s.archived.add(r.start);}
+ const result=await runFreshPayPalCollection({...s.config,resume:true,prepare:async()=>assert.fail('Ready 2019 needs no date entry'),request:async()=>assert.fail('Ready 2019 needs no Create'),download:async r=>{assert.equal(r.start,'2019-10-09');assert.equal(r.end,'2019-12-31');assert.equal(r.type,'All transactions');assert.equal(r.format,'CSV');assert.equal(r.rowToken,'old-0');return r.start;}});
+ assert.equal(result.complete,true);assert.equal(result.downloaded,8);assert.equal(result.imported,8);assert.equal(oldest.requestState,'submitted');assert.equal(oldest.reportOrigin,'existing-ready');assert.equal(oldest.start,'2019-10-09');assert.equal(oldest.downloadState,'saved');assert.equal(oldest.message,undefined);
+});
+test('A failed oldest fresh date preparation collects an existing exact ready report before probing later days',async()=>{
+ const s=setup({ready:true});let oldestAttempts=0;
+ const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){oldestAttempts++;return {notSubmitted:true,calendarBoundary:true,message:'PayPal could not lock the exact calendar day.'};}return {prepared:true};},download:async r=>{assert.equal(r.rowToken,r.start.startsWith('2019')?'old-0':'new-'+r.start);return r.start;}});
+ assert.equal(oldestAttempts,1);assert.equal(result.downloaded,8);assert.equal(s.b.earliest,'2019-10-09');assert.equal(s.b.reports[0].reportOrigin,'existing-ready');assert.equal(s.calls.filter(c=>c.startsWith('create 2019')).length,0);
+});
+test('An approximate, Balance affecting or PDF 2019 report cannot clear the failed exact All transactions checkpoint',async()=>{
+ for(const change of [{start:'2019-10-08'},{type:'Balance affecting'},{format:'PDF'}]){
+  const s=setup({ready:true});s.rows[0]={...s.rows[0],...change};s.b.reports[0].requestState='rejected';
+  let prepared=0;const result=await runFreshPayPalCollection({...s.config,resume:true,prepare:async()=>{prepared++;return {notSubmitted:true,message:'Unsupported controls'};},download:async r=>r.start,importReport:async r=>({name:r.start+'.csv',count:1})});
+  assert.ok(prepared>=1);assert.equal(s.b.reports[0].requestState,'rejected');assert.equal(s.b.reports[0].downloadState,'pending');assert.equal(result.complete,false);
+ }
+});
+
+
+test('Resume repairs the rejected anniversary-day checkpoint to October 9 and creates only 2019, keeping the seven other submissions',async()=>{
+ const s=setup({ready:true,oldReports:false}),oldest=s.b.reports[0];oldest.start='2019-10-08';oldest.requestState='rejected';oldest.message='PayPal could not lock the exact calendar day.';s.b.earliest='2019-10-08';
+ for(const r of s.b.reports.slice(1)){r.requestState='submitted';r.downloadState='saved';r.importState='saved';s.archived.add(r.start);s.rows.unshift({...r,ready:true});}
+ const result=await runFreshPayPalCollection({...s.config,resume:true,asOf:'2026-10-08',download:async r=>{assert.equal(r.start,'2019-10-09');assert.equal(r.end,'2019-12-31');return r.start;}});
+ assert.equal(result.complete,true);assert.equal(oldest.start,'2019-10-09');assert.equal(oldest.originalStart,'2019-10-08');assert.equal(s.b.earliest,'2019-10-09');assert.deepEqual(s.calls.filter(c=>c.startsWith('create ')),['create 2019-10-09']);
+});
+test('The older October 8 ready CSV never satisfies the corrected October 9 collection range',async()=>{
+ const s=setup({ready:true}),oldest=s.b.reports[0];oldest.start='2019-10-08';oldest.requestState='rejected';s.rows[0].start='2019-10-08';
+ for(const r of s.b.reports.slice(1)){r.requestState='submitted';r.downloadState='saved';r.importState='saved';s.archived.add(r.start);}
+ const result=await runFreshPayPalCollection({...s.config,resume:true,asOf:'2026-10-08',download:async r=>{assert.equal(r.start,'2019-10-09');assert.equal(r.rowToken,'new-2019-10-09');return r.start;}});
+ assert.equal(result.complete,true);assert.equal(oldest.reportOrigin,undefined);assert.deepEqual(s.calls.filter(c=>c.startsWith('create ')),['create 2019-10-09']);
+});
+test('Exclusive boundaries handle leap dates and year rollover without altering later complete calendar years',()=>{
+ const leap=freshPayPalBatch('2024-02-29','2024-02-29','fictional');assert.equal(leap.cutoff,'2017-02-28');assert.equal(leap.earliest,'2017-03-01');
+ const yearEnd=freshPayPalBatch('2026-12-31','2026-12-31','fictional');assert.equal(yearEnd.earliest,'2020-01-01');assert.equal(yearEnd.reports[0].start,'2020-01-01');assert.equal(yearEnd.reports.at(-2).end,'2025-12-31');
 });

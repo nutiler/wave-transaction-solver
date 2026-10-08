@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.49.0 - Honor PayPal's exclusive seven-year calendar boundary
+
+- The calendar disables the anniversary day: on October 8, 2026, new collection starts October 9, 2019 and ends December 31, 2019 for the oldest partial year. Mathematical cutoff and first selectable day are stored separately.
+- Resume repairs an unsent/rejected October 8 checkpoint to October 9 before matching reports or creating requests. Other years' submitted requests and saved files remain intact; uncertain Create attempts are never rewritten.
+- An older ready October 8 export remains history and cannot satisfy the corrected October 9 batch range. Resume can collect an already ready exact corrected range without opening date controls; otherwise it creates only the missing 2019 report.
+- Label exact recovered reports Ready report found without claiming they were newly created. Regression tests cover the disabled-day migration, exclusion of the older report, exact matching, leap dates and year rollover.
+
 ## 0.48.0 - Visible helper states and oldest PayPal calendar boundary
 
 - Share green Start/Complete, blue Running/Waiting, amber Resume/Paused/sign-in, and red Stop/error colors across PayPal, Amazon, Wave and Venmo helpers. Status cards and the activity bar retain explicit state labels; PayPal's yearly status cells use the same palette.

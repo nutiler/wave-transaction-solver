@@ -25,7 +25,7 @@ function paint(){
  $('files').replaceChildren();
  for(const entry of reports){
   const row=document.createElement('tr'),values=[entry.start.slice(0,4),entry.start+' to '+entry.end,
-   ({planned:'Not requested',requesting:'Creating',uncertain:'Checking submission',submitted:'Created',rejected:'Needs attention'})[entry.requestState],
+   entry.reportOrigin==='existing-ready'?'Ready report found':({planned:'Not requested',requesting:'Creating',uncertain:'Checking submission',submitted:'Created',rejected:'Needs attention'})[entry.requestState],
    ({pending:'Waiting',downloading:'Downloading',saved:'Saved',failed:'Retry needed'})[entry.downloadState],
    ({pending:'After download',saved:(entry.count??0)+' events',failed:'Needs repair'})[entry.importState]];
   for(const [index,value] of values.entries()){const cell=document.createElement('td');cell.textContent=value;if(index===1&&entry.boundaryNote){const note=document.createElement('small');note.textContent='Earliest date verified in PayPal';note.style.display='block';cell.append(note);}if(index>=2){cell.className='helper-state-cell';cell.dataset.state=index===2?entry.requestState==='submitted'?'complete':entry.requestState==='rejected'?'error':entry.requestState==='uncertain'?'paused':'running':index===3?entry.downloadState==='saved'?'complete':entry.downloadState==='failed'?'error':'waiting':entry.importState==='saved'?'complete':entry.importState==='failed'?'error':'ready';}row.append(cell);}if(entry.message||entry.boundaryNote)row.title=entry.message||entry.boundaryNote;$('files').append(row);
@@ -87,7 +87,7 @@ async function run(fresh){
   state.dateOrder=$('dateOrder').value;
   if(fresh){const provider=await page('read');state.batch=freshPayPalBatch(today(),provider.availableThrough||today());delete state.download;state.downloads={};await persistBatch(state.batch);}
   if(!state.batch)throw Error('Start fresh first.');await paintActivity();
-  const result=await runFreshPayPalCollection({batch:state.batch,current,read:()=>page('read'),prepare:r=>page('prepare',r),request:r=>page('create',r),refresh:()=>page('refresh'),
+  const result=await runFreshPayPalCollection({batch:state.batch,resume:!fresh,asOf:today(),current,read:()=>page('read'),prepare:r=>page('prepare',r),request:r=>page('create',r),refresh:()=>page('refresh'),
    download:r=>downloadCSV(r,current,m=>{$('status').textContent=r.start.slice(0,4)+': '+m;}),
    archive:async(r,text)=>{const saved=await archiveCollectedPayPalReport(state.folder,r,text);if(state.downloads?.[paypalReportKey(r)]){delete state.downloads[paypalReportKey(r)];await save();}return saved;},
    verify:r=>verifyCollectedPayPalReport(state.folder,r),importReport:r=>importCollectedPayPalReport(state.folder,r,state.dateOrder),persist:persistBatch,

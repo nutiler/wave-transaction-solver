@@ -2,9 +2,13 @@ import {paypalPeriods,paypalReportKey,savePayPalResponse,savePayPalCSV} from './
 import {venmoDigest} from './venmo.js';
 
 export function freshPayPalBatch(today,availableThrough=today,id=crypto.randomUUID()) {
- const plan=paypalPeriods(2000,today,availableThrough);
- return {version:1,id,startedAt:new Date().toISOString(),earliest:plan.earliest,through:plan.through,
-  reports:plan.periods.map(period=>({...period,requestState:'planned',downloadState:'pending',importState:'pending'}))};
+ const plan=paypalPeriods(2000,today,availableThrough),cutoff=plan.earliest,first=new Date(cutoff+'T00:00:00Z');
+ // PayPal disables the seven-year anniversary day itself. Its first selectable
+ // calendar day is the following day; older ready exports remain history.
+ first.setUTCDate(first.getUTCDate()+1);const earliest=first.toISOString().slice(0,10);
+ const periods=plan.periods.filter(p=>p.end>=earliest).map(p=>p.start<earliest?{...p,start:earliest,partial:true}:p);
+ return {version:1,id,asOf:today,calendarBoundaryVersion:2,startedAt:new Date().toISOString(),cutoff,earliest,through:plan.through,
+  reports:periods.map(period=>({...period,requestState:'planned',downloadState:'pending',importState:'pending'}))};
 }
 const needsSignIn=message=>/sign[- ]?in|log[- ]?in|login|signed[- ]?in|signed.out/i.test(String(message));
 const safeMessage=error=>String(error?.message||error).replace(/https?:\/\/\S+/g,'[URL]').slice(0,600);
@@ -27,7 +31,7 @@ export async function importCollectedPayPalReport(root,entry,dateOrder='mdy') {
 // independent checkpoints: parsing can never prevent another year downloading.
 export async function runFreshPayPalCollection({batch,read,prepare,request,refresh,download,archive,verify,importReport,persist,
  current=()=>true,progress=()=>{},pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),now=()=>Date.now(),
- submissionTimeoutMs=30000,timeoutMs=600000,refreshMs=5000}) {
+ submissionTimeoutMs=30000,timeoutMs=600000,refreshMs=5000,resume=false,asOf=batch.asOf||batch.through}) {
  const matches=(info,entry)=>(info.reports||[]).filter(r=>paypalReportKey(r)===paypalReportKey(entry));
  const pendingCount=rows=>rows.filter(r=>!r.ready).length;
  const counts=()=>({total:batch.reports.length,downloaded:batch.reports.filter(r=>r.downloadState==='saved').length,imported:batch.reports.filter(r=>r.importState==='saved').length});
@@ -40,10 +44,23 @@ export async function runFreshPayPalCollection({batch,read,prepare,request,refre
   }
   return null;
  };
+ const reuseReady=async(entry,info)=>{
+  const ready=matches(info,entry)[0];if(!ready?.ready)return false;
+  entry.requestState='submitted';entry.reportOrigin='existing-ready';entry.reportRecoveredAt=new Date().toISOString();delete entry.message;await update();return true;
+ };
  const result=stopped=>{
   const count=counts(),waiting=batch.reports.filter(r=>r.downloadState!=='saved');
   return {...count,complete:count.downloaded===count.total,stopped,waiting,issues:batch.reports.filter(r=>r.message||r.importState==='failed')};
  };
+ // Repair only the unsent oldest range in an existing batch. Submitted and
+ // uncertain requests retain their exact identities and must never be replayed.
+ if(resume){
+  const oldest=batch.reports[0],window=freshPayPalBatch(asOf,batch.through,batch.id);
+  if(oldest&&oldest.downloadState!=='saved'&&['planned','rejected'].includes(oldest.requestState)&&oldest.start<window.earliest&&window.earliest<=oldest.end){
+   oldest.originalStart=oldest.originalStart||oldest.start;oldest.start=window.earliest;oldest.requestState='planned';oldest.boundaryNote='PayPal disables '+window.cutoff+'; earliest selectable date is '+window.earliest+'.';
+   delete oldest.message;delete oldest.baselineCount;delete oldest.baselinePending;delete oldest.reportOrigin;batch.earliest=window.earliest;batch.cutoff=window.cutoff;batch.calendarBoundaryVersion=2;await update();
+  }
+ }
  // Recheck every original file before trusting a resumed download checkpoint.
  for(const entry of batch.reports){
   if(!current())return result(true);
@@ -55,10 +72,14 @@ export async function runFreshPayPalCollection({batch,read,prepare,request,refre
   if(!current())return result(true);
   if(entry.downloadState==='saved'||entry.requestState==='submitted')continue;
   const info=await read();
+  // A rejected Create was never submitted. On Resume, an exact ready CSV is
+  // already collectible; date-entry controls are irrelevant to downloading it.
+  if(resume&&entry.requestState==='rejected'&&await reuseReady(entry,info))continue;
   if(['requesting','uncertain'].includes(entry.requestState)){
    await confirmed(entry,info);continue; // Never repeat an uncertain Create click.
   }
   let before=matches(info,entry);const oldestBoundary=entry===batch.reports[0]&&entry.start.slice(5)!=='01-01';let requestSpec={...entry,forceNew:true,oldestBoundary},prepared=await prepare(requestSpec);
+  if(oldestBoundary&&prepared?.notSubmitted&&!needsSignIn(prepared.message)&&await reuseReady(entry,info))continue;
   // Near the rolling limit, verify the first accepted day with preparation only.
   // No Create click is made until PayPal displays and commits the exact range.
   if(oldestBoundary&&prepared?.notSubmitted&&prepared.calendarBoundary){
