@@ -2,12 +2,13 @@ import {importPayPalCSV,paypalDate} from './paypal-csv.js';
 import {venmoDigest} from './venmo.js';
 export const paypalOrigins=['https://www.paypal.com/reports/*'];
 export const paypalReportURL='https://www.paypal.com/reports/dlog';
-export function paypalPeriods(fromYear,today) {
- paypalDate(today);const current=Number(today.slice(0,4));if(!Number.isInteger(fromYear)||fromYear<2000||fromYear>current)throw Error('Choose a starting year through the current year.');
+export function paypalPeriods(fromYear,today,availableThrough=today) {
+ paypalDate(today);paypalDate(availableThrough);const through=availableThrough<today?availableThrough:today;const current=Number(today.slice(0,4));if(!Number.isInteger(fromYear)||fromYear<2000||fromYear>current)throw Error('Choose a starting year through the current year.');
  const cutoff=new Date(today+'T00:00:00Z');const day=cutoff.getUTCDate();cutoff.setUTCFullYear(current-7);if(cutoff.getUTCDate()!==day)cutoff.setUTCDate(0);
  const earliest=cutoff.toISOString().slice(0,10),periods=[];
- for(let year=Math.max(fromYear,Number(earliest.slice(0,4)));year<=current;year++){const start=year===Number(earliest.slice(0,4))&&earliest>year+'-01-01'?earliest:year+'-01-01',end=year===current?today:year+'-12-31';periods.push({start,end,partial:start!==year+'-01-01'||end!==year+'-12-31',type:'All transactions',format:'CSV'});}
- return {periods,earliest,requestedStart:fromYear+'-01-01',limited:fromYear+'-01-01'<earliest};
+ for(let year=Math.max(fromYear,Number(earliest.slice(0,4)));year<=current;year++){const start=year===Number(earliest.slice(0,4))&&earliest>year+'-01-01'?earliest:year+'-01-01',end=year+'-12-31'<through?year+'-12-31':through;if(end<start)continue;periods.push({start,end,partial:start!==year+'-01-01'||end!==year+'-12-31',type:'All transactions',format:'CSV'});}
+ if(!periods.length)throw Error('PayPal has no available dates in the selected history.');
+ return {periods,earliest,through,requestedStart:fromYear+'-01-01',limited:fromYear+'-01-01'<earliest};
 }
 export const paypalReportKey=r=>[r.type,r.start,r.end,r.format].join(':');
 export function eligiblePayPalReports(info) {
@@ -31,6 +32,11 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
  const next={...entries};let info=await read(),saved=0,requested=0;
  const planned=new Set(periods.map(paypalReportKey)),originalReady=eligiblePayPalReports(info).filter(r=>!planned.has(paypalReportKey(r)));
  const archiveIssues=[];
+ // A provider can clamp an attempted current-year end date to its data cutoff.
+ // Keep the old intent as an audit note, but reuse the visible actual range.
+ if(!current())return {entries:next,saved,requested,stopped:true};
+ for(const period of periods){if(!matchesInitial(period))continue;for(const [key,entry] of Object.entries(next))if(entry.type===period.type&&entry.format===period.format&&entry.start===period.start&&entry.end>period.end&&entry.end.slice(0,4)===period.end.slice(0,4)&&entry.reportConfirmed!==true&&['requesting','requested'].includes(entry.status)&&!entry.hash){next[key]={...entry,status:'superseded',availableEnd:period.end};await persist(next);}}
+ function matchesInitial(period){return (info.reports||[]).some(r=>paypalReportKey(r)===paypalReportKey(period));}
  const verified=new Map(),matches=(list,period)=>(list.reports||[]).filter(r=>paypalReportKey(r)===paypalReportKey(period));
  async function valid(entry){if(!entry?.hash)return false;const key=entry.hash+':'+entry.name;if(!verified.has(key))verified.set(key,await verifySaved(entry));return verified.get(key);}
  async function covered(period){for(const entry of Object.values(next)){if(entry.type==='All transactions'&&entry.format==='CSV'&&entry.start===period.start&&entry.end===period.end&&await valid(entry))return true;}return false;}

@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.44.0 - Use PayPal available-data dates and reconcile missing years
+
+- Read PayPal's displayed Data is updated as of date. Current-year requests end at that date when it precedes today; the rolling seven-year starting boundary still uses today's date.
+- Reuse exact existing reports for the provider-supported range. Retain a superseded audit note for older longer-end request checkpoints when the actual shorter range is visible, preventing another duplicate current-year request on Resume.
+- Regression coverage checks a missing previously observed 2025 row, preserves the other pending years, and verifies Resume does not create a third report for a duplicated clamped current-year range.
+- No accounting files or provider transactions are changed. New report creation and current-year download remain verified by exact visible report identity and CSV validation.
+
 ## 0.43.0 - Create PayPal annual reports before any legacy download
 
 - Remove the full-list historical download prerequisite. Once each missing year's controls are prepared, persist its request intent and immediately click Create Report, including when PayPal already shows twelve reports.
