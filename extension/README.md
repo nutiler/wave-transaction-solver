@@ -507,3 +507,12 @@ Reload the extension and reopen the PayPal helper. The observed Transaction type
 The selected starting year is requested exactly from Jan 1 through Dec 31, including 2019. The planner no longer clips January to a rolling cutoff; PayPal may explicitly reject dates outside its available history. Current-year requests end today. Creation rejects cross-year ranges, including Jan 1 to next Jan 1. Historical cross-year CSVs remain evidence, but only an exact saved All transactions / CSV range satisfies an annual request.
 
 Control preparation happens before preserving existing CSVs from a full list, so an unavailable dropdown or date field fails promptly instead of starting an unrelated download wait. Resume can recover legacy unconfirmed clicks after repeatedly refreshing a full list whose rows are all ready. A previously observed submission missing from a full list, a visible pending report, loading or unrecognized rows still prevent automatic recreation. Development tests are synthetic and do not claim signed-in PayPal success.
+
+
+### Observed PayPal calendar controls (0.40)
+
+The provider arrow spans supplied during integration testing use `GlyphIcon vx_icon vx_icon-arrow-left-small prev` and `GlyphIcon vx_icon vx_icon-arrow-right-small next`. The adapter activates these spans directly instead of relying on an arrow label or promoting them to an unrelated focusable parent. Dated calendar TDs identify the displayed month even when month/year text is split into a caption. Each picker is scoped to its From/To DateInputBox; month navigation is bounded and must move exactly one month each time.
+
+Dropdown and date controls receive pointer/mouse-down/up and click events, with focus as a fallback for an unopened date menu. An already-open matching option is reused. Fields are reacquired after opening/rendering, and typing notifies key-up handlers before selecting the exact day. When the Date range summary contains two dates, the selected field must also match its committed summary date. A typed value whose summary remains unchanged is rejected.
+
+Read report controls now includes safe calendar metadata: displayed months, day counts and previous/next tags and disabled flags. It does not copy page HTML, credentials or download URLs. Synthetic fixtures cover the supplied arrow classes, pointer-only controls, two visible calendars, December 2025 to Jan 1/Dec 31 2019, following-year advancement and ignored day commits. A signed-in PayPal run is still required to establish live success.

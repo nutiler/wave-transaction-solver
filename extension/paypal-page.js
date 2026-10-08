@@ -8,6 +8,7 @@ export async function paypalPage(request={},testContext) {
  const visible=e=>!!e&&e.isConnected&&!e.hidden&&e.getAttribute('aria-hidden')!=='true'&&e.getClientRects().length>0&&win.getComputedStyle(e).visibility!=='hidden';
  const all=selector=>[...doc.querySelectorAll(selector)].filter(visible),clickable=()=>all('button,a,[role="button"]');
  const exact=(elements,value)=>elements.filter(e=>text(e).toLowerCase()===value.toLowerCase());
+ const activate=e=>{if(!e)return;const common={bubbles:true,cancelable:true,view:win,button:0,detail:1};if(win.PointerEvent)e.dispatchEvent(new win.PointerEvent('pointerdown',{...common,buttons:1,pointerId:1,pointerType:'mouse',isPrimary:true}));e.dispatchEvent(new win.MouseEvent('mousedown',{...common,buttons:1}));if(win.PointerEvent)e.dispatchEvent(new win.PointerEvent('pointerup',{...common,buttons:0,pointerId:1,pointerType:'mouse',isPrimary:true}));e.dispatchEvent(new win.MouseEvent('mouseup',{...common,buttons:0}));if(typeof e.click==='function')e.click();else e.dispatchEvent(new win.MouseEvent('click',common));};
  if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('Open the signed-in PayPal Activity download page.');
  if(!all('h1,h2,h3,h4,span,p,div').some(e=>/^Activity report$/i.test(text(e))))throw Error('PayPal reports are not ready. Wait for the Activity report page to load.');
  const date=value=>{let v=text({textContent:value}),m=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m)v=m[3]+'-'+m[request.dateOrder==='dmy'?2:1].padStart(2,'0')+'-'+m[request.dateOrder==='dmy'?1:2].padStart(2,'0');else if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){const months=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];m=v.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,\s*|\s+)(\d{4})$/);if(!m)return null;const month=months.indexOf(m[1].slice(0,3).toLowerCase())+1;if(!month)return null;v=m[3]+'-'+String(month).padStart(2,'0')+'-'+m[2].padStart(2,'0');}return /^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v?v:null;};
@@ -41,7 +42,8 @@ export async function paypalPage(request={},testContext) {
  const startPattern=/^(Start date|From date|From|Start)$/i,endPattern=/^(End date|To date|To|End)$/i;
  const chosen=e=>String(e?.tagName==='SELECT'?text(e.selectedOptions[0]):e?.tagName==='INPUT'?e.value:text(e)).replace(/^(Transaction type|Date range|Format)\s*/i,'').trim();
  const listState=()=>{const tables=all('table,[role="table"]').filter(table=>['Report type','Date range','Format','Action'].every(name=>[...table.querySelectorAll('th,[role="columnheader"]')].some(e=>text(e).toLowerCase()===name.toLowerCase())));const rows=tables.flatMap(table=>[...table.querySelectorAll('tr,[role="row"]')].filter(visible).filter(row=>row.querySelector('td,[role="cell"]')));const root=all('h1,h2,h3,h4').find(e=>/^Activity report$/i.test(text(e)))?.closest('section,[data-test-id="DLOG-page"],[data-testid="DLOG-page"]')||doc;const loading=all('[role="progressbar"],[aria-busy="true"],[data-testid="spinner"],[data-test-id="spinner"]').filter(e=>root.contains(e));return {reportListComplete:tables.length===1&&rows.every(row=>!!identity(row))&&!loading.length&&!all('[role="alert"]').some(e=>/error|invalid|failed|try again/i.test(text(e))),reportListRows:rows.length};};
- const snapshot=()=>({...listState(),format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
+ const calendarDiagnostics=()=>{const wrappers=all('.calendarWrapper'),roots=wrappers.length?wrappers:all('.Calendar');return roots.slice(0,4).map(root=>{const cells=[...root.querySelectorAll('td[id]')].filter(visible),ids=cells.map(e=>e.id).filter(id=>/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(id));return {dateCells:ids.length,months:[...new Set(ids.map(id=>{const parts=id.split('/');return parts[2]+'-'+parts[0].padStart(2,'0');}))],previous:[...root.querySelectorAll('.prev,[aria-label*="Previous"],[aria-label*="previous"]')].filter(visible).map(e=>({tag:e.tagName,disabled:!!e.closest('[disabled],[aria-disabled="true"],.disabled')})),next:[...root.querySelectorAll('.next,[aria-label*="Next"],[aria-label*="next"]')].filter(visible).map(e=>({tag:e.tagName,disabled:!!e.closest('[disabled],[aria-disabled="true"],.disabled')}))};});};
+ const snapshot=()=>({...listState(),calendars:calendarDiagnostics(),format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
  if(!request.action||request.action==='read')return snapshot();
  if(request.action==='refresh'){const found=exact(clickable(),'Refresh');if(found.length!==1||found[0].disabled)throw Error('Cannot identify the report Refresh button.');found[0].click();await pause();return snapshot();}
  if(['prepare','create'].includes(request.action)) {
@@ -49,13 +51,15 @@ export async function paypalPage(request={},testContext) {
   const before=reportRows().filter(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');if(before.length)return {existing:true};
   async function select(pattern,wanted){const e=field(pattern);if(!e)return false;if(chosen(e)?.toLowerCase()===wanted.toLowerCase())return true;if(e.disabled||e.getAttribute('aria-disabled')==='true')return false;
    if(e.tagName==='SELECT'){const matches=[...e.options].filter(o=>text(o).toLowerCase()===wanted.toLowerCase()&&!o.disabled);if(matches.length!==1)return false;const setter=Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set;setter.call(e,matches[0].value);e.dispatchEvent(new win.Event('input',{bubbles:true}));e.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();}
-   e.click();await pause();
-   const linked=[...new Set([...(e.getAttribute('aria-controls')||'').split(/\s+/).filter(Boolean).map(id=>doc.getElementById(id)),...all('[aria-labelledby]').filter(menu=>e.id&&(menu.getAttribute('aria-labelledby')||'').split(/\s+/).includes(e.id))].filter(visible))];
-   if(linked.length>1)return false;
-   const candidates=all('[role="option"],[role="menuitem"],[role="button"],button,a,li,span,div').filter(option=>!linked.length||linked[0].contains(option));
-   let choices=exact(candidates,wanted);choices=choices.filter(parent=>!choices.some(child=>child!==parent&&parent.contains(child)));
-   if(choices.length!==1||choices[0].closest('[disabled],[aria-disabled="true"],.disabled'))return false;
-   choices[0].click();for(let i=0;i<12;i++){await pause();if(chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase())return true;}return false;
+   function choices(){
+    let linked=[...new Set([...(e.getAttribute('aria-controls')||'').split(/\s+/).filter(Boolean).map(id=>doc.getElementById(id)),...all('[aria-labelledby]').filter(menu=>e.id&&(menu.getAttribute('aria-labelledby')||'').split(/\s+/).includes(e.id))].filter(visible))].filter(root=>root.querySelector('a,button,li,[role="option"],[role="menuitem"]'));
+    linked=linked.filter(child=>!linked.some(parent=>child!==parent&&parent.contains(child)));if(linked.length>1)return [];
+    const candidates=all('[role="option"],[role="menuitem"],[role="button"],button,a,li,span,div').filter(option=>option!==e&&!option.contains(e)&&!option.closest('table,[role="table"]')&&(!linked.length||linked[0].contains(option)));
+    const found=exact(candidates,wanted);return found.filter(parent=>!found.some(child=>child!==parent&&parent.contains(child)));
+   }
+   let found=choices();if(!found.length){activate(e);for(let i=0;i<12;i++){await pause();found=choices();if(found.length)break;}}
+   if(found.length!==1||found[0].closest('[disabled],[aria-disabled="true"],.disabled'))return false;
+   activate(found[0]);for(let i=0;i<12;i++){await pause();if(chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase())return true;}return false;
   }
   if(!await select(/^Transaction type$/i,'All transactions')||!await select(/^Format$/i,'CSV'))return {notSubmitted:true,message:'Set Transaction type to All transactions and Format to CSV in PayPal, then Resume. Nothing requested.'};
   const rangeExact=()=>{const values=chosen(field(/^Date range$/i)).match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];return values.length===2&&date(values[0])===request.start&&date(values[1])===request.end;};
@@ -63,9 +67,9 @@ export async function paypalPage(request={},testContext) {
    const range=field(/^Date range$/i);
    if(range&&(!field(startPattern)||!field(endPattern))){
     if(range.tagName==='SELECT'){for(const option of ['Custom','Custom date range','Custom range']){if(await select(/^Date range$/i,option))break;}}
-    else{range.click();for(let i=0;i<12;i++){await pause();if(field(startPattern)&&field(endPattern))break;}if(!field(startPattern)||!field(endPattern)){
+    else{activate(range);for(let i=0;i<12;i++){await pause();if(field(startPattern)&&field(endPattern))break;}if((!field(startPattern)||!field(endPattern))&&doc.activeElement!==range){range.focus?.();await pause();}if(!field(startPattern)||!field(endPattern)){
      let custom=all('[role="option"],[role="menuitem"],button,li').filter(e=>/^(Custom|Custom date range|Custom range)$/i.test(text(e)));
-     if(custom.length===1){custom[0].click();await pause();}
+     if(custom.length===1){activate(custom[0]);await pause();}
     }}
    }
    const start=field(startPattern),end=field(endPattern);
@@ -74,42 +78,56 @@ export async function paypalPage(request={},testContext) {
    // Type FROM, select its calendar day to commit, then do TO. Reacquire each rendered field.
    const sequence=date(end.value)&&request.start>date(end.value)?[[endPattern,request.end],[startPattern,request.start]]:[[startPattern,request.start],[endPattern,request.end]];
    const monthNames=['january','february','march','april','may','june','july','august','september','october','november','december'];
-   const monthValue=e=>{const m=text(e).match(/^([A-Za-z]+)\s+(\d{4})$/),month=m&&monthNames.indexOf(m[1].toLowerCase());return m&&month>=0?Number(m[2])*12+month:null;};
-   const calendar=()=>{
-    let headings=all('h2,h3,h4,span,div,p,[aria-live]').filter(e=>monthValue(e)!==null);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
-    const found=[];for(const heading of headings){for(let panel=heading.parentElement,depth=0;panel&&panel!==doc.body&&depth<5;panel=panel.parentElement,depth++){
+   const monthValue=e=>{const m=text(e).match(/^([A-Za-z]+)\s*(\d{4})$/),month=m&&monthNames.indexOf(m[1].toLowerCase());return m&&month>=0?Number(m[2])*12+month:null;};
+   const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"],.disabled');
+   const cellDate=e=>{const m=String(e.id||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);return m?m[3]+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):date(e.id);};
+   const scope=input=>{const box=input?.closest('.DateInputBox');return box&&[...box.querySelectorAll('.Calendar,.calendarWrapper')].some(visible)?box:doc;};
+   const calendar=input=>{
+    const root=scope(input),found=[];
+    // Derive the displayed month from the provider's dated TDs. The heading may
+    // be split into separate month/year nodes or live in a table caption.
+    const tables=all('.Calendar table,.calendarWrapper table').filter(table=>root.contains(table));
+    for(const table of [...new Set(tables)]){
+     const cells=[...table.querySelectorAll('td[id]')].filter(visible).filter(e=>cellDate(e));if(cells.length<7)continue;
+     const counts=new Map();for(const cell of cells){const key=cellDate(cell).slice(0,7);counts.set(key,(counts.get(key)||0)+1);}const ranked=[...counts].sort((a,b)=>b[1]-a[1]);if(!ranked.length||ranked[0][1]<7||ranked[1]?.[1]===ranked[0][1])continue;
+     const month=Number(ranked[0][0].slice(0,4))*12+Number(ranked[0][0].slice(5,7))-1,panel=table.closest('.calendarWrapper')||table.closest('.Calendar')||table.parentElement;
+     let headings=[...panel.querySelectorAll('h2,h3,h4,span,div,p,caption,th,b,strong,[aria-live]')].filter(visible).filter(e=>monthValue(e)===month);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
+     found.push({heading:headings.length===1?headings[0]:null,panel,cells,days:cells,month});
+    }
+    if(found.length)return found.length===1?found[0]:null;
+    let headings=all('h2,h3,h4,span,div,p,caption,th,b,strong,[aria-live]').filter(e=>root.contains(e)&&monthValue(e)!==null);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
+    for(const heading of headings){for(let panel=heading.parentElement,depth=0;panel&&panel!==doc.body&&depth<6;panel=panel.parentElement,depth++){
      let days=[...panel.querySelectorAll('button,a,[role="button"],[role="gridcell"],td,span,div')].filter(visible).filter(e=>/^(?:[1-9]|[12]\d|3[01])$/.test(text(e)));days=days.filter(e=>!days.some(child=>child!==e&&e.contains(child)));
      if(days.length>=7&&days.length<=42){found.push({heading,panel,days,month:monthValue(heading)});break;}
     }}return found.length===1?found[0]:null;
    };
-   const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"]');
+   function dated(input,iso){return all('.Calendar td[id],.calendarWrapper td[id]').filter(e=>scope(input).contains(e)&&cellDate(e)===iso&&enabled(e));}
+   function committed(pattern,iso){if(date(field(pattern)?.value)!==iso)return false;const values=chosen(field(/^Date range$/i)).match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}/g)||[];return values.length!==2||date(values[pattern===startPattern?0:1])===iso;}
+   async function chooseDay(input,pattern,iso){const cells=dated(input,iso);if(cells.length>1)return false;if(!cells.length)return null;const actions=[...cells[0].querySelectorAll('a,button')].filter(visible);if(actions.length>1||actions[0]&&!enabled(actions[0]))return false;activate(actions[0]||cells[0]);await pause();return committed(pattern,iso);}
    async function pick(pattern,iso){
-    const input=field(pattern);if(!input)return false;
-    // Observed PayPal calendars identify TDs by the full date (for example 12/10/2025).
-    // The nested anchor has no href; its click bubbles to the provider's day handler.
-    const dated=all('.Calendar td[id],.calendarWrapper td[id]').filter(e=>date(e.id)===iso&&enabled(e));
-    if(dated.length>1)return false;
-    if(dated.length===1){const anchors=[...dated[0].querySelectorAll('a,button')].filter(visible);if(anchors.length>1)return false;(anchors[0]||dated[0]).click();await pause();return date(field(pattern)?.value)===iso;}
-    let cal=calendar();if(!cal){input.click();await pause();cal=calendar();}
-    if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){buttons[0].click();await pause();cal=calendar();}}
+    let input=field(pattern);if(!input)return false;let selected=await chooseDay(input,pattern,iso);if(selected!==null)return selected;
+    let cal=calendar(input);if(!cal){activate(input);await pause();input=field(pattern);cal=calendar(input);}
+    if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){activate(buttons[0]);await pause();cal=calendar(field(pattern));}}
     if(!cal)return null;const target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;if(Math.abs(target-cal.month)>120)return false;
     for(let step=0;cal.month!==target&&step<120;step++){
-     const direction=target<cal.month?-1:1,controls=[...cal.panel.querySelectorAll('button,a,[role="button"],[tabindex],svg,span')].filter(visible).filter(e=>!cal.days.includes(e));
-     let nav=controls.filter(e=>new RegExp(direction<0?'previous|prev|back':'next|forward','i').test([e.getAttribute('aria-label'),e.title,text(e)].join(' ')));
-     if(!nav.length){const header=cal.heading.parentElement,hr=cal.heading.getBoundingClientRect();nav=controls.filter(e=>header.contains(e)&&!text(e).match(/\d/)&&(()=>{const r=e.getBoundingClientRect();return direction<0?r.right<=hr.left:r.left>=hr.right;})());}
-     nav=nav.filter(e=>!nav.some(child=>child!==e&&e.contains(child)));
-     if(nav.length!==1||!enabled(nav[0]))return false;const previous=cal.month,targetControl=nav[0].closest('button,a,[role="button"],[tabindex]')||nav[0];if(typeof targetControl.click==='function')targetControl.click();else targetControl.dispatchEvent(new win.MouseEvent('click',{bubbles:true}));await pause();cal=calendar();if(!cal||cal.month!==previous+direction)return false;
+     const direction=target<cal.month?-1:1,controls=[...cal.panel.querySelectorAll('button,a,[role="button"],[tabindex],svg,span,div')].filter(visible).filter(e=>!cal.days.some(day=>day===e||day.contains(e)));
+     const description=e=>[e.getAttribute('aria-label'),e.title,e.getAttribute('data-icon'),typeof e.className==='string'?e.className:'',text(e)].join(' ');
+     let nav=controls.filter(e=>new RegExp(direction<0?'previous|prev|back|(?:arrow|chevron)[-_ ]?left':'next|forward|(?:arrow|chevron)[-_ ]?right','i').test(description(e))||new RegExp(direction<0?'^(?:<|\u2039|\u00ab|\u2190|\u276e)$':'^(?:>|\u203a|\u00bb|\u2192|\u276f)$').test(text(e)));
+     if(!nav.length&&cal.heading){const hr=cal.heading.getBoundingClientRect(),firstDay=Math.min(...cal.days.map(e=>e.getBoundingClientRect().top));nav=controls.filter(e=>!text(e).match(/\d|[A-Za-z]/)&&(()=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top<firstDay&&Math.abs((r.top+r.bottom)/2-(hr.top+hr.bottom)/2)<Math.max(hr.height,r.height)&& (direction<0?r.right<=hr.left:r.left>=hr.right);})());}
+     nav=nav.filter(e=>!nav.some(child=>child!==e&&e.contains(child)));const targets=[...new Set(nav.map(e=>{const arrow=e.closest('.prev,.next');return arrow&&cal.panel.contains(arrow)?arrow:e.closest('button,a,[role="button"],[tabindex]')||e;}))];
+     if(targets.length!==1||!enabled(targets[0]))return false;const previous=cal.month;activate(targets[0]);for(let i=0;i<8;i++){await pause();cal=calendar(field(pattern));if(cal&&cal.month!==previous)break;}if(!cal||cal.month!==previous+direction)return false;
     }
-    if(cal.month!==target)return false;const day=Number(iso.slice(8,10)),days=cal.days.filter(e=>Number(text(e))===day&&enabled(e)&&!/(outside|other)[-_ ]?month/i.test(e.className||''));
-    if(days.length!==1)return false;days[0].click();await pause();return date(field(pattern)?.value)===iso;
+    if(cal.month!==target)return false;selected=await chooseDay(field(pattern),pattern,iso);if(selected!==null)return selected;
+    const day=Number(iso.slice(8,10)),days=cal.days.filter(e=>Number(text(e))===day&&enabled(e)&&!/(outside|other)[-_ ]?month/i.test(e.className||''));
+    if(days.length!==1)return false;activate(days[0]);await pause();return committed(pattern,iso);
    }
    for(const [pattern,iso] of sequence){
-    const input=field(pattern);if(!input||input.disabled)return {notSubmitted:true,message:'PayPal date controls changed. Nothing requested.'};
-    input.focus();input.click();await pause();
+    let input=field(pattern);if(!input||input.disabled)return {notSubmitted:true,message:'PayPal date controls changed. Nothing requested.'};
+    input.focus();activate(input);await pause();input=field(pattern);if(!input||input.disabled)return {notSubmitted:true,message:'PayPal date controls changed after opening the calendar. Nothing requested.'};
     if(!input.readOnly){
      const month=String(Number(iso.slice(5,7))),day=String(Number(iso.slice(8,10))),value=input.type==='date'?iso:(request.dateOrder==='dmy'?day+'/'+month:month+'/'+day)+'/'+iso.slice(0,4);
      Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
-     input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();
+     input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));(field(pattern)||input).dispatchEvent(new win.KeyboardEvent('keyup',{bubbles:true,key:value.slice(-1),code:'Digit'+value.slice(-1)}));await pause();
     }
     if(await pick(pattern,iso)===false)return {notSubmitted:true,message:'PayPal could not lock the exact calendar day. Nothing requested.'};
     field(pattern)?.blur();await pause();
@@ -125,7 +143,7 @@ export async function paypalPage(request={},testContext) {
   }
   // Close the date popup with an outside click before Create; some provider handlers
   // consume the first outside click only to dismiss the calendar.
-  const headings=all('h1,h2,h3,h4').filter(e=>/^Activity report$/i.test(text(e)));if(headings.length===1){headings[0].click();await pause();}
+  const headings=all('h1,h2,h3,h4').filter(e=>/^Activity report$/i.test(text(e)));if(headings.length===1){activate(headings[0]);await pause();}
   const selectedRange=chosen(field(/^Date range$/i))||'',rangeDates=selectedRange.match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];
   const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
   const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;

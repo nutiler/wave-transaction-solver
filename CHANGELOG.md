@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.40.0 - Use observed PayPal calendar arrows and verify committed dates
+
+- Activate dropdown and date controls with pointer/mouse-down/up and click events, including menus that act before click. Reuse an already-open matching menu instead of toggling it closed.
+- Read displayed months from dated calendar TDs, including headings split across caption nodes. Scope each picker to its active From/To DateInputBox.
+- Target the supplied GlyphIcon prev/next spans directly, even inside a focusable wrapper. Verify each month moves once; stop for disabled, ambiguous or unresponsive controls.
+- Reacquire date fields after opening/rendering, send a key-up notification after typed input, and select the exact day. Numeric range summaries must reflect the committed field before proceeding. Typed text alone cannot count as a selected calendar day.
+- Add safe calendar diagnostics with displayed months, day counts and arrow tags/disabled states. Synthetic regressions reproduce December 2025 to full 2019, next-year advancement, two visible pickers, pointer-only dropdowns and ignored day selection. Signed-in provider behavior remains unverified.
+
 ## 0.39.0 - Read PayPal button dropdowns and request exact calendar years
 
 - Read Transaction type and Format BUTTONs from visible text rather than their empty value property. Select anchor/nested-label menu options in the linked dropdown and verify the resulting label; disabled or ambiguous options remain blocked.
