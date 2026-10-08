@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.37.0 - One-click report batches and completed-tab cleanup
+
+- PayPal types From, locks the calendar day, then enters To and verifies the exact report range. Preparation and Create Report are separate so Stop can prevent submission.
+- Save existing ready CSVs, submit all missing annual ranges once, and refresh every five seconds for up to ten minutes while collecting Submitted reports. Resume retains uncertain/submitted request checkpoints.
+- Recover missing/interrupted native CSV download IDs, accept first-party PayPal CSV download metadata beyond the reports route, and expose safe download status diagnostics. Only observed or saved IDs are queried; no download-history enumeration or added site permission.
+- Download helpers use temporary provider tabs, wait for them to load, and close completed tabs they created. Waiting, sign-in and failed runs remain recoverable. Existing user tabs stay open. Shared data folders and earlier exports are preserved.
+- Synthetic tests cover the full batch, timeout/resume/Stop, date lock order, native CSV recovery, tab ownership and all four helper flows. Live signed-in provider behavior still needs an integration check.
+
 ## 0.36.0 - Commit provider date selections and recognize Gmail identity variants
 
 - Amazon prioritizes its observed Order Date control and clicks the innermost Custom Range label, including handlers attached below the menu row.

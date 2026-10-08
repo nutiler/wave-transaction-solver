@@ -43,12 +43,12 @@ export async function paypalPage(request={},testContext) {
  const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
  if(!request.action||request.action==='read')return snapshot();
  if(request.action==='refresh'){const found=exact(clickable(),'Refresh');if(found.length!==1||found[0].disabled)throw Error('Cannot identify the report Refresh button.');found[0].click();await pause();return snapshot();}
- if(request.action==='create') {
+ if(['prepare','create'].includes(request.action)) {
   if(!date(request.start)||!date(request.end)||request.end<request.start||Date.parse(request.end)-Date.parse(request.start)>366*86400000||request.type!=='All transactions'||request.format!=='CSV')throw Error('Invalid annual report request.');
   const before=reportRows().filter(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');if(before.length)return {existing:true};
   async function select(pattern,wanted){const e=field(pattern);if(!e)return false;if(chosen(e)?.toLowerCase()===wanted.toLowerCase())return true;if(e.disabled||e.getAttribute('aria-disabled')==='true')return false;
    if(e.tagName==='SELECT'){const matches=[...e.options].filter(o=>text(o).toLowerCase()===wanted.toLowerCase()&&!o.disabled);if(matches.length!==1)return false;const setter=Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set;setter.call(e,matches[0].value);e.dispatchEvent(new win.Event('input',{bubbles:true}));e.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();}
-   e.click();await pause();let choices=exact(all('[role="option"],[role="menuitem"]'),wanted);if(!choices.length)choices=exact(all('button'),wanted);if(!choices.length)choices=exact(all('li'),wanted);if(choices.length!==1)return false;choices[0].click();await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();
+   e.click();await pause();let choices=exact(all('[role="option"],[role="menuitem"]'),wanted);if(!choices.length)choices=exact(all('button'),wanted);if(!choices.length)choices=exact(all('li'),wanted);if(choices.length!==1)return false;let labels=[...choices[0].querySelectorAll('button,a,span,div')].filter(visible).filter(child=>text(child).toLowerCase()===wanted.toLowerCase());labels=labels.filter(parent=>!labels.some(child=>child!==parent&&parent.contains(child)));(labels.length===1?labels[0]:choices[0]).click();await pause();return chosen(field(pattern))?.toLowerCase()===wanted.toLowerCase();
   }
   if(!await select(/^Transaction type$/i,'All transactions')||!await select(/^Format$/i,'CSV'))return {notSubmitted:true,message:'Set Transaction type to All transactions and Format to CSV in PayPal, then Resume. Nothing requested.'};
   const rangeExact=()=>{const values=chosen(field(/^Date range$/i)).match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];return values.length===2&&date(values[0])===request.start&&date(values[1])===request.end;};
@@ -64,47 +64,45 @@ export async function paypalPage(request={},testContext) {
    const start=field(startPattern),end=field(endPattern);
    if(!start||!end||start.tagName!=='INPUT'||end.tagName!=='INPUT'||[start,end].some(e=>e.disabled))return {notSubmitted:true,message:'Open Date range and choose Custom dates. Read/copy report controls with the date panel open, then Resume. Nothing requested.'};
 
-   // Reacquire each controlled input after a real focus/blur and its framework render.
+   // Type FROM, select its calendar day to commit, then do TO. Reacquire each rendered field.
    const sequence=date(end.value)&&request.start>date(end.value)?[[endPattern,request.end],[startPattern,request.start]]:[[startPattern,request.start],[endPattern,request.end]];
+   const monthNames=['january','february','march','april','may','june','july','august','september','october','november','december'];
+   const monthValue=e=>{const m=text(e).match(/^([A-Za-z]+)\s+(\d{4})$/),month=m&&monthNames.indexOf(m[1].toLowerCase());return m&&month>=0?Number(m[2])*12+month:null;};
+   const calendar=()=>{
+    let headings=all('h2,h3,h4,span,div,p,[aria-live]').filter(e=>monthValue(e)!==null);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
+    const found=[];for(const heading of headings){for(let panel=heading.parentElement,depth=0;panel&&panel!==doc.body&&depth<5;panel=panel.parentElement,depth++){
+     let days=[...panel.querySelectorAll('button,a,[role="button"],[role="gridcell"],td,span,div')].filter(visible).filter(e=>/^(?:[1-9]|[12]\d|3[01])$/.test(text(e)));days=days.filter(e=>!days.some(child=>child!==e&&e.contains(child)));
+     if(days.length>=7&&days.length<=42){found.push({heading,panel,days,month:monthValue(heading)});break;}
+    }}return found.length===1?found[0]:null;
+   };
+   const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"]');
+   async function pick(pattern,iso){
+    const input=field(pattern);if(!input)return false;let cal=calendar();if(!cal){input.click();await pause();cal=calendar();}
+    if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){buttons[0].click();await pause();cal=calendar();}}
+    if(!cal)return null;const target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;if(Math.abs(target-cal.month)>120)return false;
+    for(let step=0;cal.month!==target&&step<120;step++){
+     const direction=target<cal.month?-1:1,controls=[...cal.panel.querySelectorAll('button,a,[role="button"],[tabindex],svg,span')].filter(visible).filter(e=>!cal.days.includes(e));
+     let nav=controls.filter(e=>new RegExp(direction<0?'previous|prev|back':'next|forward','i').test([e.getAttribute('aria-label'),e.title,text(e)].join(' ')));
+     if(!nav.length){const header=cal.heading.parentElement,hr=cal.heading.getBoundingClientRect();nav=controls.filter(e=>header.contains(e)&&!text(e).match(/\d/)&&(()=>{const r=e.getBoundingClientRect();return direction<0?r.right<=hr.left:r.left>=hr.right;})());}
+     nav=nav.filter(e=>!nav.some(child=>child!==e&&e.contains(child)));
+     if(nav.length!==1||!enabled(nav[0]))return false;const previous=cal.month,targetControl=nav[0].closest('button,a,[role="button"],[tabindex]')||nav[0];if(typeof targetControl.click==='function')targetControl.click();else targetControl.dispatchEvent(new win.MouseEvent('click',{bubbles:true}));await pause();cal=calendar();if(!cal||cal.month!==previous+direction)return false;
+    }
+    if(cal.month!==target)return false;const day=Number(iso.slice(8,10)),days=cal.days.filter(e=>Number(text(e))===day&&enabled(e)&&!/(outside|other)[-_ ]?month/i.test(e.className||''));
+    if(days.length!==1)return false;days[0].click();await pause();return date(field(pattern)?.value)===iso;
+   }
    for(const [pattern,iso] of sequence){
-    const input=field(pattern);if(!input||input.disabled||input.readOnly)break;
-    const value=input.type==='date'?iso:(request.dateOrder==='dmy'?iso.slice(8,10)+'/'+iso.slice(5,7):iso.slice(5,7)+'/'+iso.slice(8,10))+'/'+iso.slice(0,4);
-    input.focus();Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
-    input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));input.blur();await pause();
+    const input=field(pattern);if(!input||input.disabled)return {notSubmitted:true,message:'PayPal date controls changed. Nothing requested.'};
+    input.focus();input.click();await pause();
+    if(!input.readOnly){
+     const month=String(Number(iso.slice(5,7))),day=String(Number(iso.slice(8,10))),value=input.type==='date'?iso:(request.dateOrder==='dmy'?day+'/'+month:month+'/'+day)+'/'+iso.slice(0,4);
+     Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
+     input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();
+    }
+    if(await pick(pattern,iso)===false)return {notSubmitted:true,message:'PayPal could not lock the exact calendar day. Nothing requested.'};
+    field(pattern)?.blur();await pause();
+    if(date(field(pattern)?.value)!==iso)return {notSubmitted:true,message:'PayPal did not commit the requested date. Nothing requested.'};
    }
    const fieldsExact=()=>date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
-   // Some PayPal date pickers update visible text without committing the report range.
-   // Select real calendar days only when text entry failed to commit and no Apply panel exists.
-   let initialPanel=field(startPattern)?.parentElement;while(initialPanel&&!initialPanel.contains(field(endPattern)))initialPanel=initialPanel.parentElement;
-   const hasApply=initialPanel&&initialPanel!==doc.body&&[...initialPanel.querySelectorAll('button,[role="button"]')].filter(visible).some(e=>/^(Apply|Done|Save|Set dates|Confirm)$/i.test(text(e)));
-   const customSelected=/^(Custom|Custom date range|Custom range)$/i.test(chosen(field(/^Date range$/i)));
-   if(!fieldsExact()||!rangeExact()&&!hasApply&&!customSelected){
-    const monthNames=['january','february','march','april','may','june','july','august','september','october','november','december'];
-    const monthValue=e=>{const m=text(e).match(/^([A-Za-z]+)\s+(\d{4})$/),month=m&&monthNames.indexOf(m[1].toLowerCase());return m&&month>=0?Number(m[2])*12+month:null;};
-    const calendar=()=>{
-     let headings=all('h2,h3,h4,span,div,p,[aria-live]').filter(e=>monthValue(e)!==null);headings=headings.filter(e=>!headings.some(child=>child!==e&&e.contains(child)));
-     const found=[];for(const heading of headings){for(let panel=heading.parentElement,depth=0;panel&&panel!==doc.body&&depth<5;panel=panel.parentElement,depth++){
-      let days=[...panel.querySelectorAll('button,a,[role="button"],[role="gridcell"],td,span,div')].filter(visible).filter(e=>/^(?:[1-9]|[12]\d|3[01])$/.test(text(e)));days=days.filter(e=>!days.some(child=>child!==e&&e.contains(child)));
-      if(days.length>=7&&days.length<=42){found.push({heading,panel,days,month:monthValue(heading)});break;}
-     }}return found.length===1?found[0]:null;
-    };
-    const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"]');
-    async function pick(pattern,iso){
-     const input=field(pattern);if(!input)return false;input.click();await pause();let cal=calendar();
-     if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){buttons[0].click();await pause();cal=calendar();}}
-     if(!cal)return false;const target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;if(Math.abs(target-cal.month)>120)return false;
-     for(let step=0;cal.month!==target&&step<120;step++){
-      const direction=target<cal.month?-1:1,controls=[...cal.panel.querySelectorAll('button,a,[role="button"],[tabindex],svg,span')].filter(visible).filter(e=>!cal.days.includes(e));
-      let nav=controls.filter(e=>new RegExp(direction<0?'previous|prev|back':'next|forward','i').test([e.getAttribute('aria-label'),e.title,text(e)].join(' ')));
-      if(!nav.length){const header=cal.heading.parentElement,hr=cal.heading.getBoundingClientRect();nav=controls.filter(e=>header.contains(e)&&!text(e).match(/\d/)&&(()=>{const r=e.getBoundingClientRect();return direction<0?r.right<=hr.left:r.left>=hr.right;})());}
-      nav=nav.filter(e=>!nav.some(child=>child!==e&&e.contains(child)));
-      if(nav.length!==1||!enabled(nav[0]))return false;const previous=cal.month;nav[0].click();await pause();cal=calendar();if(!cal||cal.month!==previous+direction)return false;
-     }
-     if(cal.month!==target)return false;const day=Number(iso.slice(8,10)),days=cal.days.filter(e=>Number(text(e))===day&&enabled(e)&&!/(outside|other)[-_ ]?month/i.test(e.className||''));
-     if(days.length!==1)return false;days[0].click();await pause();return date(field(pattern)?.value)===iso;
-    }
-    for(const [pattern,iso] of sequence){if(!await pick(pattern,iso))return {notSubmitted:true,message:'PayPal did not commit the dates and its calendar could not select the exact day. Set the dates in its calendar, then Resume. Nothing requested.'};}
-   }
    if(!fieldsExact())return {notSubmitted:true,message:'PayPal did not retain the requested start/end dates. Nothing requested.'};
    // Commit an open custom-date panel before creating the report.
    let panel=field(startPattern)?.parentElement;while(panel&&!panel.contains(field(endPattern)))panel=panel.parentElement;
@@ -116,6 +114,7 @@ export async function paypalPage(request={},testContext) {
   const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
   const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
   if(!(rangeMatches||inputsMatch&&/^(Custom|Custom date range|Custom range)$/i.test(selectedRange))||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'PayPal’s displayed dates/type/format do not match the requested report. Nothing requested.'};
+  if(request.action==='prepare')return {prepared:true};
   const create=exact(clickable(),'Create Report');if(create.length!==1||create[0].disabled)return {notSubmitted:true,message:'Create Report is unavailable. Check the date range in PayPal, then Resume.'};
   submitted=true;create[0].click();await pause();return {submitted:true};
  }
@@ -134,10 +133,10 @@ export async function paypalPage(request={},testContext) {
  const original=win.URL.createObjectURL,originalClick=win.HTMLAnchorElement.prototype.click,urls=new Set(),captures=[];let error=null;
  win.URL.createObjectURL=function(blob){const url=original.call(this,blob);if(blob instanceof win.Blob&&blob.size<=30*1024*1024){urls.add(url);captures.push(blob.text().then(value=>{if(value.startsWith('PK'))throw Error('PayPal returned a ZIP; extract its CSVs manually into data/paypal.');return value;}));}return url;};
  win.HTMLAnchorElement.prototype.click=function(){if(urls.has(this.href))return;return originalClick.call(this);};
- try{submitted=true;control.click();for(let i=0;i<80&&!captures.length;i++)await pause();if(captures.length!==1)throw Error('No single CSV blob was produced. Download the report manually and drop it in data/paypal.');const value=await captures[0];if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('PayPal left the report page during download. Nothing saved.');return {text:value};}catch(e){error=e;throw error;}finally{win.URL.createObjectURL=original;win.HTMLAnchorElement.prototype.click=originalClick;}
+ try{submitted=true;control.click();for(let i=0;i<20&&!captures.length;i++)await pause();if(captures.length!==1)throw Error('No single CSV blob was produced. Download the report manually and drop it in data/paypal.');const value=await captures[0];if(loc.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(loc.pathname))throw Error('PayPal left the report page during download. Nothing saved.');return {text:value};}catch(e){error=e;throw error;}finally{win.URL.createObjectURL=original;win.HTMLAnchorElement.prototype.click=originalClick;}
  }catch(error){
   if(!request.bridge)throw error;
   const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
-  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},downloadStarted:request.action==='download'&&submitted,notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
+  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},downloadStarted:request.action==='download'&&submitted,notSubmitted:['generate','prepare','create','request'].includes(request.action)&&!submitted};
  }
 }

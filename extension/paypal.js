@@ -26,23 +26,35 @@ export async function savePayPalCSV(root,report,text,dateOrder='mdy') {
 export async function verifyPayPalFile(root,entry) {
  try{const parts=entry.name.split('/');if(parts.length!==2||!/^\d{4}$/.test(parts[0])||!/^paypal-(all|balance)-[a-z0-9-]+\.csv$/.test(parts[1]))return false;const dir=await root.getDirectoryHandle(parts[0]),file=await dir.getFileHandle(parts[1]);return await venmoDigest(await(await file.getFile()).text())===entry.hash;}catch{return false;}
 }
-// Save every available CSV before creating more reports in PayPal's bounded report list.
-export async function collectPayPalReports({periods,entries={},read,download,save,persist,request,verifySaved=async()=>false,current=()=>true,progress=()=>{}}) {
- const next={...entries};let info=await read(),saved=0;
- async function store(report){const key=paypalReportKey(report);if(next[key]?.hash&&await verifySaved(next[key]))return;if(!current())return;progress(report,'Downloading CSV');const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);saved++;}
- for(const report of eligiblePayPalReports(info)){await store(report);if(!current())return {entries:next,saved,stopped:true};}
- for(const period of periods) {
-  if(!current())return {entries:next,saved,stopped:true};const key=paypalReportKey(period),entry=next[key];
-  if(entry?.hash&&await verifySaved(entry))continue;
-  let covered=false;for(const savedReport of Object.values(next)){if(savedReport.type==='All transactions'&&savedReport.format==='CSV'&&savedReport.start<=period.start&&savedReport.end>=period.end&&savedReport.hash&&await verifySaved(savedReport)){covered=true;break;}}if(covered)continue;
-  info=await read();const matches=(info.reports||[]).filter(r=>paypalReportKey(r)===key);
-  const readyMatch=matches.find(r=>r.ready);if(readyMatch){await store(readyMatch);continue;}
-  if(matches.length||['requesting','requested'].includes(entry?.status))return {entries:next,saved,waiting:period,uncertain:!matches.length};
-  progress(period,'Creating annual CSV report');next[key]={...period,status:'requesting',requestedAt:new Date().toISOString()};await persist(next);
-  // A persisted intent prevents duplicate Create Report clicks if the page or extension closes.
-  const outcome=await request(period);if(outcome?.notSubmitted){delete next[key];await persist(next);throw Error(outcome.message||'Set the requested report controls in PayPal, then Resume.');}
-  next[key]={...next[key],status:'requested'};await persist(next);info=await read();
-  const ready=(info.reports||[]).filter(r=>paypalReportKey(r)===key&&r.ready);if(ready.length===1)await store(ready[0]);else return {entries:next,saved,waiting:period};
+// Preserve ready CSVs, submit missing years once, then collect the submitted batch.
+export async function collectPayPalReports({periods,entries={},read,download,save,persist,request,refresh,verifySaved=async()=>false,current=()=>true,progress=()=>{},pause=ms=>new Promise(r=>setTimeout(r,ms)),now=()=>Date.now(),timeoutMs=600000,refreshMs=5000}) {
+ const next={...entries};let info=await read(),saved=0,requested=0;
+ const verified=new Map();
+ async function valid(entry){if(!entry?.hash)return false;const key=entry.hash+':'+entry.name;if(!verified.has(key))verified.set(key,await verifySaved(entry));return verified.get(key);}
+ async function covered(period){for(const entry of Object.values(next)){if(entry.type==='All transactions'&&entry.format==='CSV'&&entry.start<=period.start&&entry.end>=period.end&&await valid(entry))return true;}return false;}
+ async function reportProgress(report,message,meta){let completed=0;for(const period of periods)if(await covered(period))completed++;progress(report,message,{requested,saved,total:periods.length,completed,...meta});}
+ async function store(report){const key=paypalReportKey(report);if(await valid(next[key])||!current())return;await reportProgress(report,'Downloading CSV',{phase:'downloading'});const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);verified.set(result.hash+':'+result.name,true);saved++;}
+ // Old ready reports may be outside PayPal's request window. Save them before the bounded list changes.
+ for(const report of eligiblePayPalReports(info)){await store(report);if(!current())return {entries:next,saved,requested,stopped:true};}
+ for(const period of periods){
+  if(!current())return {entries:next,saved,requested,stopped:true};if(await covered(period))continue;
+  const key=paypalReportKey(period);info=await read();const matches=(info.reports||[]).filter(r=>paypalReportKey(r)===key);
+  if(matches.some(r=>r.ready)){await store(matches.find(r=>r.ready));continue;}
+  if(matches.length||['requesting','requested'].includes(next[key]?.status))continue;
+  await reportProgress(period,'Submitting annual CSV report',{phase:'requesting'});next[key]={...period,status:'requesting',requestedAt:new Date().toISOString()};await persist(next);
+  const outcome=await request(period);if(outcome?.notSubmitted){delete next[key];await persist(next);throw Error(outcome.message||'PayPal did not accept the requested dates. Nothing requested.');}
+  next[key]={...next[key],status:'requested'};await persist(next);requested++;
  }
- return {entries:next,saved,stopped:!current()};
+ const started=now();let refreshed=started;
+ while(current()){
+  info=await read();for(const report of eligiblePayPalReports(info)){await store(report);if(!current())return {entries:next,saved,requested,stopped:true};}
+  const pending=[];for(const period of periods)if(!await covered(period))pending.push(period);
+  if(!pending.length)return {entries:next,saved,requested,stopped:false};
+  const uncertain=pending.some(period=>!(info.reports||[]).some(r=>paypalReportKey(r)===paypalReportKey(period)));
+  const elapsed=now()-started;await reportProgress(pending[0],'Waiting for '+pending.length+' reports - '+Math.floor(elapsed/1000)+'s / '+Math.floor(timeoutMs/1000)+'s; refreshing automatically',{phase:'waiting',pending:pending.length,elapsed});
+  if(!refresh||elapsed>=timeoutMs)return {entries:next,saved,requested,waiting:pending[0],pending,uncertain};
+  if(now()-refreshed>=refreshMs){if(!current())break;await refresh();refreshed=now();}
+  await pause(Math.min(1000,Math.max(1,timeoutMs-(now()-started))));
+ }
+ return {entries:next,saved,requested,stopped:true};
 }

@@ -10,12 +10,13 @@ function addReport(start,end,type='All transactions',format='CSV'){const tr=docu
 addReport('2018-01-01','2018-12-31');addReport('2017-01-01','2017-12-31','All transactions','PDF');
 $('mockCreate').onclick=()=>{creates++;addReport($('mockStart').value,$('mockEnd').value,$('mockType').value,$('mockFormat').value);};
 const location={origin:'https://www.paypal.com',pathname:'/reports/dlog',href:'https://www.paypal.com/reports/dlog'},context={document,location,pause:async()=>{}};
-window.chrome={runtime:{id:'synthetic-paypal'},permissions:{contains:async()=>true,request:async()=>true},tabs:{query:async()=>[{id:1,title:'Synthetic PayPal reports',url:location.href}],get:async()=>({id:1,url:location.href}),create:async()=>({id:1}),update:async()=>({id:1})},downloads:{onCreated:{addListener:f=>createdListeners.add(f),removeListener:f=>createdListeners.delete(f)},onChanged:{addListener:f=>changedListeners.add(f),removeListener:f=>changedListeners.delete(f)},search:async({id})=>nativeItems.has(id)?[nativeItems.get(id)]:[]},scripting:{executeScript:async({args})=>{
+let tabSerial=1;const closedTabs=[],mockTabs=new Map([[1,{id:1,title:'Synthetic PayPal reports',url:location.href}]]);
+window.chrome={runtime:{id:'synthetic-paypal'},permissions:{contains:async()=>true,request:async()=>true},tabs:{query:async()=>[...mockTabs.values()],get:async id=>mockTabs.get(id),create:async options=>{const tab={id:++tabSerial,title:'Temporary synthetic PayPal',...options};mockTabs.set(tab.id,tab);return tab;},update:async(id,options)=>Object.assign(mockTabs.get(id),options),remove:async id=>{closedTabs.push(id);mockTabs.delete(id);}},downloads:{onCreated:{addListener:f=>createdListeners.add(f),removeListener:f=>createdListeners.delete(f)},onChanged:{addListener:f=>changedListeners.add(f),removeListener:f=>changedListeners.delete(f)},search:async({id})=>nativeItems.has(id)?[nativeItems.get(id)]:[]},scripting:{executeScript:async({args})=>{
  if(args[0].action==='read'&&missingReads-->0)return [{frameId:0}];
  if(nativeMode&&args[0].action==='download'){
   nativeDownloads++;const report=args[0],csv='Date,Name,Type,Status,Currency,Gross,Fee,Net,Transaction ID\n'+report.start+',Fictional Shop,Express Checkout Payment,Completed,USD,-10.00,0.00,-10.00,FAKENATIVE';
   const handle=await root.getFileHandle('Download.csv',{create:true}),stream=await handle.createWritable();await stream.write(csv);await stream.close();
-  const item={id:100+nativeDownloads,filename:'C:/fictional-data/Download.csv',startTime:new Date().toISOString(),state:'complete',referrer:location.href,url:'https://www.paypal.com/reports/fictional-download.csv'};nativeItems.set(item.id,item);for(const listener of createdListeners)listener(item);
+  const item={id:100+nativeDownloads,filename:'C:/fictional-data/Download.csv',startTime:new Date().toISOString(),state:'complete',referrer:location.href,url:'https://www.paypal.com/activity/statement/fictional-download.csv'};nativeItems.set(item.id,item);for(const listener of createdListeners)listener(item);
   return [{frameId:0}]; // Chrome loses the script response during a native download.
  }
  return [{frameId:0,result:await paypalPage(args[0],context)}];
@@ -49,7 +50,7 @@ $('fixtureRun').onclick=async()=>{const log=[],check=(v,name)=>{if(!v)throw Erro
  for(const input of actualInputs)input.onchange=()=>{if([...actualInputs].every(e=>e.value))summary.value=actualInputs[0].value+' - '+actualInputs[1].value;};
  $('mockCreate').onclick=()=>creates++;
  const dateResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2022-01-01',end:'2022-12-31'},context);
- check(dateResult.submitted&&actualInputs[0].value==='01/01/2022'&&actualInputs[1].value==='12/31/2022','Read-only Date Range input opens From/To despite duplicate provider input IDs');
+ check(dateResult.submitted&&actualInputs[0].value==='1/1/2022'&&actualInputs[1].value==='12/31/2022','Read-only Date Range input opens From/To despite duplicate provider input IDs');
  actual.remove();
  // Controlled text fields are recreated after blur, just as a framework render would replace them.
  const controlled=document.createElement('section');controlled.innerHTML='<div><label>Date range<input readonly value="Since last download"></label></div><div id="controlledPanel"></div>';mock.append(controlled);
@@ -57,14 +58,15 @@ $('fixtureRun').onclick=async()=>{const log=[],check=(v,name)=>{if(!v)throw Erro
  const renderControlled=()=>{const panel=controlled.querySelector('#controlledPanel');panel.innerHTML='<div><label for="start">From</label><input id="start"></div><div><label for="end">To</label><input id="end"></div>';for(const [i,input] of [...panel.querySelectorAll('input')].entries()){input.value=committed[i];input.addEventListener('blur',()=>{const value=input.value;queueMicrotask(()=>{committed[i]=value;controlledSummary.value=committed.join('-');renderControlled();});});}};
  renderControlled();$('mockCreate').onclick=()=>creates++;const beforeControlled=creates;
  const controlledResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2023-01-01',end:'2023-12-31'},context);
- check(controlledResult.submitted&&creates===beforeControlled+1&&controlledSummary.value==='01/01/2023-12/31/2023','Real blur commits both dates across recreated controlled inputs');controlled.remove();
+ check(controlledResult.submitted&&creates===beforeControlled+1&&controlledSummary.value==='1/1/2023-12/31/2023','Real blur commits both dates across recreated controlled inputs');controlled.remove();
  // Reject text-only updates: only selecting actual calendar days commits the provider range.
  const calendarHost=document.createElement('section');calendarHost.innerHTML='<div><label>Date range<input readonly value="09/30/2026-10/07/2026"></label></div><div><label for="start">From</label><input id="start"></div><div><label for="end">To</label><input id="end"></div><section id="mockCalendar" hidden></section>';mock.append(calendarHost);
- let selectedDates=['09/30/2026','10/07/2026'],activeDate=0,shownMonth=2026*12+8,monthMoves=0,calendarDays=0,duplicateDay=false,freezeMonth=false;
+ const lockOrder=[];let selectedDates=['09/30/2026','10/07/2026'],activeDate=0,shownMonth=2026*12+8,monthMoves=0,calendarDays=0,duplicateDay=false,freezeMonth=false;
  const calendarSummary=calendarHost.querySelector('input'),calendarInputs=calendarHost.querySelectorAll('input:not([readonly])'),monthLabels=['January','February','March','April','May','June','July','August','September','October','November','December'];
- const drawCalendar=()=>{const panel=calendarHost.querySelector('#mockCalendar');panel.hidden=false;panel.replaceChildren();const header=document.createElement('div'),previous=document.createElement('button'),heading=document.createElement('span'),next=document.createElement('button');previous.setAttribute('aria-label','Previous month');next.setAttribute('aria-label','Next month');previous.textContent='<';next.textContent='>';heading.textContent=monthLabels[shownMonth%12]+' '+Math.floor(shownMonth/12);header.append(previous,heading,next);panel.append(header);for(const [button,delta] of [[previous,-1],[next,1]])button.onclick=()=>{monthMoves++;if(!freezeMonth)shownMonth+=delta;drawCalendar();};const count=new Date(Math.floor(shownMonth/12),shownMonth%12+1,0).getDate();for(let d=1;d<=count;d++){const button=document.createElement('button');button.textContent=String(d);button.onclick=()=>{calendarDays++;selectedDates[activeDate]=String(shownMonth%12+1)+'/'+d+'/'+Math.floor(shownMonth/12);calendarInputs[activeDate].value=selectedDates[activeDate];calendarSummary.value=selectedDates.join('-');panel.hidden=true;};panel.append(button);}if(duplicateDay){const duplicate=document.createElement('button');duplicate.textContent='1';panel.append(duplicate);}};
+ const drawCalendar=()=>{const panel=calendarHost.querySelector('#mockCalendar');panel.hidden=false;panel.replaceChildren();const header=document.createElement('div'),previous=document.createElement('button'),heading=document.createElement('span'),next=document.createElement('button');previous.setAttribute('aria-label','Previous month');next.setAttribute('aria-label','Next month');previous.textContent='<';next.textContent='>';heading.textContent=monthLabels[shownMonth%12]+' '+Math.floor(shownMonth/12);header.append(previous,heading,next);panel.append(header);for(const [button,delta] of [[previous,-1],[next,1]])button.onclick=()=>{monthMoves++;if(!freezeMonth)shownMonth+=delta;drawCalendar();};const count=new Date(Math.floor(shownMonth/12),shownMonth%12+1,0).getDate();for(let d=1;d<=count;d++){const button=document.createElement('button');button.textContent=String(d);button.onclick=()=>{calendarDays++;lockOrder.push(activeDate===0?'from':'to');selectedDates[activeDate]=String(shownMonth%12+1)+'/'+d+'/'+Math.floor(shownMonth/12);calendarInputs[activeDate].value=selectedDates[activeDate];calendarSummary.value=selectedDates.join('-');panel.hidden=true;};panel.append(button);}if(duplicateDay){const duplicate=document.createElement('button');duplicate.textContent='1';panel.append(duplicate);}};
  for(const [i,input] of [...calendarInputs].entries()){input.value=selectedDates[i];input.onblur=()=>{input.value=selectedDates[i];};input.onclick=()=>{activeDate=i;const parts=selectedDates[i].split('/');shownMonth=Number(parts[2])*12+Number(parts[0])-1;drawCalendar();};}
  const calendarBefore=creates;const calendarResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-11-01',end:'2024-12-31'},context);
+ check(lockOrder.slice(0,2).join(',')==='from,to','From calendar day is locked before To is touched');
  check(calendarResult.submitted&&creates===calendarBefore+1&&calendarDays===2&&monthMoves>0&&calendarSummary.value==='11/1/2024-12/31/2024','Rejected typed dates fall back to bounded calendar navigation and exact committed range');
  for(const input of calendarInputs)input.readOnly=true;
  const readOnlyBefore=creates,readOnlyResult=await paypalPage({action:'create',type:'All transactions',format:'CSV',start:'2024-10-01',end:'2024-10-31'},context);
@@ -87,10 +89,20 @@ oldRange.hidden=oldStart.hidden=oldEnd.hidden=false;$('mockCreate').onclick=orig
  const bridged=await paypalPage({action:'read',bridge:true},{...context,location:{...location,pathname:'/signin'}});
  check(bridged.helperError?.message.includes('signed-in'),'Provider errors are returned across the injection boundary');
 
- nativeMode=true;const countBefore=creates;await $('run').onclick();
- check($('status').textContent.includes('Annual collection finished')&&nativeDownloads===1&&creates===countBefore,'Native PayPal CSV is collected when Chrome loses the script response; duplicate reports do not block the run');
+ nativeMode=true;saved.get('paypal:downloader').download={type:'All transactions',format:'CSV',start:'2025-01-01',end:'2025-12-31',downloadId:999};const countBefore=creates;await $('run').onclick();
+ check($('status').textContent.includes('Annual collection finished')&&nativeDownloads===1&&creates===countBefore,'A missing saved download ID recovers the exact CSV, including a native first-party route outside reports');
  check(createdListeners.size===0&&changedListeners.size===0&&!saved.get('paypal:downloader').download,'Verified native CSV clears its download checkpoint and releases listeners');
  nativeMode=false;
+ check(closedTabs.length>=3&&mockTabs.has(1),'Successful collection closes temporary working tabs and keeps the user report tab');
+ // End-to-end Submitted -> Refresh -> Download, after all missing years have been created.
+ const submittedYears=[],waitingButtons=[],batchBefore=creates;let batchRefreshes=0;
+ $('mockCreate').onclick=()=>{creates++;const from=$('mockStart').value,to=$('mockEnd').value;submittedYears.push(from);addReport(from,to);const row=reportRows.at(-1),button=row.querySelector('button');button.hidden=true;row.lastElementChild.append(document.createTextNode('Submitted'));waitingButtons.push(button);};
+ $('mockRefresh').onclick=()=>{batchRefreshes++;if(submittedYears.length!==4)throw Error('Refresh happened before all four missing years were submitted');for(const button of waitingButtons){button.hidden=false;for(const node of [...button.parentElement.childNodes])if(node!==button)node.remove();}};
+ $('year').value='2021';await $('run').onclick();
+ check(creates===batchBefore+4&&submittedYears.every(value=>value.endsWith('-01-01')),'One click submits every missing year once before waiting');
+ check(batchRefreshes===1&&$('status').textContent.includes('Annual collection finished'),'Submitted rows become Download through automatic Refresh, then the batch finishes');
+ check(saved.get('paypal:downloader').entries['All transactions:2021-01-01:2021-12-31:CSV'].hash,'The oldest requested CSV is validated and saved locally');
+ check(mockTabs.size===1&&mockTabs.has(1),'Completed batch closes its working tab after all requested files save');
 $('fixtureResult').textContent=log.join('\n');
  }catch(e){$('fixtureResult').textContent=log.join('\n')+'\nFAIL '+e.message;}};
 

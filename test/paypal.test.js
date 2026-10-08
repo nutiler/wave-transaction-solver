@@ -33,3 +33,19 @@ test('Duplicate ready report rows download one validated copy by its exact ephem
  const result=await collectPayPalReports({periods:[report],read:async()=>({reports:[first,second]}),download:async r=>{calls.push(r.rowToken);return 'synthetic';},save:async()=>({hash:'verified',name:'synthetic'}),verifySaved:async()=>true,persist:async value=>persisted=value,request:async()=>assert.fail('No duplicate report request')});
  assert.deepEqual(calls,['fictional-row-1']);assert.equal(result.saved,1);assert.equal(persisted[paypalReportKey(report)].rowToken,undefined);
 });
+
+
+test('Missing years are all submitted before waiting; Submitted reports refresh until Download',async()=>{
+ const periods=[2023,2024,2025].map(year=>({...report,start:year+'-01-01',end:year+'-12-31'})),rows=[],calls=[];let clock=0,refreshes=0;
+ const result=await collectPayPalReports({periods,read:async()=>({reports:rows}),request:async period=>{calls.push('create '+period.start);rows.push({...period,ready:false,status:'Submitted'});return {submitted:true};},refresh:async()=>{assert.equal(rows.length,3);calls.push('refresh');if(++refreshes===2)rows.forEach(r=>r.ready=true);},pause:async ms=>clock+=ms,now:()=>clock,download:async r=>{calls.push('download '+r.start);return 'synthetic';},save:async r=>({hash:r.start,name:r.start}),persist:async()=>{}});
+ assert.deepEqual(calls.slice(0,3),periods.map(p=>'create '+p.start));assert.equal(result.saved,3);assert.equal(result.waiting,undefined);assert.equal(clock,11000);
+});
+test('The ten-minute deadline retains submitted checkpoints and Resume never creates again',async()=>{
+ let clock=0,creates=0,refreshes=0,persisted={};const rows=[];
+ const config={periods:[report],read:async()=>({reports:rows}),download:async()=>assert.fail(),save:async()=>assert.fail(),persist:async e=>persisted={...e},request:async p=>{creates++;rows.push({...p,ready:false,status:'Submitted'});},refresh:async()=>refreshes++,pause:async ms=>clock+=ms,now:()=>clock};
+ const first=await collectPayPalReports(config);assert.equal(clock,600000);assert.equal(refreshes,119);assert.equal(first.waiting.start,report.start);assert.equal(persisted[paypalReportKey(report)].status,'requested');
+ clock=0;await collectPayPalReports({...config,entries:persisted,timeoutMs:10000});assert.equal(creates,1);assert.equal(clock,10000);
+});
+test('Stop after one submission prevents later years from being created',async()=>{
+ let active=true,creates=0;const result=await collectPayPalReports({periods:[report,{...report,start:'2026-01-01',end:'2026-10-07'}],read:async()=>({reports:[]}),download:async()=>assert.fail(),save:async()=>assert.fail(),persist:async()=>{},request:async()=>{creates++;active=false;return {submitted:true};},current:()=>active});assert.equal(creates,1);assert.equal(result.stopped,true);
+});
