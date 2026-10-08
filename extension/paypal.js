@@ -14,9 +14,18 @@ export const paypalReportKey=r=>[r.type,r.start,r.end,r.format].join(':');
 export function eligiblePayPalReports(info) {
  return (info.reports||[]).filter(r=>/^(All transactions|Balance affecting)$/i.test(r.type)&&r.format==='CSV'&&r.start&&r.end&&r.ready).sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end)||a.type.localeCompare(b.type));
 }
+export async function savePayPalResponse(root,report,text){
+ paypalDate(report.start);paypalDate(report.end);if(report.end<report.start||!['All transactions','Balance affecting'].includes(report.type))throw Error('Invalid report identity.');
+ if(typeof text!=='string'||text.length>30*1024*1024||/^\s*[<{]/.test(text)||text.startsWith('PK'))throw Error('Expected a PayPal activity CSV. Login pages and ZIP reports are not CSVs.');
+ const hash=await venmoDigest(text),raw=await root.getDirectoryHandle('raw',{create:true}),name='paypal-'+(report.type==='All transactions'?'all':'balance')+'-'+report.start+'-to-'+report.end+'-'+hash.slice(0,16)+'.response.local.txt';
+ try{const existing=await(await(await raw.getFileHandle(name)).getFile()).text();if(await venmoDigest(existing)!==hash)throw Error('Conflicting raw PayPal response; nothing overwritten.');return {hash,path:'raw/'+name};}catch(error){if(error.name!=='NotFoundError')throw error;}
+ const file=await raw.getFileHandle(name,{create:true}),stream=await file.createWritable();try{await stream.write(text);await stream.close();}catch(error){await stream.abort?.();throw error;}
+ return {hash,path:'raw/'+name};
+}
 export async function savePayPalCSV(root,report,text,dateOrder='mdy') {
  paypalDate(report.start);paypalDate(report.end);if(report.end<report.start||!['All transactions','Balance affecting'].includes(report.type))throw Error('Invalid report identity.');
- const parsed=importPayPalCSV(text,{dateOrder,period:report}),hash=await venmoDigest(text),year=report.start.slice(0,4),dir=await root.getDirectoryHandle(year,{create:true});
+ const original=await savePayPalResponse(root,report,text);let parsed;try{parsed=importPayPalCSV(text,{dateOrder,period:report});}catch(error){error.responsePath=original.path;error.message+=' Original response preserved in paypal/'+original.path;throw error;}
+ const hash=original.hash,year=report.start.slice(0,4),dir=await root.getDirectoryHandle(year,{create:true});
  const stem='paypal-'+(report.type==='All transactions'?'all':'balance')+'-'+report.start+'-to-'+report.end+'-'+dateOrder;let filename=stem+'.csv';
  const existingHash=async name=>{try{return await venmoDigest(await(await(await dir.getFileHandle(name)).getFile()).text());}catch(e){if(e.name==='NotFoundError')return null;throw e;}};
  const existing=await existingHash(filename);if(existing===hash)return {name:year+'/'+filename,hash,count:parsed.records.length,empty:!parsed.records.length,reused:true,dateOrder};

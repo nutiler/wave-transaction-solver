@@ -1,6 +1,6 @@
 import {parseCSV} from './csv.js';
 const clean=v=>String(v??'').trim().replace(/\s+/g,' ');
-const column=v=>clean(v).toLowerCase().replace(/[^a-z0-9]/g,'');
+const column=v=>{const key=clean(v).toLowerCase().replace(/[^a-z0-9]/g,'');return ({amount:'gross',fees:'fee',total:'net'})[key]||key;};
 export function paypalDate(value,order='mdy') {
  if(!['mdy','dmy'].includes(order))throw Error('Choose the PayPal CSV date order.');
  let date=clean(value),m=date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -20,6 +20,7 @@ export function importPayPalCSV(text,{name='',dateOrder='mdy',period=null}={}) {
  const headerIndex=rows.findIndex(row=>required.every(key=>row.some(c=>column(c)===key)));
  if(headerIndex<0)throw Error('The response has no recognizable PayPal activity CSV header. Nothing saved.');
  const header=rows[headerIndex].map(column);if(new Set(header.filter(Boolean)).size!==header.filter(Boolean).length)throw Error('Duplicate PayPal CSV columns.');
+ const personalAmounts=rows[headerIndex].some(c=>clean(c).toLowerCase()==='amount');
  const get=(row,key)=>clean(row[header.indexOf(key)]),records=[],ids=new Set();
  for(const [offset,row] of rows.slice(headerIndex+1).entries()) {
   if(row.length!==header.length)throw Error('PayPal CSV row has missing or extra columns.');
@@ -27,7 +28,8 @@ export function importPayPalCSV(text,{name='',dateOrder='mdy',period=null}={}) {
   if(ids.has(id))throw Error('Duplicate transaction ID inside a PayPal CSV; inspect the report.');ids.add(id);
   const date=paypalDate(get(row,'date'),dateOrder);if(period&&(date<period.start||date>period.end))throw Error('PayPal transaction dates do not match the selected report range. Nothing saved.');
   if(['gross','fee','net'].some(key=>!get(row,key)))throw Error('PayPal CSV has a missing amount.');
-  const gross=paypalMoney(get(row,'gross')),fee=paypalMoney(get(row,'fee')),net=paypalMoney(get(row,'net'));
+  const gross=paypalMoney(get(row,'gross')),reportedFee=paypalMoney(get(row,'fee')),net=paypalMoney(get(row,'net'));
+  const fee=personalAmounts&&gross+reportedFee!==net&&gross-reportedFee===net?-reportedFee:reportedFee;
   if(gross+fee!==net)throw Error('PayPal Gross + Fee does not reconcile to Net.');
   const type=get(row,'type'),status=get(row,'status'),currency=get(row,'currency');if(!/^[A-Z]{3}$/.test(currency))throw Error('Invalid PayPal currency.');
   const funding=get(row,'paymentsource'),reference=get(row,'referencetxnid'),impact=get(row,'balanceimpact');
@@ -41,5 +43,5 @@ export function importPayPalCSV(text,{name='',dateOrder='mdy',period=null}={}) {
   const note=[get(row,'subject'),get(row,'note')].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(' · '),title=get(row,'itemtitle');
   records.push({key:'paypal:'+id,provider:'paypal',sourceId:id,statementView:'account',sourceFormat:'csv',reference,date,currency,signedCents:net,amountCents:Math.abs(net),grossCents:gross,feeCents:fee,netCents:net,kind,status,type,merchant,note,funding,accountEnding:last4,embeddedFundingCents:null,bankAmountCents:Math.abs(net),bankDirection:kind==='Transfer'?(net<0?'in':'out'):net<0?'out':'in',bankExpected:settled&&external&&kind==='Purchase',instrumentKey:'paypal:'+(last4||'Unknown external account'),blocked:!settled?'PayPal activity is not a settled payment.':kind!=='Purchase'?'Funding, refunds, transfers and incoming payments need separate review.':!external?'Wallet or unspecified funding has no confirmed separate bank debit.':fee?'PayPal fees need bank reconciliation.':'',items:title?[{key:id+':item',title,productCategory:'',quantity:get(row,'quantity'),net:Math.abs(gross)}]:[],sources:[{file:name,row:headerIndex+offset+2}],issues:fee&&kind==='Purchase'?['Funding fees need separate bank reconciliation.']:[]});
  }
- return {provider:'paypal',name,records,issues:[],controls:{activityRows:records.length,empty:!records.length,dateOrder,firstDate:records.length?records.map(r=>r.date).sort()[0]:null,lastDate:records.length?records.map(r=>r.date).sort().at(-1):null,currencies:[...new Set(records.map(r=>r.currency))]}};
+ return {provider:'paypal',name,records,issues:[],controls:{activityRows:records.length,empty:!records.length,dateOrder,amountColumns:personalAmounts?'Amount / Fees / Total':'Gross / Fee / Net',firstDate:records.length?records.map(r=>r.date).sort()[0]:null,lastDate:records.length?records.map(r=>r.date).sort().at(-1):null,currencies:[...new Set(records.map(r=>r.currency))]}};
 }

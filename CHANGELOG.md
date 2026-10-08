@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.45.0 - Parse the observed PayPal personal-account export
+
+- Support the actual personal-account Amount, Fees and Total columns alongside Gross, Fee and Net. Preserve source transaction IDs, status, currency and item evidence; require the provided amounts to reconcile rather than invent fees.
+- Handle a deducted fee sign convention only when Amount minus Fees exactly equals Total. Existing signed-fee reports retain their strict reconciliation checks. Ambiguous duplicate or missing amount columns remain rejected.
+- Preserve the original downloaded text in ignored data/paypal/raw before parsing. A rejected CSV response is kept for inspection without being treated as validated transaction evidence; HTML/login pages and ZIP files remain rejected before raw persistence.
+- Capture only a CSV blob associated with an actual download anchor, instead of taking the first unrelated blob created on the provider page.
+- Validate the parser against the real local export without committing financial rows. Public regression examples use fictional records with the observed column names.
+
 ## 0.44.0 - Use PayPal available-data dates and reconcile missing years
 
 - Read PayPal's displayed Data is updated as of date. Current-year requests end at that date when it precedes today; the rolling seven-year starting boundary still uses today's date.
