@@ -1,5 +1,19 @@
 # Dandelion's Wave Transaction Solver
 
+## Wave Solver 1.0 preview
+
+Open **Update finances**, choose your Wave business once in **Data & setup**, then use **Update my finances**. The app scans without making bookkeeping changes and prepares supported suggestions from your current rules and available purchase evidence. Review or edit groups, exclude exceptions, and **Confirm locally**. **Apply & verify** executes only your saved approvals, checks fresh live fields and verifies each result.
+
+Drafts, exclusions, deferred work, grouped undo, queues and save locks persist per business. New imports preserve original approval baselines. Changed preparation requires another scan/review; read-only recovery can still check an uncertain save using its original baseline. Recheck never presses Save or completes a review automatically.
+
+**Data & setup** holds the shared project data folder, file results, collectors and private backup/restore. Refresh recognizes supported CSV/PDF contents at the root and in nested directories, preserves originals and history, deduplicates overlaps and lists actionable failures. An unbound Wave accounting file requires confirmation of its business. Folder access may need renewal after reopening Chrome.
+
+The four collector buttons open their retained helpers and begin when saved setup is ready. Pending PayPal batches resume; fresh collection begins after a completed batch. Login, setup and identity gaps pause explicitly. Consumer Amazon retains separate guidance. After 30 days away, the home screen guides a catch-up refresh; daily work still starts from live scanning.
+
+Startup preserves a complete beta-state checkpoint. Keep the same unpacked extension path, and export a private backup before intentionally changing installation identity. Legacy rule aliases and account/category restrictions stay intact; historical proposals are not promoted to approved rules. **Rules** shows the selected business scope. **Advanced** retains manual tools and diagnostics through the consolidated navigation.
+
+This is release candidate **0.99.0 / 1.0 preview**. Follow the [live acceptance guide](../docs/1.0-acceptance.md) before calling it final 1.0. Older workflow references below are retained for diagnostics; the preview flow above takes precedence.
+
 ## PayPal collection (0.47.0)
 
 After connecting PayPal and choosing the project data folder once, use **Start fresh — collect all years**. It creates a new All transactions CSV for every available year, including 2025, with January 1–December 31 for completed years, a partial oldest year at the seven-year boundary, and a current-year end matching PayPal's available-data date.

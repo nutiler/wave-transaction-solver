@@ -1,5 +1,16 @@
 # Development milestones
 
+## 0.99.0 — Wave Solver 1.0 preview
+
+- Open into Update my finances with the selected business, last successful live scan, review/approval/attention/verification counts and Scan → Review → Approve → Apply → Verify. Data & setup and Rules are secondary; retained manual runners and diagnostics share one Advanced workspace.
+- Preserve the beta reference and checkpoint every IndexedDB feature and Chrome setting before restoration. Keep the same database schema and extension origin. Add private portable backup/restore with folder renewal and protection against conflicting rules, approvals and receipts.
+- Persist review drafts, record exclusions, defer choices and grouped undo. Cache preparation using source/rule/catalog/scan/working-period identity. Original approval baselines remain frozen when inputs change.
+- Block further execution for unresolved new or legacy saves. Recover from the original approval baseline through read-only checks, including after imports change preparation. Suggestion rechecks never complete a review by clicking Save.
+- Recognize supported root and nested reports by content, retain exact bytes/hash when history is unchanged, merge complete Wave posting groups without multiplying transactions, preserve older history and report invalid/unsupported files explicitly. Wave exports with unproven business identity need local confirmation.
+- Connect the existing collectors through deliberate one-click launches, scope saved setup to its original business, preserve Resume uncertainty and share explicit provider statuses. Keep the exact Amazon, PayPal, Wave and Venmo adapters and regression tests.
+- Guide catch-up after 30 days of inactivity while tracking live freshness separately from export coverage. No scheduler or folder watcher is introduced.
+- Add isolated browser acceptance for daily no-import use, persistence, loss/recovery, catch-up imports and responsive layout. Live-account acceptance is required before the final 1.0 label; see [the acceptance guide](docs/1.0-acceptance.md).
+
 ## 0.49.0 - Honor PayPal's exclusive seven-year calendar boundary
 
 - The calendar disables the anniversary day: on October 8, 2026, new collection starts October 9, 2019 and ends December 31, 2019 for the oldest partial year. Mathematical cutoff and first selectable day are stored separately.

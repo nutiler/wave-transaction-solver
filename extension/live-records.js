@@ -1,6 +1,14 @@
 // Live records are observed transaction fields, not synthetic accounting postings.
 const tidy=s=>String(s??'').replace(/\s+/g,' ').trim();
+export function scanDateScope(date,from='2025-01-01') {
+ if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)return 'unknown';
+ return date<from?'completed':'included';
+}
 const money=s=>{const value=tidy(s).replace(/^USD\s*/i,'').replace(/[$,]/g,'');return /^\d+(?:\.\d{1,2})?$/.test(value)?Math.round(Number(value)*100):null;};
+export function savedSnapshotRecord(snapshot,options={}) {
+ const f=snapshot?.fields||{};
+ return liveRecord({id:snapshot?.identity?.transaction,identity:'Wave transaction ID',date:f.date,description:f.description,account:f.account,category:f.category,amountCents:money(f.amount)},snapshot,options);
+}
 export function simpleRecord(t){
  if(t?.origin!=='wave-live')return !!t?.primary&&t.postings?.length===2&&t.categories?.length===1&&!t.existingTransfer&&!/loan/i.test(t.primary.type);
  const b=t.liveBaseline,f=b?.fields;

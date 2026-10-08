@@ -1,6 +1,8 @@
-# Dandelion's Wave Transaction Solver
+# Wave Solver
 
-A local Chrome extension that prepares Wave exports and Amazon, PayPal and Venmo evidence, groups unfinished transactions, and prefills category and description suggestions. **Confirm saves locally and moves to the next group. Execute queued decisions applies your saved choices together, using sequential verified Wave saves.**
+A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
+
+The current build is **1.0 preview (0.99.0)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -8,25 +10,29 @@ A local Chrome extension that prepares Wave exports and Amazon, PayPal and Venmo
 2. Open chrome://extensions and enable Developer mode.
 3. Choose Load unpacked and select the extension folder.
 4. Open your Wave business and launch Dandelion's Wave Transaction Solver.
-5. Import accounting.csv from Wave's data export.
+5. Choose the intended business in **Data & setup**, then use **Update my finances** to scan it. Reload your existing unpacked installation in place when upgrading.
 
-Amazon order CSVs, PayPal activity CSVs or monthly PDFs and Venmo statement CSVs can also be reviewed locally in the source evidence solvers. The Command center combines that evidence with your saved rules and working snapshot. New suggestions remain proposals until you confirm them.
+**Confirm locally** approves only the included records and makes no Wave calls. Drafts, exclusions, deferred work and grouped undo survive reloads. **Apply & verify** rechecks approved records and runs sequential verified saves. An uncertain result stops execution and remains locked until a read-only recheck. Confirming a record never creates a merchant rule.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 ## Workspace
 
-**Bookkeeping** opens the Command center for **Scan Wave → confirm groups → Run queued decisions**. Ordinary daily work does not require a CSV import. Connections and Rule library are secondary views; history and purchase-source imports are optional. **Advanced tools** holds collectors, legacy runners, historical analysis and diagnostics. Sessions and rules stay saved while switching workspaces. The blue interface uses consistent controls and scrollable tables across window sizes.
+**Update finances** shows the selected business, last successful scan, review/approval/attention/verified counts and Scan → Review → Approve → Apply → Verify. **Data & setup** holds the shared data folder, collectors and private backups. **Rules** preserves exact business/account scopes; **Advanced** holds retained manual tools and diagnostics. The layout works on desktop and narrow windows.
+
+Drop supported exports into the project **data** folder and refresh once. Root and nested CSV/PDF contents are recognized; originals and history stay intact and overlapping files are deduplicated. Wave files without a verified business binding need local confirmation. File failures are listed explicitly. After 30 days away, the app guides a catch-up refresh while keeping live scan freshness separate from export coverage.
 
 ## Local data
 
-CSV exports, working sessions, rules, and collected account names stay on your computer. The extension requests access only to next.waveapps.com for its DOM readers and deliberate editing controls. Configure your personal export URL in the ignored extension/settings.local.js file, using settings.example.js as a template. Accounting exports, screenshots, ZIP files, and local settings are excluded from Git.
+CSV exports, sessions, rules and account names stay on your computer. Wave readers and deliberate editing controls use next.waveapps.com; collectors request their listed optional provider/download permissions during setup. Configure private export settings in ignored extension/settings.local.js using settings.example.js as a template. Financial files, backups, screenshots, ZIPs and local settings stay excluded from Git.
+
+Startup checkpoints all existing local features and Chrome settings before restoring them. Keep the same **extension** path to retain the storage origin. Export a private local backup in Data & setup before changing installation identity; portable restore preserves save locks and requires renewed folder permission.
 
 ## Development
 
 Requires Node.js 20 or later. No package installation is needed.
 
-Run node --test for the automated checks. Run node server.mjs and open http://127.0.0.1:4317/extension/app.html to preview the interface. Live Wave checks require the installed extension. DOM checks are at /extension/reader-fixture.html; Apply mock-dialog checks are at /extension/editor-fixture.html. Responsive workspace checks are at /extension/workspace-fixture.html. The command-center integration simulation is at /extension/command-fixture.html; its browser calls and saved records are fictional.
+Run `node --test` for automated checks. Run `node server.mjs` and open `http://127.0.0.1:4317/extension/app.html` for a preview. Live Wave checks require the installed extension. The isolated browser acceptance script is `node scripts/check-v1-browser.mjs`; it needs optional Playwright/Chrome paths described in the acceptance guide. Reader/editor/provider fixtures retain fictional DOM checks. `/extension/command-fixture.html#live-only` demonstrates daily work with no CSV and zero real Wave calls. Run fixtures through localhost, outside the installed extension.
 
 The earlier standalone CSV organizer remains available at http://127.0.0.1:4317/.
 

@@ -1,3 +1,4 @@
+import {installHelperLaunch} from './helper-launch.js';
 import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
 import {helperCall} from './helper-bridge.js';
@@ -63,3 +64,5 @@ await refreshTabs();paint();
 if(mode==='wave'&&$('configuration'))$('configuration').open=!$('exportURL').value||!$('mailbox').value;
 
 watchHelperStatus(document,{busy:()=>busy});
+
+installHelperLaunch({provider:mode,pending:()=>!!state.job});

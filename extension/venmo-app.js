@@ -1,3 +1,4 @@
+import {installHelperLaunch} from './helper-launch.js';
 import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
 import {venmoOrigins,venmoCSVLayout,venmoMonthPage,venmoProfileHandles,collectVenmoMonths,venmoReadiness,venmoTemplate,venmoCollectionPeriods,venmoStatementPage,waitForVenmoControls,validateVenmoCSV,saveVenmoCSV,collectVenmoProfile,venmoDigest} from './venmo.js';import {venmoPage} from './venmo-page.js';import {loadLocalFeature,saveLocalFeature,projectDataFolder,rememberDataFolder} from './session.js';import {activity,paintActivity} from './activity.js';
@@ -27,3 +28,5 @@ $('fromMonth').onchange=guarded(async()=>{state.startMonth=$('fromMonth').value;
 $('stop').onclick=()=>{generation++;$('status').textContent='Stopping after the current request. Completed files remain saved.';};try{const saved=await loadLocalFeature('venmo:downloader');if(saved?.version===1)state={...state,...saved};const root=await projectDataFolder();if(root)state.folder=await root.getDirectoryHandle('venmo',{create:true});await refresh();}catch(e){$('status').textContent='Could not restore downloader: '+e.message;}$('fromMonth').value=state.startMonth||'2019-09';paint();
 
 watchHelperStatus(document,{busy:()=>running||setupBusy});
+
+installHelperLaunch({provider:'venmo',pending:()=>Object.values(state.entries||{}).some(e=>!e.hash&&!['unavailable','no-download-controls'].includes(e.status))});

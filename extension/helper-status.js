@@ -1,6 +1,8 @@
+import {saveLocalFeature} from './session.js';
 // Visual status only; this module never starts, pauses or repeats provider work.
 export function helperVisualState(message='',busy=false){
  const text=String(message);
+ if(/ready for setup|finish .*connection|setup .*required/i.test(text))return {kind:'paused',label:'Setup required'};
  if(/sign[- ]?in|log[- ]?in|login|signed[- ]?in|signed.out/i.test(text)&&!/if needed/i.test(text))return {kind:'paused',label:'Paused — sign in required'};
  if(/allow access|finish .*setup|choose .*folder|confirm .*before saving/i.test(text))return {kind:'paused',label:'Paused — your input is needed'};
  if(/^Stopping/i.test(text))return {kind:'stopped',label:'Stopping'};
@@ -17,6 +19,7 @@ export function watchHelperStatus(doc=globalThis.document,{busy=()=>false}={}){
  const refresh=()=>{
   const state=helperVisualState(status.textContent,busy());card.dataset.state=state.kind;label.textContent=state.label;
   for(const id of ['run','resume','stop']){const button=doc.getElementById(id);if(button?.tagName==='BUTTON'){button.classList.add('helper-action');button.dataset.action=id==='stop'?'stop':id==='resume'?'resume':'start';}}
+  const provider=doc.body.dataset.helper||(/paypal/i.test(location.pathname)?'paypal':/venmo/i.test(location.pathname)?'venmo':'');if(provider)void saveLocalFeature('finance:helper:'+provider,{...state,business:new URLSearchParams(location.search).get('business'),message:status.textContent,updatedAt:new Date().toISOString()}).catch(()=>{});
   doc.dispatchEvent(new CustomEvent('solver-helper-state',{detail:{...state,message:status.textContent}}));
  };
  const observer=new MutationObserver(refresh);observer.observe(status,{childList:true,characterData:true,subtree:true});refresh();return {refresh,disconnect:()=>observer.disconnect()};

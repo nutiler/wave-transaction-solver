@@ -26,7 +26,7 @@ export function acceptProposal(pack, id, rules, decisions = {}, editedRule = nul
   validateRule(editedRule || p.rule);
   const rule = { ...(editedRule || p.rule), business: pack.business, proposalId: p.id, sourceHash: pack.source.sha256 };
   const same = r => JSON.stringify([r.business || null,r.category,r.aliases,r.matchMode || 'words',r.accountIds || [],r.accountNames || [],r.excludedAccountIds || [],r.excludedAccountNames || [],r.excludeAliases || [],r.onlyCategories || [],r.excludeCategories || []]);
-  const originals=rules.filter(r=>(p.replaces || []).includes(ruleFingerprint(r)) && (!r.business || r.business===pack.business));
+  const originals=rules.filter(r=>((p.replaces || []).includes(ruleFingerprint(r))||r.business===pack.business&&(p.replaces||[]).includes(ruleFingerprint({...r,business:null}))) && (!r.business || r.business===pack.business));
   const retained=rules.filter(r=>!originals.includes(r));
   if(originals.length)rule.previousVersions=originals;
   const next = retained.some(r=>same(r)===same(rule) && JSON.stringify(r.storeAliases || [])===JSON.stringify(rule.storeAliases || [])) ? [...retained] : [...retained,rule];

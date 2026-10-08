@@ -1,3 +1,4 @@
+import {installHelperLaunch} from './helper-launch.js';
 import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
 import {paypalCSVDownload,paypalDownloadRecovery} from './paypal-download.js';
@@ -108,3 +109,5 @@ try{
 state.downloads||={};$('dateOrder').value=state.dateOrder;await refreshTabs();$('setupPanel').open=!connected||!state.folder;paint();
 
 watchHelperStatus(document,{busy:()=>busy});
+
+installHelperLaunch({provider:'paypal',pending:()=>!!state.batch&&!state.batch.reports.every(r=>r.downloadState==='saved'&&r.importState==='saved'),resume:'resume',shouldResume:()=>!!state.batch&&!state.batch.reports.every(r=>r.downloadState==='saved'&&r.importState==='saved')});
