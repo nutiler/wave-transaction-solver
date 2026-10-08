@@ -489,3 +489,12 @@ Reports still waiting at ten minutes retain their checkpoints and their tab. Res
 Amazon, Wave and Venmo also use temporary working tabs and close those tabs after a successful save/collection. The tab tracker is limited to the current helper instance; pre-existing user tabs and tabs navigated away from the expected provider page are left alone. Sign-in, errors, pending exports and Wave business confirmation keep the working tabs available. Daily scanning, merchant rules, session decisions and transaction editing are unchanged.
 
 Development checks are synthetic: they include all-years-before-Refresh, Submitted-to-Download, a simulated ten-minute deadline, Stop before another request, changed controlled date fields, locked calendar order, stale native IDs and tab cleanup. They do not substitute for a signed-in provider test.
+
+
+### PayPal submission verification (0.38)
+
+A Create click alone does not mark a report submitted. The collector reads and refreshes the report list for up to 30 seconds until the exact type, CSV format and date range appear. Only visible report rows enter the ten-minute readiness wait. An absent row leaves an explicit unconfirmed checkpoint rather than a fictitious download wait.
+
+Resume migrates earlier click-only checkpoints: ten seconds of complete refreshed list reads can prove an old range absent and allow its creation. A full twelve-row list, loading state or unrecognized row cannot establish absence and stays protected. CSV files are never cleared during this recovery. Missing annual reports are created before existing CSV downloads when list capacity allows; ready exports are preserved before adding to a full list. Completed years use Jan 1 through Dec 31, with the existing seven-year cutoff and current-year partial range.
+
+The date adapter uses observed calendar TD date IDs and nested anchors, dismisses the date popup before Create, and still verifies the displayed range. Advanced diagnostics remain usable during a run. Validation uses synthetic data and browser fixtures; no real signed-in PayPal report was created during development.

@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.38.0 - Verify PayPal report submissions and recover absent requests
+
+- Create is a click intent until the exact All transactions / CSV / date-range row appears. Confirm each annual request for up to 30 seconds; the ten-minute download wait starts only for visible report rows. Missing rows produce a specific unconfirmed message.
+- Resume rechecks old request checkpoints over ten seconds of refreshed, complete report-list reads. Confirmed absent checkpoints recover automatically; full, loading or partially parsed lists retain their checkpoints.
+- Request missing years before downloading existing CSVs while list capacity allows. Preserve ready older exports before creating into a full twelve-row list. A stuck old download no longer blocks every new annual request.
+- Lock observed PayPal calendar TD date IDs through their nested anchors and dismiss the date popup before Create. Keep exact Jan 1 through Dec 31 validation for completed calendar years.
+- Read report controls, read download status and copy diagnostics remain available during collection. Synthetic coverage includes click-without-row, delayed Submitted rows, stale migration, actual date-cell markup, full/partial lists and Stop. Signed-in PayPal remains an integration check.
+
 ## 0.37.0 - One-click report batches and completed-tab cleanup
 
 - PayPal types From, locks the calendar day, then enters To and verifies the exact report range. Preparation and Create Report are separate so Stop can prevent submission.

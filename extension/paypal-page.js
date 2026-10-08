@@ -40,7 +40,8 @@ export async function paypalPage(request={},testContext) {
  };
  const startPattern=/^(Start date|From date|From|Start)$/i,endPattern=/^(End date|To date|To|End)$/i;
  const chosen=e=>e?.tagName==='SELECT'?text(e.selectedOptions[0]):String(e?.value??text(e)).replace(/^(Transaction type|Date range|Format)\s*/i,'');
- const snapshot=()=>({format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
+ const listState=()=>{const tables=all('table,[role="table"]').filter(table=>['Report type','Date range','Format','Action'].every(name=>[...table.querySelectorAll('th,[role="columnheader"]')].some(e=>text(e).toLowerCase()===name.toLowerCase())));const rows=tables.flatMap(table=>[...table.querySelectorAll('tr,[role="row"]')].filter(visible).filter(row=>row.querySelector('td,[role="cell"]')));const root=all('h1,h2,h3,h4').find(e=>/^Activity report$/i.test(text(e)))?.closest('section,[data-test-id="DLOG-page"],[data-testid="DLOG-page"]')||doc;const loading=all('[role="progressbar"],[aria-busy="true"],[data-testid="spinner"],[data-test-id="spinner"]').filter(e=>root.contains(e));return {reportListComplete:tables.length===1&&rows.every(row=>!!identity(row))&&!loading.length&&!all('[role="alert"]').some(e=>/error|invalid|failed|try again/i.test(text(e))),reportListRows:rows.length};};
+ const snapshot=()=>({...listState(),format:'wave-solver-paypal-controls',version:1,reportPage:true,reports:reportRows().map(x=>x.report),fields:['Transaction type','Date range','Format','Start date','End date'].map(name=>{const e=field(name==='Start date'?startPattern:name==='End date'?endPattern:new RegExp('^'+name+'$','i'));return {name,found:!!e,value:chosen(e)||'',tag:e?.tagName||'',role:e?.getAttribute('role')||'',inputType:e?.getAttribute('type')||'',id:e?.id||'',readOnly:!!e?.readOnly};}),error:all('[role="alert"]').map(text).join(' ').slice(0,300)});
  if(!request.action||request.action==='read')return snapshot();
  if(request.action==='refresh'){const found=exact(clickable(),'Refresh');if(found.length!==1||found[0].disabled)throw Error('Cannot identify the report Refresh button.');found[0].click();await pause();return snapshot();}
  if(['prepare','create'].includes(request.action)) {
@@ -77,7 +78,13 @@ export async function paypalPage(request={},testContext) {
    };
    const enabled=e=>!e.disabled&&!e.closest('[disabled],[aria-disabled="true"]');
    async function pick(pattern,iso){
-    const input=field(pattern);if(!input)return false;let cal=calendar();if(!cal){input.click();await pause();cal=calendar();}
+    const input=field(pattern);if(!input)return false;
+    // Observed PayPal calendars identify TDs by the full date (for example 12/10/2025).
+    // The nested anchor has no href; its click bubbles to the provider's day handler.
+    const dated=all('.Calendar td[id],.calendarWrapper td[id]').filter(e=>date(e.id)===iso&&enabled(e));
+    if(dated.length>1)return false;
+    if(dated.length===1){const anchors=[...dated[0].querySelectorAll('a,button')].filter(visible);if(anchors.length>1)return false;(anchors[0]||dated[0]).click();await pause();return date(field(pattern)?.value)===iso;}
+    let cal=calendar();if(!cal){input.click();await pause();cal=calendar();}
     if(!cal){const box=input.closest('.DateInputBox')||input.parentElement,buttons=[...box.querySelectorAll('button,[role="button"]')].filter(visible);if(buttons.length===1){buttons[0].click();await pause();cal=calendar();}}
     if(!cal)return null;const target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;if(Math.abs(target-cal.month)>120)return false;
     for(let step=0;cal.month!==target&&step<120;step++){
@@ -110,13 +117,16 @@ export async function paypalPage(request={},testContext) {
    if(apply.length>1)return {notSubmitted:true,message:'Custom date panel has multiple confirmation controls. Apply the dates manually, then Resume.'};
    if(apply.length===1){if(apply[0].disabled)return {notSubmitted:true,message:'Custom dates cannot be applied yet. Nothing requested.'};apply[0].click();await pause();}
   }
+  // Close the date popup with an outside click before Create; some provider handlers
+  // consume the first outside click only to dismiss the calendar.
+  const headings=all('h1,h2,h3,h4').filter(e=>/^Activity report$/i.test(text(e)));if(headings.length===1){headings[0].click();await pause();}
   const selectedRange=chosen(field(/^Date range$/i))||'',rangeDates=selectedRange.match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2}(?:,\s*|\s+)\d{4}/g)||[];
   const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
   const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
   if(!(rangeMatches||inputsMatch&&/^(Custom|Custom date range|Custom range)$/i.test(selectedRange))||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'PayPal’s displayed dates/type/format do not match the requested report. Nothing requested.'};
   if(request.action==='prepare')return {prepared:true};
   const create=exact(clickable(),'Create Report');if(create.length!==1||create[0].disabled)return {notSubmitted:true,message:'Create Report is unavailable. Check the date range in PayPal, then Resume.'};
-  submitted=true;create[0].click();await pause();return {submitted:true};
+  submitted=true;create[0].click();await pause();const confirmed=reportRows().some(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');return {clicked:true,submitted:confirmed};
  }
  if(request.action!=='download')throw Error('Unsupported PayPal report action.');
  const selected=reportRows().filter(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV'&&x.report.ready);
