@@ -1,5 +1,14 @@
 # Development milestones
 
+## 0.47.0 - Fresh PayPal batches with independent download and import checkpoints
+
+- Replace the PayPal helper's operator flow with Start fresh and Resume this batch. Fresh batches request every year in the available seven-year window, including 2025, even when older reports or local files exist. Prior files and manifests are preserved.
+- Verify new report rows rather than treating existing ready duplicates as submission proof. Create all yearly reports first, wait up to ten minutes with automatic Refresh, and download the newest exact report for each range. Resume protects uncertain Create attempts from duplication.
+- Save and hash-check every original before parsing any yearly file. Download failures are tracked per year; import failures cannot interrupt collection or hide a saved year. Each year displays exact dates, request status, original-file status and import status. Browser download checkpoints are retained separately for each year.
+- Accept the observed hyphenated invoice/request IDs. Preserve invoice rows with no amounts as separate metadata, without inventing zero-value payments. Collapse exact repeated source rows once while retaining all original row locations and holding automatic matching.
+- Verify all eight actual yearly exports: 4,058 source rows, 4,036 financial events, 19 invoice metadata rows and three exact repeats. Recover usable yearly CSVs locally, including 2025, with bytes identical to their originals. Private exports and recovery details stay outside Git.
+- Add fresh-batch regression tests for every annual range, old/new duplicate reports, 2025, ten-minute waits, download retry, parse failure isolation, Stop and nested Create controls. Live signed-in browser testing remains pending because both computer-use runtimes fail to start on this host.
+
 ## 0.46.0 - Preserve personal-report fee semantics and continue batch collection
 
 - Preserve personal Amount/Fees/Total values when Amount equals Total and fees are listed separately. Keep gross unavailable and flag fee reconciliation instead of inventing a gross amount or rejecting the whole report. Classic Gross/Fee/Net reconciliation remains strict.

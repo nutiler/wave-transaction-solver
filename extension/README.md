@@ -1,5 +1,15 @@
 # Dandelion's Wave Transaction Solver
 
+## PayPal collection (0.47.0)
+
+After connecting PayPal and choosing the project data folder once, use **Start fresh — collect all years**. It creates a new All transactions CSV for every available year, including 2025, with January 1–December 31 for completed years, a partial oldest year at the seven-year boundary, and a current-year end matching PayPal's available-data date.
+
+The helper creates all annual reports before waiting, verifies the new submissions, refreshes automatically for up to ten minutes, and downloads the newest exact report for each year. **Resume this batch** continues recorded submissions/downloads without repeating confirmed Create clicks. Start fresh deliberately begins another batch and keeps earlier history.
+
+Every original is saved and hash-verified under `data/paypal/raw` before any imports begin. Each year has separate request, download and import statuses. A parser failure cannot block other downloads or make a downloaded year disappear. The temporary report tab closes once every original is saved. Per-batch manifests stay privately under `data/paypal/batches`; imported CSVs are sorted into the year folders.
+
+Personal exports retain their original Amount/Fees/Total values. Separately listed fees remain held for reconciliation. Hyphenated invoice/request IDs are preserved; invoices without amounts remain metadata, and exact repeated rows retain all original source locations while being counted once. Refresh data folder in the Command center to load the imported evidence.
+
 ## Daily work: live Wave first (0.31.0)
 
 Choose your business once, then use **Command center → Scan Wave → queue known suggestions or confirm groups → Run queued decisions**. No accounting CSV is required for ordinary category and review work. Scanning reads new transaction dialogs in a background tab, with progress and a stop control. It never changes categories, descriptions or reviewed state. Confirming saves decisions locally; execution checks each record again and verifies its saved result.

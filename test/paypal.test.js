@@ -11,7 +11,7 @@ function folder(name='paypal'){const dirs=new Map(),files=new Map();return {name
 test('PayPal clips only the oldest year to its seven-year window and keeps later calendar years exact',()=>{const plan=paypalPeriods(2019,'2026-10-07');assert.equal(plan.periods[0].start,'2019-10-07');assert.equal(plan.periods[0].partial,true);assert.equal(plan.periods[1].start,'2020-01-01');assert.equal(plan.periods[1].end,'2020-12-31');assert.equal(plan.periods[1].partial,false);assert.equal(plan.periods[0].end,'2019-12-31');assert.equal(plan.periods.at(-1).end,'2026-10-07');assert.equal(plan.periods.length,8);assert.equal(plan.limited,true);for(const p of plan.periods)assert.equal(p.start.slice(0,4),p.end.slice(0,4));assert.equal(paypalPeriods(2019,'2024-02-29').earliest,'2017-02-28');assert.throws(()=>paypalPeriods(2027,'2026-10-07'));assert.deepEqual(paypalOrigins,['https://www.paypal.com/reports/*']);});
 test('CSV preserves IDs, item evidence and excludes contact columns',()=>{const parsed=importPayPalCSV(csv());assert.equal(parsed.records[0].sourceId,'FAKE0000000000001');assert.equal(parsed.records[0].items[0].title,'Fictional tool');assert.equal(parsed.records[0].signedCents,-1000);assert.equal(parsed.records[0].statementView,'account');assert.ok(!JSON.stringify(parsed).includes('Email'));});
 test('Dates use explicit date order and reject invalid dates; money rejects decimal commas',()=>{assert.equal(paypalDate('02/01/2025','dmy'),'2025-01-02');assert.equal(paypalDate('02/01/2025','mdy'),'2025-02-01');assert.throws(()=>paypalDate('02/30/2025'));assert.throws(()=>paypalDate('01/02/2025','guess'));assert.equal(paypalMoney('-1,234.56'),-123456);assert.throws(()=>paypalMoney('12,34'));assert.throws(()=>paypalMoney('12.345'));});
-test('HTML, ZIP, wrong periods, malformed rows and missing mandatory fields never save',()=>{for(const value of ['<html>login</html>','PKfake','Date,Amount\n1,10',csv()+'\nFAKE'])assert.throws(()=>importPayPalCSV(value));assert.throws(()=>importPayPalCSV(csv(),{period:{start:'2026-01-01',end:'2026-12-31'}}));assert.throws(()=>importPayPalCSV(csv().replace('-10.00,0.00,-10.00','-10.00,0.00,')));assert.throws(()=>importPayPalCSV(csv()+'\n'+csv().split('\n')[1]));});
+test('HTML, ZIP, wrong periods, malformed rows and missing mandatory fields never save',()=>{for(const value of ['<html>login</html>','PKfake','Date,Amount\n1,10',csv()+'\nFAKE'])assert.throws(()=>importPayPalCSV(value));assert.throws(()=>importPayPalCSV(csv(),{period:{start:'2026-01-01',end:'2026-12-31'}}));assert.throws(()=>importPayPalCSV(csv().replace('-10.00,0.00,-10.00','-10.00,0.00,')));assert.equal(importPayPalCSV(csv()+'\n'+csv().split('\n')[1]).controls.duplicateRows,1);});
 test('Pending, memo, refunds, funding and incoming activity cannot become approved purchases',()=>{assert.equal(importPayPalCSV(csv('FAKE1','01/02/2025',{status:'Pending'})).records[0].kind,'Unsettled activity');assert.equal(importPayPalCSV(csv().replace('Express Checkout Payment','Payment Refund')).records[0].kind,'Refund');assert.equal(importPayPalCSV(csv().replace('Express Checkout Payment','General Credit Card Deposit')).records[0].kind,'Funding movement');assert.equal(importPayPalCSV(csv().replaceAll('-10.00','10.00')).records[0].kind,'Incoming payment');assert.equal(importPayPalCSV(csv().replace('Express Checkout Payment','User Initiated Withdrawal')).records[0].kind,'Transfer');});
 test('Fees reconcile exactly and remain separate reconciliation evidence',()=>{assert.throws(()=>importPayPalCSV(csv('FAKE1','01/02/2025',{fee:'-1.00'})));const r=importPayPalCSV(csv('FAKE1','01/02/2025',{fee:'-1.00',net:'-11.00'})).records[0];assert.equal(r.feeCents,-100);assert.match(r.blocked,/fees/i);assert.match(r.issues[0],/fees/);});
 test('Wallet, unspecified and credit funding never claim an external purchase automatically',()=>{const r=importPayPalCSV(csv().replace('CreditCard','PayPalFunds')).records[0];assert.equal(r.bankExpected,false);assert.match(r.blocked,/Wallet/);assert.equal(importPayPalCSV(csv().replace('CreditCard','BuyerCredit')).records[0].kind,'Financing');assert.equal(importPayPalCSV(csv().replace('CreditCard','ElectronicFundsTransfer')).records[0].accountEnding,'');});
@@ -150,7 +150,7 @@ test('Distinct authorization events retain source IDs and stable keys across ove
  for(const r of parsed.records){assert.equal(r.sourceId,'FAKEAUTH');assert.equal(r.repeatedIDEvent,true);assert.equal(r.bankExpected,false);assert.match(r.blocked,/multiple ledger events/);}
  assert.equal(importPayPalCSV(first).records[0].key,parsed.records[0].key);assert.equal(importPayPalCSV(second).records[0].key,parsed.records[1].key);
  const merged=modelEvidenceFiles([parsed,importPayPalCSV(first)]);assert.equal(merged.length,2);assert.ok(merged.every(r=>!r.bankExpected));
- assert.throws(()=>importPayPalCSV(first+'\n'+first.split('\n')[1]),/Duplicate identical/);
+ const duplicate=importPayPalCSV(first+'\n'+first.split('\n')[1]);assert.equal(duplicate.records.length,1);assert.equal(duplicate.controls.duplicateRows,1);assert.equal(duplicate.records[0].sources.length,2);assert.equal(duplicate.records[0].bankExpected,false);
  const reversed=importPayPalCSV(first+'\n'+second.split('\n')[1].replace('General Authorization','Void of Authorization').replace('Completed','Reversed'));
  assert.equal(reversed.records.length,2);assert.ok(reversed.records.every(r=>!r.bankExpected));
 });
@@ -200,5 +200,21 @@ test('After preserving a failed report the collector still refreshes and saves a
 
 test('PayPal CSV caches reparse with the updated semantics while unchanged current parses stay reused',async()=>{
  const file=new File([csv()],'paypal.csv'),name='paypal/2025/report.csv',current=await readEvidenceFile(file,name),old={...current,parseVersion:1,records:[]};
- assert.equal(current.parseVersion,2);const reparsed=await readEvidenceFile(file,name,old);assert.equal(reparsed.records.length,1);assert.equal(reparsed.parseVersion,2);assert.strictEqual(await readEvidenceFile(file,name,reparsed),reparsed);
+ assert.equal(current.parseVersion,3);const reparsed=await readEvidenceFile(file,name,old);assert.equal(reparsed.records.length,1);assert.equal(reparsed.parseVersion,3);assert.strictEqual(await readEvidenceFile(file,name,reparsed),reparsed);
+});
+
+
+test('Hyphenated invoice and request IDs are retained exactly without treating invoice metadata as money',()=>{
+ const paid=csv('INV2-FAKE-EXAMPLE','01/02/2025',{status:'Paid'}).replace('Express Checkout Payment','Invoice Received').replace('-10.00,0.00,-10.00',',,'),draft=paid.replace('INV2-FAKE-EXAMPLE','INV2-FAKE-DRAFT').replace('Invoice Received','Invoice Sent').replace('Paid','Draft');
+ const p=importPayPalCSV(paid+'\n'+draft.split('\n')[1]);assert.equal(p.records.length,0);assert.equal(p.nonPostingActivity.length,2);assert.equal(p.controls.sourceRows,2);assert.equal(p.controls.nonPostingRows,2);
+ assert.equal(p.nonPostingActivity[0].sourceId,'INV2-FAKE-EXAMPLE');assert.equal(p.nonPostingActivity[0].amountCents,null);assert.equal(p.nonPostingActivity[0].signedCents,null);
+ const request=importPayPalCSV(csv('REQ-FAKE-EXAMPLE').replace('Express Checkout Payment','Request Received'));assert.equal(request.records[0].sourceId,'REQ-FAKE-EXAMPLE');assert.equal(request.records[0].bankExpected,false);
+ assert.throws(()=>importPayPalCSV(csv('').replace('FAKE0000000000001','')),/transaction ID/);
+ assert.throws(()=>importPayPalCSV(paid.replace('Invoice Received','Express Checkout Payment')),/missing amount/);
+});
+
+test('Exact repeated source rows retain all locations, count once, and cannot create a Wave action',()=>{
+ const text=csv('FAKEEXACT'),p=importPayPalCSV(text+'\n'+text.split('\n')[1]);
+ assert.equal(p.controls.sourceRows,2);assert.equal(p.controls.activityRows,1);assert.equal(p.controls.duplicateRows,1);assert.equal(p.records[0].duplicateSourceRows,1);assert.deepEqual(p.records[0].sources.map(r=>r.row),[2,3]);
+ assert.equal(modelEvidenceFiles([p])[0].bankExpected,false);assert.equal(evidenceSnapshot(p.records[0]).duplicateSourceRows,1);
 });
