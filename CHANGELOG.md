@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.43.0 - Create PayPal annual reports before any legacy download
+
+- Remove the full-list historical download prerequisite. Once each missing year's controls are prepared, persist its request intent and immediately click Create Report, including when PayPal already shows twelve reports.
+- Collect and validate requested annual CSVs first. Collect optional older exports afterward; archive download failures cannot block creating or collecting the requested years.
+- Record unavailable older exports when PayPal rotates its report list, and report failed archive downloads separately without claiming complete preservation. Existing saved files and confirmed submission protections remain intact.
+- Regression tests include a full list with every legacy download failing, exact prepare-to-create order, report-list rotation and a required annual download failure. Signed-in PayPal still needs verification.
+
 ## 0.42.0 - Activate nested PayPal actions and explain full-list preservation
 
 - Click the visible inner label of PayPal Create Report and Download controls so handlers on either the label or its enclosing button receive one click. Verify the exact submitted report row as before.

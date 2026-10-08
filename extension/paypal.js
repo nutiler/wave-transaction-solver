@@ -29,11 +29,13 @@ export async function verifyPayPalFile(root,entry) {
 // A click is an intent. Only an exact row in the refreshed report list confirms submission.
 export async function collectPayPalReports({periods,entries={},read,download,save,persist,request,prepare,refresh,verifySaved=async()=>false,current=()=>true,progress=()=>{},pause=ms=>new Promise(r=>setTimeout(r,ms)),now=()=>Date.now(),timeoutMs=600000,refreshMs=5000,submissionTimeoutMs=30000,recoveryMs=10000}) {
  const next={...entries};let info=await read(),saved=0,requested=0;
+ const planned=new Set(periods.map(paypalReportKey)),originalReady=eligiblePayPalReports(info).filter(r=>!planned.has(paypalReportKey(r)));
+ const archiveIssues=[];
  const verified=new Map(),matches=(list,period)=>(list.reports||[]).filter(r=>paypalReportKey(r)===paypalReportKey(period));
  async function valid(entry){if(!entry?.hash)return false;const key=entry.hash+':'+entry.name;if(!verified.has(key))verified.set(key,await verifySaved(entry));return verified.get(key);}
  async function covered(period){for(const entry of Object.values(next)){if(entry.type==='All transactions'&&entry.format==='CSV'&&entry.start===period.start&&entry.end===period.end&&await valid(entry))return true;}return false;}
  async function reportProgress(report,message,meta){let completed=0;for(const period of periods)if(await covered(period))completed++;progress(report,message,{requested,saved,total:periods.length,completed,...meta});}
- async function store(report,preservation=null){const key=paypalReportKey(report);if(await valid(next[key])||!current())return;await reportProgress(report,preservation?'Saving existing CSV '+preservation.index+' of '+preservation.total+' before creating new reports (PayPal list is full)':'Downloading CSV',{phase:preservation?'preserving':'downloading'});const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);verified.set(result.hash+':'+result.name,true);saved++;}
+ async function store(report,archive=false){const key=paypalReportKey(report);if(await valid(next[key])||!current())return;await reportProgress(report,archive?'Collecting older available export after yearly reports':'Downloading requested yearly CSV',{phase:archive?'archive':'downloading'});const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);verified.set(result.hash+':'+result.name,true);saved++;}
  async function observed(period){const key=paypalReportKey(period);if(next[key]?.hash)return;next[key]={...period,...next[key],status:'requested',reportConfirmed:true};await persist(next);}
  const unconfirmed=period=>({entries:next,saved,requested,unconfirmed:period,stopped:false});
  // Migrate old click-only checkpoints after two fresh, complete report-list reads.
@@ -55,15 +57,14 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
   }while(current());
   if(snapshots>=2&&now()-started>=recoveryMs){for(const key of absent)delete next[key];await persist(next);}
  }
- // Create missing years before starting downloads. Preserve ready rows first only
- // when the list is full and a new request could evict an older available export.
+ // Create every missing annual report immediately after preparing its controls.
+ // Historical downloads must never be a prerequisite for pressing Create Report.
  for(const period of periods){
   if(!current())return {entries:next,saved,requested,stopped:true};if(await covered(period))continue;
   const key=paypalReportKey(period);info=await read();const found=matches(info,period);
   if(found.length){await observed(period);continue;}
   if(['requesting','requested'].includes(next[key]?.status))return unconfirmed(period);
   if(prepare){await reportProgress(period,'Setting annual report dates',{phase:'preparing'});const prepared=await prepare(period);if(prepared?.notSubmitted)throw Error(prepared.message||'PayPal report controls did not accept the annual range.');if(!current())return {entries:next,saved,requested,stopped:true};if(prepared?.existing)continue;}
-  if((info.reports||[]).length>=12){const older=eligiblePayPalReports(info);let index=0;for(const report of older){await store(report,{index:++index,total:older.length});if(!current())return {entries:next,saved,requested,stopped:true};}}
   await reportProgress(period,'Creating annual CSV report',{phase:'requesting'});next[key]={...period,status:'requesting',reportConfirmed:false,requestedAt:new Date().toISOString()};await persist(next);
   const outcome=await request(period);if(outcome?.notSubmitted){delete next[key];await persist(next);throw Error(outcome.message||'PayPal did not accept the requested dates. Nothing requested.');}
   if(!current())return {entries:next,saved,requested,stopped:true};
@@ -78,9 +79,23 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
  }
  const started=now();let refreshed=started;
  while(current()){
-  info=await read();for(const report of eligiblePayPalReports(info)){await store(report);if(!current())return {entries:next,saved,requested,stopped:true};}
+  info=await read();for(const report of eligiblePayPalReports(info).filter(r=>planned.has(paypalReportKey(r)))){await store(report);if(!current())return {entries:next,saved,requested,stopped:true};}
   const pending=[];for(const period of periods)if(!await covered(period))pending.push(period);
-  if(!pending.length)return {entries:next,saved,requested,stopped:false};
+  if(!pending.length){
+   // Collect optional historical exports only after the requested years are saved.
+   // PayPal can rotate old rows out of its twelve-report view. Record gaps rather
+   // than claim preservation, or let a failed legacy download block annual work.
+   const older=new Map(originalReady.map(r=>[paypalReportKey(r),r]));for(const r of Object.values(next))if(['archive-unavailable','archive-failed'].includes(r.status)&&!planned.has(paypalReportKey(r)))older.set(paypalReportKey(r),r);for(const r of eligiblePayPalReports(info))if(!planned.has(paypalReportKey(r)))older.set(paypalReportKey(r),r);
+   for(const [key,report] of older){
+    if(!current())return {entries:next,saved,requested,stopped:true};if(await valid(next[key]))continue;
+    const fresh=await read(),available=eligiblePayPalReports(fresh).find(r=>paypalReportKey(r)===key);
+    let issue;
+    if(!available)issue={type:report.type,format:report.format,start:report.start,end:report.end,status:'archive-unavailable',message:'Older CSV is no longer available in the PayPal report list.'};
+    else try{await store(available,true);}catch(error){if(!current())return {entries:next,saved,requested,stopped:true};issue={type:report.type,format:report.format,start:report.start,end:report.end,status:'archive-failed',message:String(error.message||'Older export download failed.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400)};}
+    if(issue){archiveIssues.push(issue);next[key]={...next[key],...issue};await persist(next);}
+   }
+   return {entries:next,saved,requested,stopped:!current(),archiveIssues};
+  }
   const missing=pending.find(period=>!matches(info,period).length);if(missing)return unconfirmed(missing);
   const elapsed=now()-started;await reportProgress(pending[0],'Waiting for '+pending.length+' confirmed reports - '+Math.floor(elapsed/1000)+'s / '+Math.floor(timeoutMs/1000)+'s; refreshing automatically',{phase:'waiting',pending:pending.length,elapsed});
   if(!refresh||elapsed>=timeoutMs)return {entries:next,saved,requested,waiting:pending[0],pending};
