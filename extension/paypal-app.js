@@ -1,3 +1,4 @@
+import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
 import {paypalCSVDownload,paypalDownloadRecovery} from './paypal-download.js';
 import {observeNativeDownload} from './download-files.js';
@@ -27,7 +28,7 @@ function paint(){
    ({planned:'Not requested',requesting:'Creating',uncertain:'Checking submission',submitted:'Created',rejected:'Needs attention'})[entry.requestState],
    ({pending:'Waiting',downloading:'Downloading',saved:'Saved',failed:'Retry needed'})[entry.downloadState],
    ({pending:'After download',saved:(entry.count??0)+' events',failed:'Needs repair'})[entry.importState]];
-  for(const value of values){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}if(entry.message)row.title=entry.message;$('files').append(row);
+  for(const [index,value] of values.entries()){const cell=document.createElement('td');cell.textContent=value;if(index===1&&entry.boundaryNote){const note=document.createElement('small');note.textContent='Earliest date verified in PayPal';note.style.display='block';cell.append(note);}if(index>=2){cell.className='helper-state-cell';cell.dataset.state=index===2?entry.requestState==='submitted'?'complete':entry.requestState==='rejected'?'error':entry.requestState==='uncertain'?'paused':'running':index===3?entry.downloadState==='saved'?'complete':entry.downloadState==='failed'?'error':'waiting':entry.importState==='saved'?'complete':entry.importState==='failed'?'error':'ready';}row.append(cell);}if(entry.message||entry.boundaryNote)row.title=entry.message||entry.boundaryNote;$('files').append(row);
  }
  $('progress').max=reports.length||1;$('progress').value=saved;
 }
@@ -77,7 +78,7 @@ async function persistBatch(batch){
  try{await stream.write(JSON.stringify({format:'wave-solver-paypal-collection',...batch},null,2));await stream.close();}catch(e){await stream.abort?.();throw e;}paint();
 }
 async function run(fresh){
- if(busy)return;const runId=++generation,current=()=>generation===runId;busy=true;paint();const task=activity.begin('Collecting every PayPal year');
+ if(busy)return;const runId=++generation,current=()=>generation===runId;busy=true;$('status').textContent='Preparing PayPal collection…';paint();const task=activity.begin('Collecting every PayPal year');
  try{
   if(!real||!connected||!state.folder)throw Error('Finish Connect and destination setup first.');
   workingTab=await working.open('paypal',paypalReportURL);await refreshTabs();$('tabs').value=String(workingTab);
@@ -92,7 +93,7 @@ async function run(fresh){
    verify:r=>verifyCollectedPayPalReport(state.folder,r),importReport:r=>importCollectedPayPalReport(state.folder,r,state.dateOrder),persist:persistBatch,
    progress:(batch,counts)=>{paint();$('status').textContent=counts.waiting?'Waiting for '+counts.waiting+' new reports; refreshing automatically ('+Math.floor(counts.elapsed/1000)+'s / 600s).':counts.downloaded+'/'+counts.total+' originals saved · '+counts.imported+' imported. Check each year below.';task.update({detail:$('status').textContent,completed:counts.downloaded,total:counts.total});}});
   diagnostics={format:'wave-solver-paypal-batch-status',version:1,batchId:state.batch.id,...result,reports:state.batch.reports};$('diagnostics').textContent=JSON.stringify(diagnostics,null,2);
-  $('status').textContent=result.stopped?'Stopped. Resume continues this batch.':result.complete?result.downloaded+'/'+result.total+' yearly CSVs downloaded and verified. '+result.imported+' imported'+(result.imported<result.total?'; import details are in Advanced.':'. Refresh data folder in the Command center.'):'This batch has '+result.downloaded+'/'+result.total+' originals saved. Resume checks the remaining years; existing submissions stay protected.';
+  $('status').textContent=result.stopped?'Stopped. Resume continues this batch.':result.paused?'Paused: '+result.message+' Sign in, then Resume this batch.':result.complete?result.downloaded+'/'+result.total+' yearly CSVs downloaded and verified. '+result.imported+' imported'+(result.imported<result.total?'; import details are in Advanced.':'. Refresh data folder in the Command center.'):'This batch has '+result.downloaded+'/'+result.total+' originals saved. Resume checks the remaining years; existing submissions stay protected.';
   if(result.complete){await working.finish();workingTab=null;await refreshTabs();}
  }catch(e){$('status').textContent='Stopped: '+e.message;}finally{busy=false;task.finish();paint();}
 }
@@ -105,3 +106,5 @@ try{
  const root=await projectDataFolder();if(root)state.folder=await root.getDirectoryHandle('paypal',{create:true});
 }catch(e){$('status').textContent='Setup could not be restored: '+e.message;}
 state.downloads||={};$('dateOrder').value=state.dateOrder;await refreshTabs();$('setupPanel').open=!connected||!state.folder;paint();
+
+watchHelperStatus(document,{busy:()=>busy});

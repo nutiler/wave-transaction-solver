@@ -76,3 +76,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--input);border:1
 
 /* Daily navigation is a set of destinations, not mandatory setup steps. */
 .usage-steps{gap:10px}.usage-step{min-height:62px;padding:12px}.usage-step:not(:last-child)::after{content:none}.command-layout[data-mode=pending],.command-layout[data-mode=exceptions]{grid-template-columns:minmax(0,1fr)}.command-body>.setup-options{margin:10px 0}.command-body>.setup-options button{margin:8px 8px 0 0}
+
+/* Shared collector states: visible words accompany every status color. */
+.helper-status-card{padding:14px 18px;margin:14px 0;border:1px solid #6387af;border-left-width:5px;border-radius:9px;background:#253b55;overflow-wrap:anywhere}
+.helper-status-label{display:block;font-size:15px;color:#c7e3ff}.helper-status-card p{margin:7px 0 0}
+.helper-status-card[data-state=paused]{border-color:#dcb364;background:#463a25}.helper-status-card[data-state=paused] strong{color:#ffe0a2}
+.helper-status-card[data-state=stopped],.helper-status-card[data-state=error]{border-color:#dc8585;background:#492d35}.helper-status-card[data-state=stopped] strong,.helper-status-card[data-state=error] strong{color:#ffd3d3}
+.helper-status-card[data-state=complete],.helper-status-card[data-state=ready]{border-color:#6daf89;background:#263e35}.helper-status-card[data-state=complete] strong,.helper-status-card[data-state=ready] strong{color:#c4f0d5}
+button.helper-action[data-action=start]{background:#286341;color:#e1ffed;border:1px solid #7fba96}button.helper-action[data-action=resume]{background:#765720;color:#fff0cd;border:1px solid #dcb364}button.helper-action[data-action=stop]{background:#823c48;color:#fff0f0;border:1px solid #dc8585}button.helper-action:disabled{opacity:.45}
+.helper-state-cell[data-state=complete]{color:#b4e8ca}.helper-state-cell[data-state=paused]{color:#ffe0a2}.helper-state-cell[data-state=error],.helper-state-cell[data-state=stopped]{color:#ffd0d0}.helper-state-cell[data-state=running],.helper-state-cell[data-state=waiting]{color:#bedfff}
+.solver-activity[data-state=paused]{background:#463a25;border-color:#dcb364}.solver-activity[data-state=paused] strong{color:#ffe0a2}.solver-activity[data-state=error],.solver-activity[data-state=stopped]{background:#492d35;border-color:#dc8585}.solver-activity[data-state=error] strong,.solver-activity[data-state=stopped] strong{color:#ffd0d0}.solver-activity[data-state=complete]{background:#263e35;border-color:#6daf89}.solver-activity[data-state=complete] strong{color:#b4e8ca}

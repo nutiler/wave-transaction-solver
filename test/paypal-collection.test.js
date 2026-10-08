@@ -51,3 +51,26 @@ test('Original download is saved and hash verified independently from parser fai
  assert.equal(await verifyCollectedPayPalReport(root,entry),true);assert.equal(root.dirs.get('raw').files.size,1);await assert.rejects(importCollectedPayPalReport(root,entry),/header/);
  root.dirs.get('raw').files.set(entry.responsePath.slice(4),'changed');assert.equal(await verifyCollectedPayPalReport(root,entry),false);
 });
+
+
+test('The oldest partial year verifies successive boundary dates before a single Create; all other years stay exact',async()=>{
+ const s=setup({ready:true}),originalPrepare=s.config.prepare,originalRequest=s.config.request,starts=[];
+ const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){starts.push(r.start);assert.equal(r.oldestBoundary,true);if(r.start==='2019-10-08')return {notSubmitted:true,calendarBoundary:true,message:'PayPal could not lock the exact calendar day.'};return {prepared:true,start:r.start};}return originalPrepare(r);}});
+ assert.deepEqual(starts,['2019-10-08','2019-10-09']);assert.equal(s.b.earliest,'2019-10-09');assert.equal(s.b.reports[0].originalStart,'2019-10-08');assert.equal(s.calls.filter(c=>c.startsWith('create 2019')).length,1);assert.ok(s.calls.includes('create 2019-10-09'));assert.equal(result.downloaded,8);assert.equal(s.b.reports[6].start,'2025-01-01');
+});
+test('A visible calendar boundary adjustment is persisted and used for exact report matching and download',async()=>{
+ const s=setup({ready:true}),result=await runFreshPayPalCollection({...s.config,prepare:async r=>({prepared:true,start:r.oldestBoundary?'2019-10-10':r.start,end:r.end})});
+ assert.equal(s.b.reports[0].start,'2019-10-10');assert.equal(s.b.earliest,'2019-10-10');assert.equal(result.downloaded,8);assert.ok(s.calls.includes('download 2019-10-10'));
+});
+test('Non-boundary preparation failures are never treated as permission to change dates',async()=>{
+ const s=setup({ready:true});let attempts=0;const result=await runFreshPayPalCollection({...s.config,prepare:async r=>{if(r.start.startsWith('2019')){attempts++;return {notSubmitted:true,message:'Unsupported date field'};}return {prepared:true};},download:async r=>r.start,importReport:async r=>({name:r.start+'.csv',count:1})});
+ assert.equal(attempts,1);assert.equal(s.b.reports[0].start,'2019-10-08');assert.equal(result.downloaded,7);
+});
+test('Sign-in pauses preparation immediately and Resume preserves later exact years',async()=>{
+ const s=setup({ready:true});let attempts=0;const first=await runFreshPayPalCollection({...s.config,prepare:async()=>{attempts++;return {notSubmitted:true,message:'Open the signed-in PayPal report page.'};}});
+ assert.equal(first.paused,true);assert.equal(attempts,1);assert.equal(s.calls.length,0);const resumed=await runFreshPayPalCollection(s.config);assert.equal(resumed.downloaded,8);assert.equal(s.calls.filter(c=>c.startsWith('create ')).length,8);
+});
+test('Sign-in during download pauses with submission checkpoints intact',async()=>{
+ const s=setup({ready:true});let downloads=0;const first=await runFreshPayPalCollection({...s.config,download:async()=>{downloads++;throw Error('Sign in to PayPal before downloading.');}});
+ assert.equal(first.paused,true);assert.equal(downloads,1);assert.equal(s.b.reports[0].downloadState,'pending');assert.ok(s.b.reports.every(r=>r.requestState==='submitted'));const resumed=await runFreshPayPalCollection(s.config);assert.equal(resumed.downloaded,8);assert.equal(s.calls.filter(c=>c.startsWith('create ')).length,8);
+});

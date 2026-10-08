@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.48.0 - Visible helper states and oldest PayPal calendar boundary
+
+- Share green Start/Complete, blue Running/Waiting, amber Resume/Paused/sign-in, and red Stop/error colors across PayPal, Amazon, Wave and Venmo helpers. Status cards and the activity bar retain explicit state labels; PayPal's yearly status cells use the same palette.
+- A PayPal sign-in break pauses collection immediately and preserves submission/download checkpoints for Resume. The activity bar no longer reports Ready over a sign-in pause.
+- For the oldest partial year only, inspect an explicitly disabled calendar day and commit the earliest visibly selectable date. If needed, probe up to seven successive boundary days with date preparation only. Create is clicked once after the exact dates have been verified; other years retain their original ranges.
+- Persist the verified boundary and original requested date, update the displayed oldest-year range, and label its calendar adjustment. No guessed date or unconfirmed request is treated as coverage.
+- Add regression coverage for adjusted boundary matching, non-boundary failures, sign-in pause/resume, and status precedence. The synthetic DOM fixture also exercises a disabled rolling-limit day.
+
 ## 0.47.0 - Fresh PayPal batches with independent download and import checkpoints
 
 - Replace the PayPal helper's operator flow with Start fresh and Resume this batch. Fresh batches request every year in the available seven-year window, including 2025, even when older reports or local files exist. Prior files and manifests are preserved.

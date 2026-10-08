@@ -6,6 +6,7 @@ export function freshPayPalBatch(today,availableThrough=today,id=crypto.randomUU
  return {version:1,id,startedAt:new Date().toISOString(),earliest:plan.earliest,through:plan.through,
   reports:plan.periods.map(period=>({...period,requestState:'planned',downloadState:'pending',importState:'pending'}))};
 }
+const needsSignIn=message=>/sign[- ]?in|log[- ]?in|login|signed[- ]?in|signed.out/i.test(String(message));
 const safeMessage=error=>String(error?.message||error).replace(/https?:\/\/\S+/g,'[URL]').slice(0,600);
 export async function verifyCollectedPayPalReport(root,entry) {
  const expected='raw/paypal-all-'+entry.start+'-to-'+entry.end+'-';
@@ -57,15 +58,29 @@ export async function runFreshPayPalCollection({batch,read,prepare,request,refre
   if(['requesting','uncertain'].includes(entry.requestState)){
    await confirmed(entry,info);continue; // Never repeat an uncertain Create click.
   }
-  const before=matches(info,entry),requestSpec={...entry,forceNew:true};
-  const prepared=await prepare(requestSpec);
+  let before=matches(info,entry);const oldestBoundary=entry===batch.reports[0]&&entry.start.slice(5)!=='01-01';let requestSpec={...entry,forceNew:true,oldestBoundary},prepared=await prepare(requestSpec);
+  // Near the rolling limit, verify the first accepted day with preparation only.
+  // No Create click is made until PayPal displays and commits the exact range.
+  if(oldestBoundary&&prepared?.notSubmitted&&prepared.calendarBoundary){
+   const initial=entry.start;
+   for(let offset=1;offset<=7&&current();offset++){
+    const candidate=new Date(initial+'T00:00:00Z');candidate.setUTCDate(candidate.getUTCDate()+offset);const start=candidate.toISOString().slice(0,10);if(start>entry.end||start.slice(0,4)!==initial.slice(0,4))break;
+    requestSpec={...entry,start,forceNew:true,oldestBoundary:true};prepared=await prepare(requestSpec);
+    if(!prepared?.notSubmitted){prepared={...prepared,start:prepared.start||start,originalStart:initial};break;}
+    if(!prepared.calendarBoundary)break;
+   }
+  }
+  if(!prepared?.notSubmitted&&prepared?.start&&prepared.start!==entry.start){
+   const start=prepared.start;if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||start<entry.start||start>entry.end||start.slice(0,4)!==entry.start.slice(0,4))throw Error('Invalid oldest calendar boundary.');
+   entry.originalStart=entry.originalStart||entry.start;entry.start=start;entry.boundaryNote='PayPal’s calendar accepted '+start+' as the earliest verified date.';batch.earliest=start;requestSpec={...entry,forceNew:true};before=matches(await read(),entry);await update();
+  }
   if(!current())return result(true);
-  if(prepared?.notSubmitted){entry.requestState='rejected';entry.message=prepared.message||'PayPal did not accept this range.';await update();continue;}
+  if(prepared?.notSubmitted){entry.requestState='rejected';entry.message=prepared.message||'PayPal did not accept this range.';await update();if(needsSignIn(entry.message))return {...result(false),paused:true,message:entry.message};continue;}
   entry.baselineCount=before.length;entry.baselinePending=pendingCount(before);entry.requestState='requesting';delete entry.message;await update();
   let outcome;
   try{outcome=await request(requestSpec);}catch(error){entry.requestState='uncertain';entry.message=safeMessage(error);await update();continue;}
   if(!current())return result(true);
-  if(outcome?.notSubmitted){entry.requestState='rejected';entry.message=outcome.message||'Create Report was not clicked.';await update();continue;}
+  if(outcome?.notSubmitted){entry.requestState='rejected';entry.message=outcome.message||'Create Report was not clicked.';await update();if(needsSignIn(entry.message))return {...result(false),paused:true,message:entry.message};continue;}
   // The page adapter confirms a NEW row/count, never a pre-existing ready report.
   if(outcome?.submitted){entry.requestState='submitted';await update();continue;}
   const began=now();let lastRefresh=began;
@@ -94,7 +109,7 @@ export async function runFreshPayPalCollection({batch,read,prepare,request,refre
     const saved=await archive(entry,text);
     if(!await verify({...entry,...saved}))throw Error('The original file could not be verified after saving.');
     Object.assign(entry,saved,{downloadState:'saved',importState:'pending'});delete entry.message;
-   }catch(error){entry.downloadState='failed';entry.message=safeMessage(error);}
+   }catch(error){entry.downloadState='failed';entry.message=safeMessage(error);if(needsSignIn(entry.message)){entry.downloadState='pending';await update();return {...result(false),paused:true,message:entry.message};}}
    await update();
   }
   const waiting=batch.reports.filter(r=>r.downloadState!=='saved'&&['submitted','requesting','uncertain'].includes(r.requestState)&&!attempted.has(paypalReportKey(r)));

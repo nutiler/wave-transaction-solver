@@ -1,3 +1,4 @@
+import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
 import {helperCall} from './helper-bridge.js';
 import {amazonReportURL,amazonPrivacyURL,amazonReportOrigins,waveHelperOrigins,validRange,amazonDownloadItem,waveMailSearch,observeNativeDownload,findAmazonInbox,saveAmazonReport,saveWaveArchive,fetchWaveArchive,waitWaveMail} from './download-files.js';
@@ -60,3 +61,5 @@ try{const folders=await loadLocalFeature('downloads:folders'),saved=await loadLo
 if(mode==='amazon'){$('start').value=state.start;$('end').value=state.end||day();}else{const current=real?onlyBusiness(await chrome.tabs.query({url:'https://next.waveapps.com/*'})):null,session=await loadSession();const businesses=[...new Set([current,session?.business,...Object.keys(exportPages)].filter(Boolean))];for(const business of businesses){const o=document.createElement('option');o.value=business;o.textContent=business;o.textContent=business===current?'Current Wave business':business===session?.business?'Saved Wave business':business;$('business').append(o);}$('business').value=state.business||current||session?.business||businesses[0]||'';$('exportURL').value=state.exportURL||exportPages[$('business').value]||'';$('mailbox').value=state.mailbox||settings.waveExportMailbox||'';$('mailIndex').value=state.mailbox?state.mailIndex:settings.waveExportGmailIndex??0;}
 await refreshTabs();paint();
 if(mode==='wave'&&$('configuration'))$('configuration').open=!$('exportURL').value||!$('mailbox').value;
+
+watchHelperStatus(document,{busy:()=>busy});

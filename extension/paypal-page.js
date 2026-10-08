@@ -131,9 +131,21 @@ export async function paypalPage(request={},testContext) {
      Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(input,value);
      input.dispatchEvent(new win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));input.dispatchEvent(new win.Event('change',{bubbles:true}));(field(pattern)||input).dispatchEvent(new win.KeyboardEvent('keyup',{bubbles:true,key:value.slice(-1),code:'Digit'+value.slice(-1)}));await pause();
     }
-    if(await pick(pattern,iso)===false)return {notSubmitted:true,message:'PayPal could not lock the exact calendar day. Nothing requested.'};
+    if(await pick(pattern,iso)===false){
+     // Only the oldest FROM boundary may advance, and only to a date visibly
+     // selectable in this same provider calendar. Never infer a day or alter TO.
+     let adjusted=false;
+     if(pattern===startPattern&&request.oldestBoundary){
+      const cal=calendar(field(pattern)),target=Number(iso.slice(0,4))*12+Number(iso.slice(5,7))-1;
+      if(cal?.month===target&&cal.cells){
+       const unavailable=cal.cells.filter(e=>cellDate(e)===iso),selectable=cal.cells.filter(e=>enabled(e)&&cellDate(e)>=iso&&cellDate(e)<=request.end&&[...e.querySelectorAll('a,button')].filter(visible).some(enabled)).sort((a,b)=>cellDate(a).localeCompare(cellDate(b)));
+       if(unavailable.length===1&&!enabled(unavailable[0])&&selectable.length){const earliest=cellDate(selectable[0]);if(await chooseDay(field(pattern),pattern,earliest)){request.originalStart=request.start;request.start=earliest;adjusted=true;}}
+      }
+     }
+     if(!adjusted)return {notSubmitted:true,calendarBoundary:pattern===startPattern&&!!request.oldestBoundary,message:'PayPal could not lock the exact calendar day. Nothing requested.'};
+    }
     field(pattern)?.blur();await pause();
-    if(date(field(pattern)?.value)!==iso)return {notSubmitted:true,message:'PayPal did not commit the requested date. Nothing requested.'};
+    if(date(field(pattern)?.value)!==(pattern===startPattern?request.start:request.end))return {notSubmitted:true,message:'PayPal did not commit the requested date. Nothing requested.'};
    }
    const fieldsExact=()=>date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
    if(!fieldsExact())return {notSubmitted:true,message:'PayPal did not retain the requested start/end dates. Nothing requested.'};
@@ -150,7 +162,7 @@ export async function paypalPage(request={},testContext) {
   const rangeMatches=rangeDates.length===2&&date(rangeDates[0])===request.start&&date(rangeDates[1])===request.end;
   const inputsMatch=date(field(startPattern)?.value)===request.start&&date(field(endPattern)?.value)===request.end;
   if(!(rangeMatches||inputsMatch&&/^(Custom|Custom date range|Custom range)$/i.test(selectedRange))||chosen(field(/^Transaction type$/i))!=='All transactions'||chosen(field(/^Format$/i)).toUpperCase()!=='CSV')return {notSubmitted:true,message:'PayPal’s displayed dates/type/format do not match the requested report. Nothing requested.'};
-  if(request.action==='prepare')return {prepared:true};
+  if(request.action==='prepare')return {prepared:true,start:request.start,end:request.end,originalStart:request.originalStart||null};
   const create=exact(clickable(),'Create Report');if(create.length!==1||create[0].disabled)return {notSubmitted:true,message:'Create Report is unavailable. Check the date range in PayPal, then Resume.'};
   submitted=true;activate(actionTarget(create[0]));await pause();const after=reportRows().filter(x=>x.report.type===request.type&&x.report.start===request.start&&x.report.end===request.end&&x.report.format==='CSV');
   const confirmed=request.forceNew?after.length>before.length||after.filter(x=>!x.report.ready).length>before.filter(x=>!x.report.ready).length:after.length>0;
