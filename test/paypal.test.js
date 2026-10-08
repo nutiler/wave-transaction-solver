@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {paypalPeriods,paypalReportKey,eligiblePayPalReports,savePayPalCSV,savePayPalResponse,verifyPayPalFile,collectPayPalReports,paypalOrigins} from '../extension/paypal.js';
+import {paypalPeriods,paypalReportKey,eligiblePayPalReports,savePayPalCSV,savePayPalResponse,readSavedPayPalResponse,verifyPayPalFile,collectPayPalReports,paypalOrigins} from '../extension/paypal.js';
 import {importPayPalCSV,paypalDate,paypalMoney} from '../extension/paypal-csv.js';
 import {sourceProvider,readEvidenceFile,modelEvidenceFiles} from '../extension/source-files.js';
+import {serviceMatches,evidenceSnapshot} from '../extension/service-solvers.js';
 const header='Date,Name,Type,Status,Currency,Gross,Fee,Net,Transaction ID,Reference Txn ID,Payment Source,Item Title,Note';
 const csv=(id='FAKE0000000000001',date='01/02/2025',extra={})=>header+'\n'+[date,'Fictional Tools','Express Checkout Payment',extra.status||'Completed','USD',extra.gross||'-10.00',extra.fee||'0.00',extra.net||'-10.00',id,extra.reference||'',extra.funding||'CreditCard','Fictional tool','Example purchase'].join(',');
 const report={type:'All transactions',format:'CSV',start:'2025-01-01',end:'2025-12-31',ready:true};
-function folder(name='paypal'){const dirs=new Map(),files=new Map();return {name,dirs,files,getDirectoryHandle:async(name,{create=false}={})=>{if(!dirs.has(name)){if(!create)throw Object.assign(Error('missing'),{name:'NotFoundError'});dirs.set(name,folder(name));}return dirs.get(name);},getFileHandle:async(name,{create=false}={})=>{if(!files.has(name)){if(!create)throw Object.assign(Error('missing'),{name:'NotFoundError'});files.set(name,'');}return {getFile:async()=>({text:async()=>files.get(name)}),createWritable:async()=>({write:async value=>files.set(name,value),close:async()=>{},abort:async()=>{}})};}};}
+function folder(name='paypal'){const dirs=new Map(),files=new Map();return {name,dirs,files,getDirectoryHandle:async(name,{create=false}={})=>{if(!dirs.has(name)){if(!create)throw Object.assign(Error('missing'),{name:'NotFoundError'});dirs.set(name,folder(name));}return dirs.get(name);},getFileHandle:async(name,{create=false}={})=>{if(!files.has(name)){if(!create)throw Object.assign(Error('missing'),{name:'NotFoundError'});files.set(name,'');}return {getFile:async()=>({size:Buffer.byteLength(files.get(name)),text:async()=>files.get(name)}),createWritable:async()=>({write:async value=>files.set(name,value),close:async()=>{},abort:async()=>{}})};},async *entries(){for(const [name] of files)yield [name,{kind:'file',getFile:async()=>({size:Buffer.byteLength(files.get(name)),text:async()=>files.get(name)})}];for(const [name,dir] of dirs)yield [name,{...dir,kind:'directory'}];}};}
 test('PayPal clips only the oldest year to its seven-year window and keeps later calendar years exact',()=>{const plan=paypalPeriods(2019,'2026-10-07');assert.equal(plan.periods[0].start,'2019-10-07');assert.equal(plan.periods[0].partial,true);assert.equal(plan.periods[1].start,'2020-01-01');assert.equal(plan.periods[1].end,'2020-12-31');assert.equal(plan.periods[1].partial,false);assert.equal(plan.periods[0].end,'2019-12-31');assert.equal(plan.periods.at(-1).end,'2026-10-07');assert.equal(plan.periods.length,8);assert.equal(plan.limited,true);for(const p of plan.periods)assert.equal(p.start.slice(0,4),p.end.slice(0,4));assert.equal(paypalPeriods(2019,'2024-02-29').earliest,'2017-02-28');assert.throws(()=>paypalPeriods(2027,'2026-10-07'));assert.deepEqual(paypalOrigins,['https://www.paypal.com/reports/*']);});
 test('CSV preserves IDs, item evidence and excludes contact columns',()=>{const parsed=importPayPalCSV(csv());assert.equal(parsed.records[0].sourceId,'FAKE0000000000001');assert.equal(parsed.records[0].items[0].title,'Fictional tool');assert.equal(parsed.records[0].signedCents,-1000);assert.equal(parsed.records[0].statementView,'account');assert.ok(!JSON.stringify(parsed).includes('Email'));});
 test('Dates use explicit date order and reject invalid dates; money rejects decimal commas',()=>{assert.equal(paypalDate('02/01/2025','dmy'),'2025-01-02');assert.equal(paypalDate('02/01/2025','mdy'),'2025-02-01');assert.throws(()=>paypalDate('02/30/2025'));assert.throws(()=>paypalDate('01/02/2025','guess'));assert.equal(paypalMoney('-1,234.56'),-123456);assert.throws(()=>paypalMoney('12,34'));assert.throws(()=>paypalMoney('12.345'));});
@@ -123,6 +124,81 @@ test('PayPal data cutoff limits current-year end without moving the seven-year s
 test('Resume reuses the two clamped current-year rows instead of requesting another duplicate',async()=>{const p={...report,start:'2026-01-01',end:'2026-10-07'},old={...p,end:'2026-10-08',status:'requesting',reportConfirmed:false},rows=[{...p,ready:false},{...p,ready:false}];let clock=0;const result=await collectPayPalReports({periods:[p],entries:{[paypalReportKey(old)]:old},read:async()=>({reports:rows}),request:async()=>assert.fail('No third current-year report'),download:async()=>assert.fail(),save:async()=>assert.fail(),persist:async()=>{},refresh:async()=>{},pause:async ms=>clock+=ms,now:()=>clock,timeoutMs:1000});assert.equal(result.waiting.end,'2026-10-07');assert.equal(result.entries[paypalReportKey(old)].status,'superseded');assert.equal(result.entries[paypalReportKey(p)].reportConfirmed,true);});
 test('A previously observed but now missing 2025 row is rechecked and requested without recreating other pending years',async()=>{const p={...report,ready:false},later={...p,start:'2026-01-01',end:'2026-10-07'},rows=[later],created=[];let clock=0;const result=await collectPayPalReports({periods:[p,later],entries:{[paypalReportKey(p)]:{...p,status:'requested',reportConfirmed:true},[paypalReportKey(later)]:{...later,status:'requested',reportConfirmed:true}},read:async()=>({reports:rows,reportListComplete:true}),request:async r=>{created.push(r.start);rows.push({...r});},download:async()=>assert.fail(),save:async()=>assert.fail(),persist:async()=>{},refresh:async()=>{},pause:async ms=>clock+=ms,now:()=>clock,timeoutMs:1000});assert.deepEqual(created,['2025-01-01']);assert.equal(result.pending.length,2);assert.equal(clock,11000);});
 
-test('Observed personal-account Amount Fees Total export maps into the same reconciled evidence as Gross Fee Net',()=>{const personal='Date,Time,TimeZone,Name,Type,Status,Currency,Amount,Fees,Total,Exchange Rate,Receipt ID,Balance,Transaction ID,Item Title\n01/02/2025,12:00:00,PST,Fictional Shop,Express Checkout Payment,Completed,USD,-10.00,-1.00,-11.00,1.0,FAKERECEIPT,0.00,FAKEPERSONAL1,Fictional item';const r=importPayPalCSV(personal);assert.equal(r.records.length,1);assert.equal(r.records[0].sourceId,'FAKEPERSONAL1');assert.equal(r.records[0].grossCents,-1000);assert.equal(r.records[0].feeCents,-100);assert.equal(r.records[0].netCents,-1100);assert.equal(r.records[0].items[0].title,'Fictional item');assert.equal(r.controls.amountColumns,'Amount / Fees / Total');assert.equal(importPayPalCSV(personal.replace('-1.00,-11.00','1.00,-11.00')).records[0].feeCents,-100);assert.throws(()=>importPayPalCSV(personal.replace('-1.00,-11.00','-1.00,-10.00')),/reconcile/);assert.throws(()=>importPayPalCSV(personal.replace('Amount,Fees,Total','Amount,Gross,Fees,Total')),/Duplicate/);});
+test('Observed personal-account Amount Fees Total export maps into the same reconciled evidence as Gross Fee Net',()=>{const personal='Date,Time,TimeZone,Name,Type,Status,Currency,Amount,Fees,Total,Exchange Rate,Receipt ID,Balance,Transaction ID,Item Title\n01/02/2025,12:00:00,PST,Fictional Shop,Express Checkout Payment,Completed,USD,-10.00,-1.00,-11.00,1.0,FAKERECEIPT,0.00,FAKEPERSONAL1,Fictional item';const r=importPayPalCSV(personal);assert.equal(r.records.length,1);assert.equal(r.records[0].sourceId,'FAKEPERSONAL1');assert.equal(r.records[0].grossCents,-1000);assert.equal(r.records[0].feeCents,-100);assert.equal(r.records[0].netCents,-1100);assert.equal(r.records[0].items[0].title,'Fictional item');assert.equal(r.controls.amountColumns,'Amount / Fees / Total');assert.equal(importPayPalCSV(personal.replace('-1.00,-11.00','1.00,-11.00')).records[0].feeCents,-100);assert.throws(()=>importPayPalCSV(personal.replace('-1.00,-11.00','-1.00,-15.00')),/reconcile/);assert.throws(()=>importPayPalCSV(personal.replace('Amount,Fees,Total','Amount,Gross,Fees,Total')),/Duplicate/);});
 test('Personal aliases still reject missing amounts and preserve incoming/refund signs',()=>{const personal=csv().replace('Gross,Fee,Net','Amount,Fees,Total');assert.equal(importPayPalCSV(personal.replace('Express Checkout Payment','Payment Refund')).records[0].kind,'Refund');assert.equal(importPayPalCSV(personal.replaceAll('-10.00','10.00')).records[0].signedCents,1000);assert.throws(()=>importPayPalCSV(personal.replace('Amount,Fees,Total','Amount,FeeMissing,Total')),/header/);assert.throws(()=>importPayPalCSV(personal.replace('-10.00,0.00,-10.00','-10.00,,-10.00')),/missing amount/);});
 test('An unsupported CSV response is preserved privately before parser rejection, never overwritten or advertised as validated',async()=>{const root=folder(),text='Date,Amount\n01/02/2025,-10.00';let error;try{await savePayPalCSV(root,report,text);}catch(e){error=e;}assert.match(error.message,/Original response preserved/);assert.match(error.responsePath,/^raw\/paypal-all-.*\.response\.local\.txt$/);assert.equal(root.dirs.has('2025'),false);assert.equal(root.dirs.get('raw').files.size,1);const saved=await savePayPalResponse(root,report,text);assert.equal(saved.path,error.responsePath);assert.equal(root.dirs.get('raw').files.size,1);assert.equal(await root.dirs.get('raw').files.get(saved.path.split('/')[1]),text);});
+
+
+test('Personal Amount equals Total with a separately listed fee preserves all values and holds matching',()=>{
+ for(const sign of ['-','']){
+  const text=csv('FAKESEPARATE','01/02/2025',{gross:sign+'10.00',fee:'-1.00',net:sign+'10.00'}).replace('Gross,Fee,Net','Amount,Fees,Total');
+  const parsed=importPayPalCSV(text),r=parsed.records[0],expected=sign?-1000:1000;
+  assert.deepEqual(r.reportedAmounts,{amountCents:expected,feesCents:-100,totalCents:expected});
+  assert.equal(r.grossCents,null);assert.equal(r.netCents,expected);assert.equal(r.signedCents,expected);assert.equal(r.feeCents,-100);
+  assert.equal(r.bankExpected,false);assert.match(r.blocked,/fee separately/);assert.equal(parsed.controls.reconciliationIssues,1);
+  const merged=modelEvidenceFiles([parsed]);assert.equal(merged[0].bankExpected,false);assert.equal(merged[0].blocked,r.blocked);
+  assert.deepEqual(serviceMatches(merged,[{id:'FAKEWAVE',primary:{account:'Fictional card'},date:r.date,amount:1000,direction:r.bankDirection,description:'PayPal Fictional Tools'}])[0].candidates,[]);
+  assert.deepEqual(evidenceSnapshot(r).reportedAmounts,r.reportedAmounts);
+ }
+ assert.throws(()=>importPayPalCSV(csv('FAKESTRICT','01/02/2025',{gross:'-10.00',fee:'-1.00',net:'-10.00'})),/reconcile/);
+});
+
+test('Distinct authorization events retain source IDs and stable keys across overlapping report slices',()=>{
+ const first=csv('FAKEAUTH','01/02/2025',{status:'Pending'}).replace('Express Checkout Payment','General Authorization'),second=csv('FAKEAUTH','01/03/2025',{status:'Completed'}).replace('Express Checkout Payment','General Authorization');
+ const text=first+'\n'+second.split('\n')[1],parsed=importPayPalCSV(text);
+ assert.equal(parsed.records.length,2);assert.equal(new Set(parsed.records.map(r=>r.key)).size,2);assert.equal(parsed.controls.uniqueTransactionIDs,1);assert.equal(parsed.controls.repeatedIDEvents,2);
+ for(const r of parsed.records){assert.equal(r.sourceId,'FAKEAUTH');assert.equal(r.repeatedIDEvent,true);assert.equal(r.bankExpected,false);assert.match(r.blocked,/multiple ledger events/);}
+ assert.equal(importPayPalCSV(first).records[0].key,parsed.records[0].key);assert.equal(importPayPalCSV(second).records[0].key,parsed.records[1].key);
+ const merged=modelEvidenceFiles([parsed,importPayPalCSV(first)]);assert.equal(merged.length,2);assert.ok(merged.every(r=>!r.bankExpected));
+ assert.throws(()=>importPayPalCSV(first+'\n'+first.split('\n')[1]),/Duplicate identical/);
+ const reversed=importPayPalCSV(first+'\n'+second.split('\n')[1].replace('General Authorization','Void of Authorization').replace('Completed','Reversed'));
+ assert.equal(reversed.records.length,2);assert.ok(reversed.records.every(r=>!r.bankExpected));
+});
+
+test('Repeated settled events cannot regain matching eligibility through account or funding evidence',()=>{
+ const first=csv('FAKEREPEATED','01/02/2025'),second=csv('FAKEREPEATED','01/03/2025'),parsed=importPayPalCSV(first+'\n'+second.split('\n')[1]);
+ const funding=importPayPalCSV(csv('FAKEFUNDING','01/02/2025',{gross:'10.00',net:'10.00',reference:'FAKEREPEATED'}).replace('Express Checkout Payment','General Credit Card Deposit'));
+ const merged=modelEvidenceFiles([parsed,funding]);assert.ok(merged.filter(r=>r.sourceId==='FAKEREPEATED').every(r=>!r.bankExpected&&r.blocked));
+});
+
+test('Resume reads only one intact preserved response for the exact type and date range',async()=>{
+ const root=folder();assert.equal(await readSavedPayPalResponse(root,report),null);
+ const original=await savePayPalResponse(root,report,csv()),found=await readSavedPayPalResponse(root,report);
+ assert.equal(found.text,csv());assert.equal(found.path,original.path);assert.equal(found.hash,original.hash);
+ assert.equal(await readSavedPayPalResponse(root,{...report,end:'2025-12-30'}),null);
+ assert.equal(await readSavedPayPalResponse(root,{...report,type:'Balance affecting'}),null);
+ await assert.rejects(readSavedPayPalResponse(root,{...report,type:'PDF'}),/identity/);
+ await assert.rejects(readSavedPayPalResponse(root,{...report,end:'2024-12-31'}),/identity/);
+ root.dirs.get('raw').files.set(original.path.split('/')[1],'changed');assert.equal(await readSavedPayPalResponse(root,report),null);
+});
+
+test('Ambiguous preserved responses require a new download and never choose an arbitrary copy',async()=>{
+ const root=folder();await savePayPalResponse(root,report,csv('FAKEOLD'));await savePayPalResponse(root,report,csv('FAKENEW'));
+ assert.equal(await readSavedPayPalResponse(root,report),null);assert.equal(root.dirs.get('raw').files.size,2);
+});
+
+test('A previously rejected personal response can save locally without downloading or changing its original text',async()=>{
+ const root=folder(),text=csv('FAKELOCAL','01/02/2025',{fee:'-1.00'}).replace('Gross,Fee,Net','Amount,Fees,Total');
+ const original=await savePayPalResponse(root,report,text),found=await readSavedPayPalResponse(root,report),saved=await savePayPalCSV(root,report,found.text);
+ assert.equal(saved.hash,original.hash);assert.equal(saved.count,1);assert.equal(root.dirs.get('raw').files.size,1);assert.equal(await verifyPayPalFile(root,saved),true);
+ assert.equal(root.dirs.get('2025').files.get(saved.name.split('/')[1]),text);
+});
+
+test('A preserved annual import failure does not stop 2020 or the existing 2025 report or retry duplicate rows',async()=>{
+ const root=folder(),older={...report,start:'2019-10-08',end:'2019-12-31'},next={...report,start:'2020-01-01',end:'2020-12-31'},rows=[older,{...older,rowToken:'FAKEDUPLICATE'},next,report],downloads=[];let persisted;
+ const result=await collectPayPalReports({periods:[older,next,report],read:async()=>({reports:rows}),download:async r=>{downloads.push(r.start);return r.start===older.start?'Date,Amount\n10/08/2019,-10.00':csv('FAKE'+r.start.slice(0,4),'01/02/'+r.start.slice(0,4));},save:(r,text)=>savePayPalCSV(root,r,text),verifySaved:e=>verifyPayPalFile(root,e),persist:async e=>persisted=structuredClone(e),request:async()=>assert.fail('All years exist, including 2025')});
+ assert.deepEqual(downloads,['2019-10-08','2020-01-01','2025-01-01']);assert.equal(result.saved,2);assert.equal(result.requested,0);assert.equal(result.waiting,undefined);
+ assert.equal(result.failedReports.length,1);assert.equal(result.failedReports[0].start,older.start);assert.match(result.failedReports[0].responsePath,/^raw\//);
+ assert.equal(persisted[paypalReportKey(older)].status,'import-failed');assert.equal(persisted[paypalReportKey(older)].hash,undefined);assert.equal(persisted[paypalReportKey(report)].status,'saved');assert.equal(persisted[paypalReportKey(report)].count,1);
+});
+
+test('After preserving a failed report the collector still refreshes and saves a submitted year',async()=>{
+ const old={...report,start:'2019-10-08',end:'2019-12-31'},rows=[old,{...report,ready:false}],calls=[];let clock=0;
+ const result=await collectPayPalReports({periods:[old,report],read:async()=>({reports:rows}),download:async r=>{calls.push(r.start);return 'synthetic';},save:async r=>{if(r.start===old.start)throw Object.assign(Error('Unrecognized header'),{responsePath:'raw/fictional.response.local.txt',responseHash:'fictional'});return {hash:'validated',name:'2025.csv'};},persist:async()=>{},request:async()=>assert.fail(),refresh:async()=>{rows[1].ready=true;},pause:async ms=>clock+=ms,now:()=>clock});
+ assert.deepEqual(calls,[old.start,report.start]);assert.equal(result.saved,1);assert.equal(result.failedReports.length,1);assert.equal(result.waiting,undefined);assert.equal(clock,6000);
+});
+
+test('PayPal CSV caches reparse with the updated semantics while unchanged current parses stay reused',async()=>{
+ const file=new File([csv()],'paypal.csv'),name='paypal/2025/report.csv',current=await readEvidenceFile(file,name),old={...current,parseVersion:1,records:[]};
+ assert.equal(current.parseVersion,2);const reparsed=await readEvidenceFile(file,name,old);assert.equal(reparsed.records.length,1);assert.equal(reparsed.parseVersion,2);assert.strictEqual(await readEvidenceFile(file,name,reparsed),reparsed);
+});

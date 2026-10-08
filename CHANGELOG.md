@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.46.0 - Preserve personal-report fee semantics and continue batch collection
+
+- Preserve personal Amount/Fees/Total values when Amount equals Total and fees are listed separately. Keep gross unavailable and flag fee reconciliation instead of inventing a gross amount or rejecting the whole report. Classic Gross/Fee/Net reconciliation remains strict.
+- Preserve distinct ledger events sharing a transaction ID, including Pending/Completed authorization history, with stable event keys and original source IDs. Repeated IDs stay out of automatic actions; identical duplicated events remain rejected.
+- Resume can reuse one hash-verified preserved response for the exact report range. Missing, changed or ambiguous raw copies require a fresh download.
+- A preserved report that still fails import is checkpointed separately while the batch collects other ready years. Report-level failures remain visible and are never counted as successful imports or retried repeatedly in the same run.
+- Validate the complete failing historical report, including fee-bearing rows and repeated authorization IDs, plus regression tests for continuing through a failed report to collect 2025.
+
 ## 0.45.0 - Parse the observed PayPal personal-account export
 
 - Support the actual personal-account Amount, Fees and Total columns alongside Gross, Fee and Net. Preserve source transaction IDs, status, currency and item evidence; require the provided amounts to reconcile rather than invent fees.

@@ -22,9 +22,16 @@ export async function savePayPalResponse(root,report,text){
  const file=await raw.getFileHandle(name,{create:true}),stream=await file.createWritable();try{await stream.write(text);await stream.close();}catch(error){await stream.abort?.();throw error;}
  return {hash,path:'raw/'+name};
 }
+export async function readSavedPayPalResponse(root,report){
+ paypalDate(report.start);paypalDate(report.end);if(report.end<report.start||!['All transactions','Balance affecting'].includes(report.type))throw Error('Invalid report identity.');const stem='paypal-'+(report.type==='All transactions'?'all':'balance')+'-'+report.start+'-to-'+report.end+'-';let raw;
+ try{raw=await root.getDirectoryHandle('raw');}catch(error){if(error.name==='NotFoundError')return null;throw error;}
+ if(typeof raw.entries!=='function')return null;const found=[];
+ for await(const [name,handle] of raw.entries()){if(handle.kind!=='file'||!name.startsWith(stem)||!/^([a-f0-9]{16})\.response\.local\.txt$/.test(name.slice(stem.length)))continue;const file=await handle.getFile();if(file.size>30*1024*1024)continue;const text=await file.text(),hash=await venmoDigest(text);if(hash.slice(0,16)===name.slice(stem.length,stem.length+16))found.push({text,path:'raw/'+name,hash});}
+ return found.length===1?found[0]:null;
+}
 export async function savePayPalCSV(root,report,text,dateOrder='mdy') {
  paypalDate(report.start);paypalDate(report.end);if(report.end<report.start||!['All transactions','Balance affecting'].includes(report.type))throw Error('Invalid report identity.');
- const original=await savePayPalResponse(root,report,text);let parsed;try{parsed=importPayPalCSV(text,{dateOrder,period:report});}catch(error){error.responsePath=original.path;error.message+=' Original response preserved in paypal/'+original.path;throw error;}
+ const original=await savePayPalResponse(root,report,text);let parsed;try{parsed=importPayPalCSV(text,{dateOrder,period:report});}catch(error){error.responsePath=original.path;error.responseHash=original.hash;error.message+=' Original response preserved in paypal/'+original.path;throw error;}
  const hash=original.hash,year=report.start.slice(0,4),dir=await root.getDirectoryHandle(year,{create:true});
  const stem='paypal-'+(report.type==='All transactions'?'all':'balance')+'-'+report.start+'-to-'+report.end+'-'+dateOrder;let filename=stem+'.csv';
  const existingHash=async name=>{try{return await venmoDigest(await(await(await dir.getFileHandle(name)).getFile()).text());}catch(e){if(e.name==='NotFoundError')return null;throw e;}};
@@ -40,7 +47,7 @@ export async function verifyPayPalFile(root,entry) {
 export async function collectPayPalReports({periods,entries={},read,download,save,persist,request,prepare,refresh,verifySaved=async()=>false,current=()=>true,progress=()=>{},pause=ms=>new Promise(r=>setTimeout(r,ms)),now=()=>Date.now(),timeoutMs=600000,refreshMs=5000,submissionTimeoutMs=30000,recoveryMs=10000}) {
  const next={...entries};let info=await read(),saved=0,requested=0;
  const planned=new Set(periods.map(paypalReportKey)),originalReady=eligiblePayPalReports(info).filter(r=>!planned.has(paypalReportKey(r)));
- const archiveIssues=[];
+ const archiveIssues=[],failedReports=[],failedKeys=new Set();
  // A provider can clamp an attempted current-year end date to its data cutoff.
  // Keep the old intent as an audit note, but reuse the visible actual range.
  if(!current())return {entries:next,saved,requested,stopped:true};
@@ -52,7 +59,7 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
  async function reportProgress(report,message,meta){let completed=0;for(const period of periods)if(await covered(period))completed++;progress(report,message,{requested,saved,total:periods.length,completed,...meta});}
  async function store(report,archive=false){const key=paypalReportKey(report);if(await valid(next[key])||!current())return;await reportProgress(report,archive?'Collecting older available export after yearly reports':'Downloading requested yearly CSV',{phase:archive?'archive':'downloading'});const text=await download(report);if(!current())return;const result=await save(report,text);next[key]={...report,...result,status:'saved',savedAt:new Date().toISOString()};delete next[key].ready;delete next[key].row;delete next[key].rowToken;await persist(next);verified.set(result.hash+':'+result.name,true);saved++;}
  async function observed(period){const key=paypalReportKey(period);if(next[key]?.hash)return;next[key]={...period,...next[key],status:'requested',reportConfirmed:true};await persist(next);}
- const unconfirmed=period=>({entries:next,saved,requested,unconfirmed:period,stopped:false});
+ const unconfirmed=period=>({entries:next,saved,requested,unconfirmed:period,stopped:false,failedReports});
  // Migrate old click-only checkpoints after two fresh, complete report-list reads.
  // A full list with pending rows cannot prove absence. A full ready list can
  // recover legacy unconfirmed clicks, but not a previously observed submission.
@@ -94,7 +101,7 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
  }
  const started=now();let refreshed=started;
  while(current()){
-  info=await read();for(const report of eligiblePayPalReports(info).filter(r=>planned.has(paypalReportKey(r)))){await store(report);if(!current())return {entries:next,saved,requested,stopped:true};}
+  info=await read();for(const report of eligiblePayPalReports(info).filter(r=>planned.has(paypalReportKey(r)))){if(failedKeys.has(paypalReportKey(report)))continue;try{await store(report);}catch(error){if(!current())return {entries:next,saved,requested,stopped:true};if(!error.responsePath)throw error;const key=paypalReportKey(report),failure={type:report.type,format:report.format,start:report.start,end:report.end,status:'import-failed',reportConfirmed:true,responsePath:error.responsePath,responseHash:error.responseHash,message:String(error.message).replace(/https?:\/\/\S+/g,'[URL]').slice(0,700)};failedKeys.add(key);failedReports.push(failure);next[key]={...next[key],...failure};await persist(next);}if(!current())return {entries:next,saved,requested,stopped:true};}
   const pending=[];for(const period of periods)if(!await covered(period))pending.push(period);
   if(!pending.length){
    // Collect optional historical exports only after the requested years are saved.
@@ -111,9 +118,10 @@ export async function collectPayPalReports({periods,entries={},read,download,sav
    }
    return {entries:next,saved,requested,stopped:!current(),archiveIssues};
   }
-  const missing=pending.find(period=>!matches(info,period).length);if(missing)return unconfirmed(missing);
-  const elapsed=now()-started;await reportProgress(pending[0],'Waiting for '+pending.length+' confirmed reports - '+Math.floor(elapsed/1000)+'s / '+Math.floor(timeoutMs/1000)+'s; refreshing automatically',{phase:'waiting',pending:pending.length,elapsed});
-  if(!refresh||elapsed>=timeoutMs)return {entries:next,saved,requested,waiting:pending[0],pending};
+  const awaiting=pending.filter(p=>!failedKeys.has(paypalReportKey(p)));if(!awaiting.length)return {entries:next,saved,requested,stopped:false,failedReports};
+  const missing=awaiting.find(period=>!matches(info,period).length);if(missing)return unconfirmed(missing);
+  const elapsed=now()-started;await reportProgress(awaiting[0],'Waiting for '+awaiting.length+' confirmed reports - '+Math.floor(elapsed/1000)+'s / '+Math.floor(timeoutMs/1000)+'s; refreshing automatically',{phase:'waiting',pending:awaiting.length,elapsed});
+  if(!refresh||elapsed>=timeoutMs)return {entries:next,saved,requested,waiting:awaiting[0],pending:awaiting,failedReports};
   if(now()-refreshed>=refreshMs){if(!current())break;await refresh();refreshed=now();}
   await pause(Math.min(1000,Math.max(1,timeoutMs-(now()-started))));
  }
