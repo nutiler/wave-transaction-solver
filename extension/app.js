@@ -2,6 +2,7 @@ import {liveRecord,savedSnapshotRecord,assertLiveStructure,scanDateScope} from '
 import {installCommandCenter} from './command-view.js';
 import {prepareCommandModel,validateCommandDecision,decisionRecord,commandBaselineRecord} from './command-center.js';
 import {indexDataFolder,mergeAccountingHistory} from './data-index.js';
+import {restoreVenmoEmptyConfirmations} from './venmo-empty.js';
 import {sameWaveHistory} from './download-files.js';
 import {migrateToV1,scopeLegacyRules} from './migration.js';
 import {sourceHash} from './rule-pack.js';
@@ -678,6 +679,7 @@ async function recheckLegacyReceipt(key) {
 async function refreshDeskFolder(handle,{bind}={}) {
  if(!business)throw Error('Choose your Wave business first.');
  const owner=business,index=await indexDataFolder(handle),prior=await loadLocalFeature('finance:index:'+owner)||{bindings:{}},bindings={...prior.bindings},helperWave=await loadLocalFeature('downloads:wave');
+ await restoreVenmoEmptyConfirmations(handle,await loadLocalFeature('venmo:downloader'));
  if(bind){const exact=[...index.wave,...index.evidence].find(f=>f.path===bind.path&&f.sha256===bind.sha256);if(!exact)throw Error('The selected file changed. Refresh and confirm its account again.');bindings[exact.sha256]=owner;}
  let text=csvText;
  for(const file of index.wave){const result=index.results.find(r=>r.path===file.path);let matched=bindings[file.sha256]===owner||helperWave?.lastExport?.business===owner&&helperWave.lastExport.accountingHash===file.sha256;

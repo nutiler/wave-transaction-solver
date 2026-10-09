@@ -6,6 +6,7 @@ import {importAccounting} from '../extension/model.js';
 import {importAmazon} from '../extension/amazon.js';
 import {importPayPalCSV} from '../extension/paypal-csv.js';
 import {validateVenmoCSV,venmoCollectionPeriods} from '../extension/venmo.js';
+import {confirmedVenmoEmpty} from '../extension/venmo-empty.js';
 import {unpackWaveZIP} from '../extension/download-files.js';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const text=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
@@ -61,8 +62,8 @@ export async function auditDownloads(directory,{asOf=today(),fromMonth='2019-09'
   const venmo=await realpath(resolve(root,'venmo')),manifest=JSON.parse(await readFile(await within(venmo,'venmo-manifest.local.json'),'utf8'));if(manifest.format!=='wave-solver-venmo-downloads'||manifest.version!==1)throw Error('Unrecognized Venmo manifest');
   const entries=Object.values(manifest.entries),verified=[];
   for(const entry of entries.filter(e=>e.hash)){const content=text(await readFile(await within(venmo,entry.name)));if(hash(content)!==entry.hash)throw Error('Venmo saved-file hash mismatch: '+entry.name);const parsed=validateVenmoCSV(content,entry);if(parsed.count!==entry.count||parsed.empty!==entry.empty)throw Error('Venmo count/empty result differs from manifest: '+entry.name);verified.push(entry);}
-  const periods=venmoCollectionPeriods(Number(fromMonth.slice(0,4)),asOf,Number(fromMonth.slice(5,7))),expected=periods.flatMap(p=>['personal','business'].map(profile=>({profile,...p,key:profile+':'+p.start+':'+p.end}))),gaps=expected.filter(e=>!manifest.entries[e.key]?.hash).map(e=>({profile:e.profile,month:e.month,start:e.start,end:e.end,partial:e.partial,status:manifest.entries[e.key]?.status||'missing',httpStatus:manifest.entries[e.key]?.httpStatus||null}));
-  return {status:gaps.length?'needs-attention':'verified',expectedProfileMonths:expected.length,savedFilesVerified:verified.length,emptyStatements:verified.filter(e=>e.empty).length,transactionRows:verified.reduce((n,e)=>n+e.count,0),profiles:['personal','business'].map(profile=>({profile,savedFiles:verified.filter(e=>e.profile===profile).length})),gaps,olderCheckpointsRetained:entries.length-expected.filter(e=>manifest.entries[e.key]).length};
+  const periods=venmoCollectionPeriods(Number(fromMonth.slice(0,4)),asOf,Number(fromMonth.slice(5,7))),expected=periods.flatMap(p=>['personal','business'].map(profile=>({profile,...p,key:profile+':'+p.start+':'+p.end}))),noActivity=expected.filter(e=>!e.partial&&confirmedVenmoEmpty(manifest.entries[e.key],e)),gaps=expected.filter(e=>!manifest.entries[e.key]?.hash&&!noActivity.includes(e)).map(e=>({profile:e.profile,month:e.month,start:e.start,end:e.end,partial:e.partial,status:manifest.entries[e.key]?.status||'missing',httpStatus:manifest.entries[e.key]?.httpStatus||null}));
+  return {status:gaps.length?'needs-attention':'verified',expectedProfileMonths:expected.length,savedFilesVerified:verified.length,emptyStatements:verified.filter(e=>e.empty).length,confirmedNoActivity:noActivity.map(e=>({profile:e.profile,month:e.month,confirmationKind:manifest.entries[e.key].confirmation.kind})),transactionRows:verified.reduce((n,e)=>n+e.count,0),profiles:['personal','business'].map(profile=>({profile,savedFiles:verified.filter(e=>e.profile===profile).length})),gaps,olderCheckpointsRetained:entries.length-expected.filter(e=>manifest.entries[e.key]).length};
  });
  return report;
 }

@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.1)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.2)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -14,6 +14,8 @@ The current build is **1.0 preview (0.99.1)**. The beta and saved state remain r
 
 **Confirm locally** approves only the included records and makes no Wave calls. Drafts, exclusions, deferred work and grouped undo survive reloads. **Apply & verify** rechecks approved records and runs sequential verified saves. An uncertain result stops execution and remains locked until a read-only recheck. Confirming a record never creates a merchant rule.
 
+After scanning, use the next-step panel: review purchase evidence, choose category/description and Confirm locally; inspect Approved queue, then Apply & verify. Possible source evidence is expanded with items, dates, amounts and funding details, and stays unlinked until explicitly resolved. Other groups needing review do not require you to finish all bookkeeping before applying supported approvals. Prior uncertain saves do block Apply: **Recheck saved outcomes** checks these sequentially without Save or review clicks and keeps unverifiable outcomes locked.
+
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 ## Workspace
@@ -23,6 +25,8 @@ See [the extension guide](extension/README.md) for account-name collection, rule
 Drop supported exports into the project **data** folder and refresh once. Update my finances also refreshes this folder when its saved read permission is granted. Root and nested CSV/PDF contents are recognized; originals and history stay intact and overlapping files are deduplicated. Wave files without a verified business binding need local confirmation; new exports from the verified helper carry their exact accounting hash. File failures and missing prior evidence are listed explicitly. After 30 days away, the app guides a catch-up refresh while keeping live scan freshness separate from export coverage.
 
 Wave accounting history is Wave's transaction and ledger export, separate from Amazon, PayPal and Venmo purchase evidence. The shared refresh imports them together. Venmo status distinguishes saved files, past unconfirmed statements and the current month; an unavailable download control does not prove an empty statement.
+
+An explicit Venmo no-transactions page can establish checked no-activity coverage for a completed month when the displayed month and both profile identities agree and loading has settled. A user-confirmed page can also supply this metadata, scoped to the same captured profiles. No CSV or transaction rows are fabricated. Current-month empty observations remain provisional.
 
 ## Local data
 

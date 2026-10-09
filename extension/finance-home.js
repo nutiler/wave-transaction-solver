@@ -17,7 +17,7 @@ export function unverifiedWaveReceipts(receipts={},business) {
 export function financeSummary(model,queue={}) {
  const results=Object.values(queue.results||{}),decisions=Object.values(queue.decisions||{}),locked=results.some(r=>['executing','uncertain'].includes(r.status));
  const approved=decisions.filter(d=>!queue.results?.[d.key]||queue.results[d.key].status==='queued').length;
- const review=(model?.items||[]).filter(i=>i.editable&&!queue.decisions?.[i.key]&&!queue.deferred?.[i.key]).length;
+ const review=(model?.items||[]).filter(i=>i.editable&&(!queue.decisions?.[i.key]||queue.results?.[i.key]?.status==='attention')&&!queue.deferred?.[i.key]).length;
  const exceptions=(model?.items||[]).filter(i=>!i.editable).length+results.filter(r=>['attention','uncertain','executing'].includes(r.status)).length;
  return {approved,review,exceptions,verified:results.filter(r=>r.status==='done').length,locked};
 }

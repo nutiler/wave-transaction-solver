@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.2 — clearer review, recovery and empty-month coverage
+
+- Expand possible source evidence by default with purchase items, dates, amounts and funding details. Possible candidates remain explicitly unlinked.
+- Explain the next step beside Apply, distinguish ordinary review exceptions from uncertain Save locks, and provide sequential read-only batch rechecks. Failed verification or missing original baselines stay locked.
+- Keep review counts consistent with deferred work and show original saved-result details during recovery.
+- Recognize explicit Venmo no-transactions pages only with matching displayed month and active profile identities after loading. Restore user-confirmed completed-month metadata for matching captured profiles, without fabricating CSVs or transaction rows. Current-month observations remain provisional.
+
 ## 0.99.1 — collection and scan recovery fixes
 
 - Handle delayed and scrolling Amazon Custom Range menus, including nested trigger labels.
