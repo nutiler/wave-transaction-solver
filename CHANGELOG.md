@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.99.4 — recognize Wave's expense-refund label
+
+- Verify an explicitly approved deposit refund when Wave displays Refund for followed by the exact approved expense category. Preserve the original approval and both visible values in the comparison; income, ordinary deposits and purchases do not gain this equivalence.
+- Accept that exact label after selection through the Refund for Expense submenu. Different categories, incoming income and the personal-deposit path remain guarded before Save.
+- Cover original-baseline read-only recovery after a lost refund Save response, without repeat editing or scanning, and all existing injected editor cases.
+
 ## 0.99.3 — resolve a previous category disagreement
 
 - Show exact approved/live values and the failed field after a saved-result check; bring the blocked record into view and explain that the Wave dialog can close with Cancel.

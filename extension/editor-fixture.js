@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category } = {}) {
+function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category, displayedPrefix='' } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -37,7 +37,7 @@ function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxRevie
           const option = document.createElement('div'); option.className = 'category-option';
           const name = document.createElement('span'); name.textContent = request.category;
           const icon = document.createElementNS('http://www.w3.org/2000/svg','svg'); const title=document.createElementNS('http://www.w3.org/2000/svg','title'); title.textContent='More information'; icon.append(title); option.append(name,icon);
-          option.onclick = event => { event.stopPropagation(); label.textContent = request.category; selected = request.category; if (reviewEnablesOnCategory) mark.disabled = false; list.remove(); }; list.append(option);
+          option.onclick = event => { event.stopPropagation(); label.textContent = displayedPrefix+request.category; selected = request.category; if (reviewEnablesOnCategory) mark.disabled = false; list.remove(); }; list.append(option);
         }
       }
       if (personalSubmenu) {
@@ -111,6 +111,10 @@ document.getElementById('run').onclick = async () => {
   await check('Review updates is never mistaken for mark reviewed',{noReview:true},(r,s)=>!!r.problem && r.stage==='preflight' && !r.saveAttempted && !s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
   const refundExpected={...expected,type:'Deposit',category:'Uncategorized Income'};
   for(const path of ['Deposit from Personal','Refund for Expense'])await check('Incoming refund uses '+path+' and preserves Deposit',{custom:true,personalSubmenu:true,submenuLabel:path,original:refundExpected},(r,s)=>!r.problem&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:[path]});
+  await check('Business refund accepts the exact Refund for category label before review and Save',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense',original:refundExpected,displayedPrefix:'Refund for '},(r,s)=>!r.problem&&s.selected===request.category&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:['Refund for Expense']});
+  await check('Ordinary incoming category cannot accept a Refund for label',{custom:true,original:refundExpected,displayedPrefix:'Refund for '},(r,s)=>!!r.problem&&!r.saveAttempted&&!s.reviewed&&s.saves===0,{...request,expected:refundExpected});
+  await check('Personal deposit path cannot accept a business Refund for label',{custom:true,personalSubmenu:true,submenuLabel:'Deposit from Personal',original:refundExpected,displayedPrefix:'Refund for '},(r,s)=>!!r.problem&&!r.saveAttempted&&!s.reviewed&&s.saves===0,{...request,refund:true,expected:refundExpected,categoryPath:['Deposit from Personal']});
+  await check('Business refund rejects a different prefixed expense before Save',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense',original:refundExpected,displayedPrefix:'Refund for Other '},(r,s)=>!!r.problem&&!r.saveAttempted&&!s.reviewed&&s.saves===0,{...request,refund:true,expected:refundExpected,categoryPath:['Refund for Expense']});
   await check('Refund navigation cannot turn an outgoing purchase into a refund',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,refund:true,categoryPath:['Refund for Expense']});
   const changedDescription='Test Store — fictional source detail';
   await check('Description enrichment uses approved text without changing original identity',{custom:true},(r,s)=>!r.problem&&s.saves===1,{...request,description:changedDescription});
@@ -118,5 +122,5 @@ document.getElementById('run').onclick = async () => {
   await check('Live-only simple record applies and reviews with explicit USD',{liveSimple:true},(r,s)=>!r.problem&&s.saves===1,{...request,liveOnly:true});
   await check('A newly split live-only record cannot click Save',{liveSimple:true,liveSplit:true},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
   await check('A changed live-only currency cannot click Save',{liveSimple:true,currency:'CAD'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 41 editor checks passed';
+  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 45 editor checks passed';
 };

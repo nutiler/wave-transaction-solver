@@ -1,7 +1,7 @@
 import {simpleRecord,assertLiveStructure} from './live-records.js';
 import {approvedCommandRecord} from './command-center.js';
 import {approvedRefund} from './operator-decisions.js';
-import { compareLive } from './model.js';
+import { compareLive,normalize } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
 export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
@@ -32,6 +32,9 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   try{assertLiveStructure(transaction,snapshot);}catch(e){problems.push(e.message);}
   const description=transaction.approvedDescription??transaction.description;
   const result = compareLive({ ...transaction, description,categories: [category] }, {...snapshot,fields:snapshot?.fields||{}});
+  const refundApproved=transaction.direction==='in'&&transaction.proposed===category&&(approvedRefund(transaction)&&transaction.operatorDecision.business===business||approvedCommandRecord(transaction)&&transaction.commandDecision.business===business&&transaction.commandDecision.treatment==='refund');
+  const refundLabel=refundApproved&&snapshot?.currency==='USD'&&snapshot.structure?.singleCategory===true&&snapshot.structure?.split===false&&snapshot.fields?.type==='Deposit'&&/^Refund for\s+/i.test(snapshot.fields.category||'')&&normalize(snapshot.fields.category)===normalize('Refund for '+category);
+  if(refundLabel)result.checks.find(c=>c.field==='Category').state='Match';
   if(snapshot?.identity?.business!==business)problems.push('Wave business identity does not match the saved approval.');
   const categoryVerified = !problems.length && result.checks.every(c => c.state === 'Match');
   const controls = snapshot?.controls || [];
@@ -43,6 +46,7 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   const reason=problems.length?problems.join(' '):different.length?different.join(', ')+(different.length===1?' differs':' differ')+' from the approved value.':unknown.length?unknown.join(', ')+' could not be read.':'Saved result could not be verified.';
   const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : reason+' Compare the approved and live values below. Apply will not repeat this attempt.';
   const verification={checks:result.checks.map(c=>({field:c.field,expected:c.exported,live:c.live,state:c.state})),problems,reviewed:reviewedState,capturedAt:snapshot?.capturedAt||null};
+  if(refundLabel)verification.categoryLabel={kind:'refund',approvedCategory:category,displayedCategory:snapshot.fields.category};
   return { categoryVerified, reviewedVerified,descriptionVerified:!problems.length&&result.checks.find(c=>c.field==='Description')?.state==='Match', message,verification };
 }
 
@@ -115,7 +119,8 @@ export async function editWaveTransaction(request, testContext) {
       const actual = value(control(dialog, name)), expected = name === 'Category' ? category : name==='Description'&&descriptionUpdated?request.description:request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
       const transferLabels=name==='Category' && request.transfer && category===request.category ? [tidy(request.transfer.label),tidy('Transfer to '+String(request.transfer.label || '').replace(/^Transfer to /i,''))] : [];
-      if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual)) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
+      const refundLabel=name==='Category'&&category===request.category&&request.refund===true&&request.expected.type==='Deposit'&&request.categoryPath?.length===1&&request.categoryPath[0]==='Refund for Expense'&&actual===tidy('Refund for '+request.category);
+      if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual) && !refundLabel) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
     }
     return dialog;
   }
