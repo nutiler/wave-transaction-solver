@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.2)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.3)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -15,6 +15,8 @@ The current build is **1.0 preview (0.99.2)**. The beta and saved state remain r
 **Confirm locally** approves only the included records and makes no Wave calls. Drafts, exclusions, deferred work and grouped undo survive reloads. **Apply & verify** rechecks approved records and runs sequential verified saves. An uncertain result stops execution and remains locked until a read-only recheck. Confirming a record never creates a merchant rule.
 
 After scanning, use the next-step panel: review purchase evidence, choose category/description and Confirm locally; inspect Approved queue, then Apply & verify. Possible source evidence is expanded with items, dates, amounts and funding details, and stays unlinked until explicitly resolved. Other groups needing review do not require you to finish all bookkeeping before applying supported approvals. Prior uncertain saves do block Apply: **Recheck saved outcomes** checks these sequentially without Save or review clicks and keeps unverifiable outcomes locked.
+
+A failed recheck shows the exact approved/live differences and opens the blocked record's comparison. Close the Wave dialog with Cancel; it needs no Save. If a previous approval has a different category while every other field and saved Reviewed status match, **Keep current Wave category** offers an explicit local resolution. Confirming performs another fresh read and retains the original approval and observed category in history. It does not edit Wave or falsely mark the original target verified. Missing baselines, changed non-category fields, unsupported structure, unknown Reviewed status, transfers and overlapping current decisions stay locked.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 

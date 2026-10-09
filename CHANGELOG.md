@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.99.3 — resolve a previous category disagreement
+
+- Show exact approved/live values and the failed field after a saved-result check; bring the blocked record into view and explain that the Wave dialog can close with Cancel.
+- Offer an explicit local choice to keep a different current category only when a fresh read confirms the same original record, all other approved fields, USD, single-category structure and saved Reviewed state. Transfers, missing baselines and overlapping queue decisions remain held.
+- Preserve the original target and attempt receipt alongside the accepted live snapshot. A local resolution does not edit Wave or claim the original category was verified; queued approvals remain intact.
+
 ## 0.99.2 — clearer review, recovery and empty-month coverage
 
 - Expand possible source evidence by default with purchase items, dates, amounts and funding details. Possible candidates remain explicitly unlinked.

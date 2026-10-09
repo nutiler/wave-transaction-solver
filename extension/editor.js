@@ -28,16 +28,22 @@ export function prepareCategoryEdit(transaction, snapshot, { business, sample, s
 }
 
 export function verifyCategoryResult(transaction, snapshot, business, category) {
-  try{assertLiveStructure(transaction,snapshot);}catch(e){return {categoryVerified:false,reviewedVerified:false,descriptionVerified:false,message:e.message};}
+  const problems=[...(snapshot?.problems||[])];
+  try{assertLiveStructure(transaction,snapshot);}catch(e){problems.push(e.message);}
   const description=transaction.approvedDescription??transaction.description;
-  const result = compareLive({ ...transaction, description,categories: [category] }, snapshot);
-  const categoryVerified = snapshot.identity?.business === business && !snapshot.problems?.length && result.checks.every(c => c.state === 'Match');
-  const controls = snapshot.controls || [];
+  const result = compareLive({ ...transaction, description,categories: [category] }, {...snapshot,fields:snapshot?.fields||{}});
+  if(snapshot?.identity?.business!==business)problems.push('Wave business identity does not match the saved approval.');
+  const categoryVerified = !problems.length && result.checks.every(c => c.state === 'Match');
+  const controls = snapshot?.controls || [];
   const inverse = controls.filter(name => /^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
   const mark = controls.filter(name => /^Mark (as )?reviewed$/i.test(name));
-  const reviewedVerified = categoryVerified && (snapshot.reviewed === 'Reviewed' || (inverse.length === 1 && mark.length === 0));
-  const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : 'Saved result could not be verified. Inspect Wave; Apply will not repeat this attempt.';
-  return { categoryVerified, reviewedVerified,descriptionVerified:result.checks.find(c=>c.field==='Description')?.state==='Match', message };
+  const reviewedState=snapshot?.reviewed==='Reviewed'||(inverse.length===1&&mark.length===0)?'Reviewed':snapshot?.reviewed||'Unknown';
+  const reviewedVerified = categoryVerified && reviewedState==='Reviewed';
+  const different=result.checks.filter(c=>c.state==='Different').map(c=>c.field),unknown=result.checks.filter(c=>c.state==='Unknown').map(c=>c.field);
+  const reason=problems.length?problems.join(' '):different.length?different.join(', ')+(different.length===1?' differs':' differ')+' from the approved value.':unknown.length?unknown.join(', ')+' could not be read.':'Saved result could not be verified.';
+  const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : reason+' Compare the approved and live values below. Apply will not repeat this attempt.';
+  const verification={checks:result.checks.map(c=>({field:c.field,expected:c.exported,live:c.live,state:c.state})),problems,reviewed:reviewedState,capturedAt:snapshot?.capturedAt||null};
+  return { categoryVerified, reviewedVerified,descriptionVerified:!problems.length&&result.checks.find(c=>c.field==='Description')?.state==='Match', message,verification };
 }
 
 export function resetAttemptReceipt(transaction, snapshot, business, receipt, resetAt = new Date().toISOString()) {

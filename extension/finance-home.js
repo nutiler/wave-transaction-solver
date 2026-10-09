@@ -1,4 +1,5 @@
 import {loadLocalFeature,saveLocalFeature} from './session.js';
+import {receiptLocallyResolved} from './saved-recovery.js';
 // Presentation state for the daily workflow. This module never writes to Wave.
 export function financeFreshness({lastVisit, lastScan, now = Date.now()} = {}) {
   const age = value => value && Number.isFinite(Date.parse(value)) ? Math.max(0, (now - Date.parse(value)) / 86400000) : null;
@@ -12,7 +13,7 @@ export function financeReturnState(prior={},now=Date.now()) {
 
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 export function unverifiedWaveReceipts(receipts={},business) {
- return Object.entries(receipts).filter(([key,r])=>key.startsWith(business+':')&&(r?.saveAttempted||r?.attempted)&&!(r.categoryVerified&&r.reviewedVerified||r.verified&&r.reviewed)).map(([key,receipt])=>({key,receipt}));
+ return Object.entries(receipts).filter(([key,r])=>key.startsWith(business+':')&&(r?.saveAttempted||r?.attempted)&&!(r.categoryVerified&&r.reviewedVerified||r.verified&&r.reviewed)&&!receiptLocallyResolved(key,r,business)).map(([key,receipt])=>({key,receipt}));
 }
 export function financeSummary(model,queue={}) {
  const results=Object.values(queue.results||{}),decisions=Object.values(queue.decisions||{}),locked=results.some(r=>['executing','uncertain'].includes(r.status));

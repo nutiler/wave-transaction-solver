@@ -7,6 +7,7 @@ const business='11111111-1111-4111-8111-111111111111',period={month:'2023-07',st
 test('ready approvals can run before ordinary review work, but uncertain prior saves explain a read-only recheck',()=>{
  const ready={business,complete:true,queued:42,review:135};assert.equal(commandNextStep(ready).kind,'apply');assert.match(commandNextStep(ready).message,/while other groups still need review/);
  const locked=commandNextStep({...ready,lockCount:27});assert.equal(locked.action,'recheck');assert.match(locked.message,/27 saved outcomes/);assert.match(locked.message,/never repeats Save/);assert.doesNotMatch(locked.message,/Run your queue/);
+ const blocked=commandNextStep({...ready,lockCount:1,blockedSave:{message:'Category differs from the approved value.'}});assert.equal(blocked.action,'inspect');assert.match(blocked.message,/Category differs/);assert.match(blocked.message,/repeating Recheck/);
  assert.equal(commandNextStep({...ready,changed:true}).kind,'scan');assert.equal(commandNextStep({...ready,busy:true,lockCount:27}).action,null);assert.equal(commandNextStep({...ready,queued:0}).action,'review');
 });
 test('batch recheck verifies read-only outcomes sequentially and preserves incomplete and failed locks',async()=>{

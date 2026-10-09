@@ -35,6 +35,7 @@ import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession, loadLocalFeature, saveLocalFeature,projectDataFolder } from './session.js';
 import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
+import {currentCategoryChoice,keepCurrentCategory} from './saved-recovery.js';
 const startupActivity=activity.begin('Loading your saved solver session',{priority:20});
 document.querySelector('main').inert=true;
 let startupPending=true;
@@ -662,19 +663,35 @@ async function executeDeskDecision(d,mode='run'){
   return d.treatment==='transfer'?await runTransfer(pair,mode==='recheck'?true:'auto'):await runExpenseBatch(t,mode);
  }catch(e){const receipt=d.treatment==='transfer'?editReceipts[transferReceiptKey(pair)]:editReceipts[expectedBusiness+':'+t.id];return {needsAttention:true,saveAttempted:!!receipt?.saveAttempted||!!editReceipts[expectedBusiness+':suggestion:'+d.ids[0]]?.attempted,message:e.message};}finally{if(t)commandExecutionRecords.delete(t.id);if(commandDesk?.busy())document.querySelector('main').inert=true;}
 }
-async function recheckLegacyReceipt(key) {
+async function readLegacyReceipt(key) {
  const owner=business,receipt=editReceipts[key];if(!receipt||!key.startsWith(owner+':'))throw Error('The saved attempt belongs to another business.');
  const backup=await loadLocalFeature('migration:beta-0.49.0'),session=backup?.records?.find(r=>r.key==='current')?.value,prepared=backup?.records?.find(r=>r.key==='prepared:'+owner)?.value;
  const history=session?.business===owner&&session.csvText?importAccounting(session.csvText).transactions:[];
  const records=[...history,...(prepared?.business===owner?prepared.model?.transactions||[]:[])],ids=receipt.ids||key.split(':').filter(v=>/^\d+$/.test(v));
  if(!ids.length)throw Error('The original record identity is unavailable. Open previous save checks to recover its baseline.');
- if(key.includes(':transfer:')){const rows=ids.map(id=>records.find(t=>t.id===id)),out=rows.find(t=>t?.direction==='out'),incoming=rows.find(t=>t?.direction==='in');if(!out||!incoming||out.amount!==incoming.amount||out.primary?.account===incoming.primary?.account)throw Error('Original transfer history is needed for this read-only check.');return runTransfer({out,in:incoming,key:[out.id,incoming.id].sort().join(':')},true);}
+ if(key.includes(':transfer:')){const rows=ids.map(id=>records.find(t=>t.id===id)),out=rows.find(t=>t?.direction==='out'),incoming=rows.find(t=>t?.direction==='in');if(!out||!incoming||out.amount!==incoming.amount||out.primary?.account===incoming.primary?.account)throw Error('Original transfer history is needed for this read-only check.');return {transfer:{out,in:incoming,key:[out.id,incoming.id].sort().join(':')}};}
  let record=records.find(t=>t.id===ids[0]);
  if(receipt.originalSnapshot?.identity?.business===owner&&receipt.originalSnapshot.identity.transaction===ids[0]){try{record=savedSnapshotRecord(receipt.originalSnapshot,{business:owner,history,catalog});}catch{if(!record)throw Error('Recover the original account and transaction baseline in previous save checks first.');}}
  if(!record||typeof receipt.category!=='string')throw Error('The original approval baseline is unavailable. Open previous save checks; nothing will be saved.');
- const current=()=>business===owner,tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,owner,record.id,current);expenseWorkerTab=tab.id;
- const snapshot=await waitForLiveSnapshot(()=>captureLive(tab.id,owner,record.id),current);if(!snapshot||snapshot.currency!=='USD'||snapshot.structure?.singleCategory!==true||snapshot.structure?.split!==false)throw Error('Live currency or structure is unknown. The saved attempt remains locked.');
- const verified=verifyCategoryResult({...record,proposed:receipt.category,approvedDescription:receipt.description},snapshot,owner,receipt.category);await storeEditReceipt(key,{...receipt,...verified,snapshot,verifiedAt:new Date().toISOString()});return verified;
+ const current=()=>business===owner&&editReceipts[key]===receipt,tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,owner,record.id,current);expenseWorkerTab=tab.id;
+ const snapshot=await waitForLiveSnapshot(()=>captureLive(tab.id,owner,record.id),current);if(!current()||!snapshot)throw Error('Saved-result context changed. Nothing resolved.');
+ const verified=verifyCategoryResult({...record,proposed:receipt.category,approvedDescription:receipt.description},snapshot,owner,receipt.category);
+ if(snapshot.currency!=='USD'||snapshot.structure?.singleCategory!==true||snapshot.structure?.split!==false){verified.categoryVerified=verified.reviewedVerified=verified.descriptionVerified=false;verified.verification.problems.push('Live currency or single-category structure is unknown.');verified.message='Live currency or structure is unknown. The saved attempt remains locked.';}
+ return {owner,receipt,record,snapshot,verified};
+}
+async function recheckLegacyReceipt(key) {
+ const read=await readLegacyReceipt(key);if(read.transfer)return runTransfer(read.transfer,true);
+ const {owner,receipt,record,snapshot,verified}=read;
+ await storeEditReceipt(key,{...receipt,...verified,snapshot,currentCategoryChoice:currentCategoryChoice(receipt,record,snapshot,owner),verifiedAt:new Date().toISOString()});return verified;
+}
+async function keepLegacyWaveCategory(key,shown) {
+ if(!extensionMode||sampleMode||applying||listCollecting||bulkInspector?.busy()||sourceReview?.busy())throw Error('Finish the current operation before resolving a saved category.');
+ const queued=commandDesk?.snapshot().state;
+ if(Object.values(queued?.decisions||{}).some(d=>d.ids.includes(shown?.id)&&queued.results[d.key]?.status!=='done'))throw Error('This record also has a current queue decision. Keep its save lock and inspect that decision first.');
+ const read=await readLegacyReceipt(key);if(read.transfer)throw Error('Transfers cannot use a category-only resolution.');
+ const {owner,receipt,record,snapshot}=read,next=keepCurrentCategory(receipt,record,snapshot,owner,shown);
+ if(business!==owner||editReceipts[key]!==receipt)throw Error('Saved-result context changed. Nothing resolved.');
+ await storeEditReceipt(key,next);return next;
 }
 async function refreshDeskFolder(handle,{bind}={}) {
  if(!business)throw Error('Choose your Wave business first.');
@@ -699,7 +716,7 @@ async function refreshDeskFolder(handle,{bind}={}) {
  await saveLocalFeature('finance:index:'+owner,saved);
  document.dispatchEvent(new CustomEvent('finance-data'));if(dataset)analyze(true,false);return saved;
 }
-commandDesk=installCommandCenter({getState:()=>({business,receipts:editReceipts,workFrom:workFrom(),dataset,sourceRef:sourceReview.dataRevision(),sourceStamp:JSON.stringify([sourceReview.dataRevision()?.importIssues,sourceReview.dataRevision()?.files?.map(f=>[f.key,f.sha256,f.importedAt,(f.records||f.amazonRecords||[]).length]),sourceReview.dataRevision()?.decisions,sourceReview.dataRevision()?.links,sourceReview.dataRevision()?.accountMap,sourceReview.dataRevision()?.groups,sourceReview.dataRevision()?.exclusions]),ruleSignature:JSON.stringify(rules),catalog,catalogStamp:JSON.stringify(catalog?.groups),report:listReview.report(),busy:applying||listCollecting||!!bulkInspector?.busy()||!!sourceReview?.busy(),extensionMode,sample:sampleMode,canExport:extensionMode&&!!exportUrlFor(business,exportPages)}),openExport:()=>$('openExport').click(),importCSV:async file=>{if(!business)throw Error('Choose your Wave business first.');const next=mergeAccountingHistory(csvText,await file.text());if(next.text!==csvText){imported(next.text,file.name,false);await rememberSession();}},csvHash:()=>sourceHash(csvText),cancelScan:()=>listReview.stop(),prepare:prepareDesk,execute:d=>executeDeskDecision(d),recheck:d=>executeDeskDecision(d,'recheck'),recheckLegacy:recheckLegacyReceipt,refresh:async()=>{const previous=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(listReview.report()?.capturedAt===previous||listReview.report()?.completeness!=='count-confirmed')throw Error('Final live collection is incomplete.');},loadFolder:refreshDeskFolder});
+commandDesk=installCommandCenter({getState:()=>({business,receipts:editReceipts,workFrom:workFrom(),dataset,sourceRef:sourceReview.dataRevision(),sourceStamp:JSON.stringify([sourceReview.dataRevision()?.importIssues,sourceReview.dataRevision()?.files?.map(f=>[f.key,f.sha256,f.importedAt,(f.records||f.amazonRecords||[]).length]),sourceReview.dataRevision()?.decisions,sourceReview.dataRevision()?.links,sourceReview.dataRevision()?.accountMap,sourceReview.dataRevision()?.groups,sourceReview.dataRevision()?.exclusions]),ruleSignature:JSON.stringify(rules),catalog,catalogStamp:JSON.stringify(catalog?.groups),report:listReview.report(),busy:applying||listCollecting||!!bulkInspector?.busy()||!!sourceReview?.busy(),extensionMode,sample:sampleMode,canExport:extensionMode&&!!exportUrlFor(business,exportPages)}),openExport:()=>$('openExport').click(),importCSV:async file=>{if(!business)throw Error('Choose your Wave business first.');const next=mergeAccountingHistory(csvText,await file.text());if(next.text!==csvText){imported(next.text,file.name,false);await rememberSession();}},csvHash:()=>sourceHash(csvText),cancelScan:()=>listReview.stop(),prepare:prepareDesk,execute:d=>executeDeskDecision(d),recheck:d=>executeDeskDecision(d,'recheck'),recheckLegacy:recheckLegacyReceipt,keepLegacyCategory:keepLegacyWaveCategory,refresh:async()=>{const previous=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(listReview.report()?.capturedAt===previous||listReview.report()?.completeness!=='count-confirmed')throw Error('Final live collection is incomplete.');},loadFolder:refreshDeskFolder});
 workspace=installWorkspace({command:()=>commandDesk,getState:()=>({business,receipts:editReceipts,businessLabel:$('waveTabs').selectedOptions[0]?.textContent||'',dataset,report:liveListReport(),rules,busy:applying || listCollecting || !!bulkInspector?.busy() || (!!amazonReview?.busy() || !!sourceReview?.busy()),workFrom:workFrom(),expenseMatches:expenseCandidates(liveRunQueue(queue,liveListReport(),business,workFrom()),allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(liveRunQueue(queue,liveListReport(),business,workFrom())).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:stage=>{rememberSoon();if(stage==='planning')renderQueue();}});
 renderRules();
 try { await restoreSession();operatorDecisions=await loadLocalFeature('operator:'+business)||{};await amazonReview.restore();await sourceReview.restore();await remainingReview.restore();await commandDesk.restore();if(dataset)analyze(true,false); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }
