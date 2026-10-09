@@ -8,6 +8,8 @@ import {acceptProposal,ruleFingerprint} from '../extension/rule-pack.js';
 import {financeFreshness,financeReturnState,financeSummary,unverifiedWaveReceipts} from '../extension/finance-home.js';
 import {providerProgress} from '../extension/data-workspace.js';
 import {scanDateScope,savedSnapshotRecord} from '../extension/live-records.js';
+import {venmoCoverage,venmoCoverageText} from '../extension/venmo.js';
+import {helperVisualState} from '../extension/helper-status.js';
 import {readEvidenceFile,holdEvidenceFiles} from '../extension/source-files.js';
 const business='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const headers=['Transaction ID','Transaction Date','Account Name','Transaction Description','Debit Amount (Two Column Approach)','Credit Amount (Two Column Approach)','Account Group','Account Type'];
@@ -96,4 +98,10 @@ test('a preserved edit snapshot recovers observed cents without accounting histo
  assert.equal(record.amount,1234);assert.equal(record.id,id);assert.deepEqual(record.postings,[]);assert.deepEqual(record.liveBaseline.fields,snapshot.fields);
  assert.throws(()=>savedSnapshotRecord({...snapshot,fields:{...snapshot.fields,amount:'unknown'}},{business,catalog}),/amount/);
  assert.throws(()=>savedSnapshotRecord(snapshot,{business:other,catalog}),/identity/);
+});
+test('Venmo coverage follows the latest requested range, retains old checkpoints and separates past gaps from the current month',()=>{
+ const state={startMonth:'2026-09',latestCollection:{startMonth:'2026-09',asOf:'2026-10-08'},entries:{'personal:2026-09-01:2026-09-30':{profile:'personal',month:'2026-09',start:'2026-09-01',end:'2026-09-30',hash:'fictional',empty:false},'business:2026-09-01:2026-09-30':{profile:'business',month:'2026-09',start:'2026-09-01',end:'2026-09-30',status:'no-download-controls'},'personal:2026-10-01:2026-10-05':{profile:'personal',month:'2026-10',start:'2026-10-01',end:'2026-10-05',status:'no-download-controls'}}},coverage=venmoCoverage(state);
+ assert.equal(coverage.expected,4);assert.equal(coverage.saved,1);assert.equal(coverage.unconfirmed.length,1);assert.equal(coverage.currentPending.length,2);assert.equal(coverage.olderCheckpoints,1);assert.equal(Object.keys(state.entries).length,3);
+ const view=providerProgress('venmo',state),message=venmoCoverageText(coverage);assert.equal(view.kind,'paused');assert.equal(view.label,'Saved · coverage gaps');assert.match(message,/business 2026-09/);assert.doesNotMatch(message,/2026-10-05/);assert.equal(helperVisualState('Venmo collection finished. '+message).kind,'paused');
+ state.entries['business:2026-09-01:2026-09-30']={...state.entries['business:2026-09-01:2026-09-30'],status:'unavailable',httpStatus:404};assert.equal(venmoCoverage(state).unconfirmed.length,0);assert.equal(venmoCoverage(state).unavailable,1);
 });

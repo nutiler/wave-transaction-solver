@@ -1,5 +1,14 @@
 # Development milestones
 
+## 0.99.1 — collection and scan recovery fixes
+
+- Handle delayed and scrolling Amazon Custom Range menus, including nested trigger labels.
+- Increase the local extension storage allowance for large histories, scan diagnostics and recovery receipts. Preserve a completed scan's completion evidence if persistence fails, and provide a reload/retry message.
+- Refresh accessible shared-folder exports when Update my finances runs. Hold missing previously imported files, retain approvals and originals, and bind exact accounting hashes saved by the verified Wave helper.
+- Consolidate accounting history into the shared import controls; retain manual imports in Advanced.
+- Report Venmo's latest requested profile-month range, past unconfirmed statements and current-month pending statements separately. Preserve older checkpoints without counting them as current gaps.
+- Add a read-only download audit for archive checksums, extracted copies, original/import equivalence and expected annual/profile-month ranges.
+
 ## 0.99.0 — Wave Solver 1.0 preview
 
 - Open into Update my finances with the selected business, last successful live scan, review/approval/attention/verification counts and Scan → Review → Approve → Apply → Verify. Data & setup and Rules are secondary; retained manual runners and diagnostics share one Advanced workspace.

@@ -32,7 +32,7 @@ import { installHistoryReview } from './history-view.js';
 import { actionable, buildPlan, validatePlan } from './plan.js';
 import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
-import { loadSession, saveSession, loadLocalFeature, saveLocalFeature } from './session.js';
+import { loadSession, saveSession, loadLocalFeature, saveLocalFeature,projectDataFolder } from './session.js';
 import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
 const startupActivity=activity.begin('Loading your saved solver session',{priority:20});
 document.querySelector('main').inert=true;
@@ -620,8 +620,10 @@ async function ensureDeskCatalog(force=false){
  for(let attempt=0;attempt<3;attempt++){await new Promise(resolve=>setTimeout(resolve,1500));if(business!==owner)throw Error('Business changed.');snapshot=(await chrome.scripting.executeScript({target:{tabId:tab.id},func:readWaveChart,args:[owner]}))[0]?.result;try{validateCatalog(snapshot,owner);break;}catch(e){if(attempt===2)throw e;}}
  const charts=(await chrome.storage.local.get('solverCharts')).solverCharts||{};charts[owner]=snapshot;await chrome.storage.local.set({solverCharts:charts});catalog=snapshot;renderCatalog();renderCategories();
 }
-const prepareDesk=async (scan,{progress=()=>{},stopped=()=>false}={})=>{
- if(scan){const before=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(!listReview.report()||listReview.report().capturedAt===before||listReview.report().completeness!=='count-confirmed')throw Error('Complete live collection was not established. Existing queued decisions are preserved.');}
+const prepareDesk=async (scan,{progress=()=>{},stopped=()=>false,refreshFiles=true}={})=>{
+ if(scan&&typeof chrome.runtime.getManifest==='function'&&!chrome.runtime.getManifest().permissions?.includes('unlimitedStorage'))throw Error('Reload the updated Wave Solver in chrome://extensions, then reopen it. The installed manifest must enable the larger local storage allowance before this scan. Your saved state is retained.');
+ if(scan&&refreshFiles){const folder=await projectDataFolder();if(folder&&await folder.queryPermission({mode:'read'})==='granted'){progress({detail:'Refreshing saved exports and purchase evidence'});await refreshDeskFolder(folder);}}
+ if(scan){const before=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(!listReview.report()||listReview.report().capturedAt===before||listReview.report().completeness!=='count-confirmed')throw Error('Complete live collection was not established. Existing queued decisions are preserved.');if(listReview.report().persistenceError)throw Error('Wave scan completed, but it could not be saved locally: '+listReview.report().persistenceError+'. Reload the updated extension in chrome://extensions, then scan again. Existing approvals and save locks are preserved.');}
  await ensureDeskCatalog();
  const owner=business,history=dataset?.transactions||[],exportIds=new Set(history.map(t=>t.id)),report=listReview.report(),rows=(report?.records||[]).filter(r=>scanDateScope(r.date,workFrom())!=='completed'&&r.reviewed!=='Reviewed'&&!exportIds.has(r.id)),liveTransactions=[],liveProblems={},prior=new Map((commandDesk?.snapshot().model?.transactions||[]).filter(t=>t.origin==='wave-live'&&t.liveBusiness===owner).map(t=>[t.id,t]));
  if(rows.some(row=>!history.some(t=>t.primary?.account===row.account)&&!(catalog?.groups||[]).some(g=>g.accounts.some(a=>a.name===row.account&&/^(?:Cash and Bank|Credit Cards?)$/i.test(a.section||'')))))await ensureDeskCatalog(true);
@@ -675,10 +677,10 @@ async function recheckLegacyReceipt(key) {
 }
 async function refreshDeskFolder(handle,{bind}={}) {
  if(!business)throw Error('Choose your Wave business first.');
- const owner=business,index=await indexDataFolder(handle),prior=await loadLocalFeature('finance:index:'+owner)||{bindings:{}},bindings={...prior.bindings};
+ const owner=business,index=await indexDataFolder(handle),prior=await loadLocalFeature('finance:index:'+owner)||{bindings:{}},bindings={...prior.bindings},helperWave=await loadLocalFeature('downloads:wave');
  if(bind){const exact=[...index.wave,...index.evidence].find(f=>f.path===bind.path&&f.sha256===bind.sha256);if(!exact)throw Error('The selected file changed. Refresh and confirm its account again.');bindings[exact.sha256]=owner;}
  let text=csvText;
- for(const file of index.wave){const result=index.results.find(r=>r.path===file.path);let matched=bindings[file.sha256]===owner;
+ for(const file of index.wave){const result=index.results.find(r=>r.path===file.path);let matched=bindings[file.sha256]===owner||helperWave?.lastExport?.business===owner&&helperWave.lastExport.accountingHash===file.sha256;
   if(!matched&&text)matched=sameWaveHistory(importAccounting(text),file.dataset)||sameWaveHistory(file.dataset,importAccounting(text));
   if(!matched){result.status='held';result.message='Confirm this accounting export belongs to the selected Wave business. CSV files contain no business identity.';continue;}
   text=mergeAccountingHistory(text,file.text,{replace:!/(?:^|\/)(history|exports)\//i.test(file.path)}).text;bindings[file.sha256]=owner;result.status='imported';
@@ -686,6 +688,8 @@ async function refreshDeskFolder(handle,{bind}={}) {
  if(owner!==business)throw Error('Business changed during folder refresh.');
  if(text&&text!==csvText){imported(text,'Merged Wave accounting history',false);await rememberSession();}
  await sourceReview.restore();
+ const currentPaths=new Set(index.results.map(r=>r.path)),previousPaths=new Set((prior.results||[]).map(r=>r.path));
+ for(const file of sourceReview.dataRevision()?.files||[])if(!currentPaths.has(file.name)&&(/^(amazon|paypal|venmo)\//i.test(file.name)||previousPaths.has(file.name)))index.results.push({path:file.name,provider:file.provider,status:'held',missing:true,message:'Previously imported evidence is missing from this folder. Its saved copy and decisions are retained; restore or recollect the file before using its evidence.'});
  const evidence=[]; for(const file of index.evidence){const providerScope=await loadLocalFeature('finance:helper-owner:'+file.provider);if(providerScope?.business&&providerScope.business!==owner&&bindings[file.sha256]!==owner){const row=index.results.find(r=>r.path===file.path);row.status='held';row.message='This provider is connected to another Wave business. Check the person and provider profile before binding this file to the selected business.';}else evidence.push(file);} const outcomes=await sourceReview.importFiles(evidence);
  for(const result of outcomes||[]){const row=index.results.find(r=>r.path===result.path);if(row)Object.assign(row,result);}
  await sourceReview.holdFiles(index.results);

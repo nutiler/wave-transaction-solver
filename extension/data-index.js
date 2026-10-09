@@ -44,6 +44,7 @@ export async function indexDataFolder(folder) {
   try {
    const file=await entry.handle.getFile();
    if(file.size>30*1024*1024)throw Error('File exceeds 30 MB. Split the export into smaller reports.');
+   if(/^wave\/exports\/export-[a-f0-9]{16}\/(wave-export\.zip|customers\.csv|vendors\.csv|bill_items\.csv)$/i.test(entry.path)||/^paypal\/raw\/paypal-(all|balance)-.*\.response\.local\.txt$/i.test(entry.path)){results.push({path:entry.path,provider:entry.path.split('/')[0],status:'supporting',size:file.size,message:'Helper original or companion file preserved. The accounting and provider CSVs are imported separately.'});continue;}
    if(!/\.(csv|pdf)$/i.test(file.name))throw Error(/\.zip$/i.test(file.name)?'Use the Wave export helper to safely extract this ZIP, or extract accounting.csv here.':'Use a supported CSV or text-based PayPal PDF export.');
    const pages=/\.pdf$/i.test(file.name)?await extractLocalPDF(file):null,text=pages?pages.join('\n'):await file.text();
    const provider=detectDataProvider(text,entry.path);

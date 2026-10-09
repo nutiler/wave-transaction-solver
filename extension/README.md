@@ -6,13 +6,13 @@ Open **Update finances**, choose your Wave business once in **Data & setup**, th
 
 Drafts, exclusions, deferred work, grouped undo, queues and save locks persist per business. New imports preserve original approval baselines. Changed preparation requires another scan/review; read-only recovery can still check an uncertain save using its original baseline. Recheck never presses Save or completes a review automatically.
 
-**Data & setup** holds the shared project data folder, file results, collectors and private backup/restore. Refresh recognizes supported CSV/PDF contents at the root and in nested directories, preserves originals and history, deduplicates overlaps and lists actionable failures. An unbound Wave accounting file requires confirmation of its business. Folder access may need renewal after reopening Chrome.
+**Data & setup** holds the shared project data folder, file results, collectors and private backup/restore. Update my finances refreshes accessible saved-folder files before scanning. Wave accounting history means Wave's transaction and ledger CSV; Amazon, PayPal and Venmo add separate purchase evidence. The shared refresh imports these together, preserves originals/history, deduplicates overlaps and holds missing prior evidence. Unbound Wave files need local business confirmation; verified new helper exports carry exact hashes. Folder access may need renewal after reopening Chrome.
 
 The four collector buttons open their retained helpers and begin when saved setup is ready. Pending PayPal batches resume; fresh collection begins after a completed batch. Login, setup and identity gaps pause explicitly. Consumer Amazon retains separate guidance. After 30 days away, the home screen guides a catch-up refresh; daily work still starts from live scanning.
 
 Startup preserves a complete beta-state checkpoint. Keep the same unpacked extension path, and export a private backup before intentionally changing installation identity. Legacy rule aliases and account/category restrictions stay intact; historical proposals are not promoted to approved rules. **Rules** shows the selected business scope. **Advanced** retains manual tools and diagnostics through the consolidated navigation.
 
-This is release candidate **0.99.0 / 1.0 preview**. Follow the [live acceptance guide](../docs/1.0-acceptance.md) before calling it final 1.0. Older workflow references below are retained for diagnostics; the preview flow above takes precedence.
+This is release candidate **0.99.1 / 1.0 preview**. Reload the existing unpacked extension in place to enable its larger local storage allowance. This retains rules, approvals, evidence and uncertain-save checkpoints. Venmo's amber coverage status lists specific past unconfirmed statements and current-month pending statements; older partial-month checkpoints remain saved without inflating that summary. Follow the [live acceptance guide](../docs/1.0-acceptance.md) before calling it final 1.0. Older workflow references below are retained for diagnostics; the preview flow above takes precedence.
 
 ## PayPal collection (0.47.0)
 

@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.99.0",
+  "version": "0.99.1",
   "version_name": "1.0 preview",
   "description": "Update your finances: scan Wave, approve locally, apply and verify. Shared evidence folder, persistent collectors and recovery.",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "scripting"
   ],
   "host_permissions": [

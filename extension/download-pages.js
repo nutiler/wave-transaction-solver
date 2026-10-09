@@ -23,12 +23,19 @@ export async function amazonDownloadPage(request={},testContext) {
  const nativeRanges=all('select').filter(e=>[...e.options].some(o=>text(o)==='Custom Range'));
  if(nativeRanges.length===1&&!nativeRanges[0].disabled){const select=nativeRanges[0],custom=[...select.options].filter(o=>text(o)==='Custom Range');if(custom.length===1){Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set.call(select,custom[0].value);select.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();}}
  else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled){
-  const known=all('[id="date_range_selector_range"]'),ranges=known.length?known:all('button,[role="combobox"]').filter(e=>/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
+  const known=[...new Set(all('[id="date_range_selector_range"]').map(e=>{const parent=e.closest('button,[role="combobox"],[role="button"],a'),children=[...e.querySelectorAll('button,[role="combobox"],[role="button"],a')].filter(visible);return parent||(children.length===1?children[0]:e);} ))],ranges=known.length?known:all('button,[role="combobox"],[role="button"],a').filter(e=>/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
   if(ranges.length===1){const range=ranges[0];range.click();await pause();const menu=doc.getElementById(range.getAttribute('aria-controls'));
-   let options=(menu?[...menu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li,span,div')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li,span,div')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
-   // Click the innermost label: Amazon attaches its handler to the child, not necessarily the LI.
-   options=options.filter(e=>!options.some(child=>child!==e&&e.contains(child)));
-   if(options.length===1){options[0].click();for(let i=0;i<12;i++){await pause();if(field('Start date')&&field('End date'))break;}}
+   for(let attempt=0;attempt<24;attempt++){
+    const currentMenu=doc.getElementById(range.getAttribute('aria-controls'))||menu;
+    let options=(currentMenu?[...currentMenu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li,span,div')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li,span,div')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
+    // The menu can render late or virtualize choices below the initial scroll position.
+    options=options.filter(e=>!options.some(child=>child!==e&&e.contains(child)));
+    if(options.length===1){options[0].scrollIntoView?.({block:'nearest'});options[0].click();for(let i=0;i<20;i++){await pause();if(field('Start date')&&field('End date'))break;}break;}
+    if(options.length>1)break;
+    const menus=currentMenu?[currentMenu,...currentMenu.querySelectorAll('*')]:all('[role="listbox"],[role="menu"],.a-popover-inner');
+    for(const container of menus.filter(visible).filter(e=>e.scrollHeight>e.clientHeight)){container.scrollTop=Math.min(container.scrollHeight,container.scrollTop+Math.max(container.clientHeight*.8,80));container.dispatchEvent(new win.Event('scroll',{bubbles:false}));}
+    await pause();
+   }
   }
  }
  const start=field('Start date'),end=field('End date');if(!start||!end||start.disabled||end.disabled||start.readOnly||end.readOnly)return {notSubmitted:true,message:'Choose Custom Range so Start date and End date are visible, then Resume. Nothing generated.'};

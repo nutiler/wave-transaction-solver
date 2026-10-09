@@ -15,7 +15,7 @@ export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header');header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.1';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();
@@ -29,7 +29,8 @@ export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command
  if(section('commandCenter'))daily.append(section('commandCenter'));
  data.append(make('h2','Your data & connections'),make('p','Connect once. Scan Wave for daily work; refresh files when you need history or purchase details.'));
  installDataWorkspace({parent:data,getState,command});
- for(const id of ['fold-setup','fold-chart','fold-import'])if(section(id))data.append(section(id));
+ for(const id of ['fold-setup','fold-chart'])if(section(id))data.append(section(id));
+ if(section('fold-import'))debugSlot('manual-history','Manual Wave accounting import').append(section('fold-import'));
  const ruleScope=make('p');rules.append(make('h2','Your approved rules'),ruleScope,make('p','New custom rules apply to the entered aliases across this business’s accounts. Existing account and category limits are retained while editing. Confirming a transaction never creates a reusable merchant rule.'));
  for(const id of ['fold-merchant','fold-proposals'])if(section(id))rules.append(section(id));
  for(const [id,label] of [['liveList','Manual live-list collection'],['knownWork','Legacy recognized-work executor'],['fold-queue','Historical transaction review'],['sourceSolvers','Source evidence, accounts & purchase approvals'],['allCollection','Full-history collection'],['bulkInspector','Bulk inspection'],['fold-history','Historical rule analysis'],['amazonReview','Amazon purchase detail review'],['fold-transfers','Manual transfer runner'],['waveSuggestions','Wave suggestion diagnostics'],['expenseBatch','Manual expense runner'],['fold-live','Individual transaction editor'],['fold-plan','Draft shortlist & export']])if(section(id))debugSlot('advanced-'+id,label).append(section(id));
@@ -38,7 +39,7 @@ export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command
  debugSlot('liveTools','Live transaction diagnostics').append(document.getElementById('diagnosticToggle').closest('.bar'),document.getElementById('diagnostics'));
  document.getElementById('readChart').parentElement.append(debugLink('chartTools'));document.getElementById('read').parentElement.append(debugLink('liveTools'));
  const custom=make('details');custom.className='custom-rule';custom.id='customRule';custom.append(make('summary','Add or edit a scoped rule'),document.getElementById('ruleForm'));document.getElementById('categories').before(custom);
- const options=make('details');options.className='setup-options';options.append(make('summary','Working period & session options'),document.getElementById('workFrom')?.closest('label'),document.getElementById('clear'));document.querySelector('#fold-import .step-body').append(options);
+ const options=make('details');options.className='setup-options';options.append(make('summary','Working period & session options'),document.getElementById('workFrom')?.closest('label'),document.getElementById('clear'));data.append(options);
  debugSlot('sampleTools','Fictional sample').append(document.getElementById('sample'));
  for(const title of document.querySelectorAll('.step-title'))title.textContent=title.textContent.replace(/^\d+\.\s*/,'');
  main.querySelector('footer').textContent='Your files and decisions stay on this computer. Wave changes require your approved queue.';

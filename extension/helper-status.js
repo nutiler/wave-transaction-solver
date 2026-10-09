@@ -7,6 +7,7 @@ export function helperVisualState(message='',busy=false){
  if(/allow access|finish .*setup|choose .*folder|confirm .*before saving/i.test(text))return {kind:'paused',label:'Paused — your input is needed'};
  if(/^Stopping/i.test(text))return {kind:'stopped',label:'Stopping'};
  if(/^Stopped[.:]?/i.test(text))return {kind:'stopped',label:'Stopped'};
+ if(!busy&&/[1-9]\d* (?:past statements unconfirmed|current-month profile-months pending)/i.test(text))return {kind:'paused',label:'Saved — coverage gaps'};
  if(/yearly CSVs downloaded and verified|(?:report|export|statements?) saved|collection finished/i.test(text))return {kind:'complete',label:'Complete'};
  if(/needs repair|failed|could not|error|unrecognized|invalid/i.test(text))return {kind:'error',label:'Needs attention'};
  if(/waiting|pending|refreshing|still generating|still preparing/i.test(text))return busy?{kind:'waiting',label:'Waiting — running automatically'}:{kind:'paused',label:'Paused — waiting for the report'};
