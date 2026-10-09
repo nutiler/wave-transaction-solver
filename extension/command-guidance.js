@@ -1,8 +1,9 @@
-export function commandNextStep({busy=false,business=null,extensionMode=true,sample=false,saveError='',lockCount=0,blockedSave=null,complete=false,changed=false,queued=0,review=0}={}){
+export function commandNextStep({busy=false,business=null,extensionMode=true,sample=false,saveError='',scanError='',lockCount=0,blockedSave=null,complete=false,changed=false,queued=0,review=0}={}){
  if(busy)return {kind:'working',title:'Working',message:'Wait for the current operation, or use its Stop control.',action:null};
  if(!business)return {kind:'setup',title:'Choose your Wave business',message:'Open Data & setup and select the intended business.',action:'setup'};
  if(!extensionMode||sample)return {kind:'preview',title:'Preview only',message:'Use the installed extension for live scans and verified saves.',action:null};
  if(saveError)return {kind:'error',title:'Local saving needs attention',message:saveError,action:null};
+ if(scanError)return {kind:'scan-failed',title:'Scan stopped — retry before applying',message:scanError+' Your '+queued+' locally approved records stay queued. Apply is paused until a fresh complete scan succeeds.',action:'scan'};
  if(lockCount&&blockedSave)return {kind:'blocked-save',title:'Next: resolve the blocked save',message:blockedSave.message+' Your '+queued+' approved records remain queued. Open the comparison below; repeating Recheck will not resolve a different category.',action:'inspect'};
  if(lockCount)return {kind:'recheck',title:'Next: recheck previous saves',message:'Apply is paused for '+lockCount+' saved outcome'+(lockCount===1?' that still needs':'s that still need')+' verification. Recheck reads Wave only; it never repeats Save. Your '+queued+' locally approved records stay queued.',action:'recheck'};
  if(!complete||changed)return {kind:'scan',title:'Next: scan Wave',message:changed?'Inputs changed. Scan again before applying; saved approvals remain queued.':'Click Update my finances to collect unfinished work and prepare suggestions.',action:'scan'};

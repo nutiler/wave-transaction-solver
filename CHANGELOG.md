@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.99.5 — actionable scan failure and empty-backlog recovery
+
+- Return and validate the current collection result, including business, Not Reviewed scope, fresh capture and complete unique-ID count. Surface loading, selection/filter and count failures instead of hiding them behind generic preparation text.
+- Persist unfinished or failed preparation while retaining the prior cache and approvals. Pause Apply and keyboard execution across reload until fresh complete preparation succeeds; show Scan needs retry and remove the contradictory Apply instruction.
+- Recognize a stable explicit empty Not Reviewed list with visible scope and no loading, extra filters/searches, Load More controls or unreadable partial rows. A missing table or vanished rows alone cannot establish zero.
+
 ## 0.99.4 — recognize Wave's expense-refund label
 
 - Verify an explicitly approved deposit refund when Wave displays Refund for followed by the exact approved expense category. Preserve the original approval and both visible values in the comparison; income, ordinary deposits and purchases do not gain this equivalence.

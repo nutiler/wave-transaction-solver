@@ -6,6 +6,7 @@ extensionFiles['helper-status.js']='text/javascript';
 extensionFiles['paypal-collection.js']='text/javascript';
 extensionFiles['command-guidance.js']='text/javascript';
 extensionFiles['saved-recovery.js']='text/javascript';
+extensionFiles['collection-status.js']='text/javascript';
 extensionFiles['venmo-empty.js']='text/javascript';
 extensionFiles['venmo-empty-fixture.html']='text/html';
 extensionFiles['venmo-empty-fixture.js']='text/javascript';

@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.4)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.5)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -19,6 +19,8 @@ After scanning, use the next-step panel: review purchase evidence, choose catego
 A failed recheck shows the exact approved/live differences and opens the blocked record's comparison. Close the Wave dialog with Cancel; it needs no Save. If a previous approval has a different category while every other field and saved Reviewed status match, **Keep current Wave category** offers an explicit local resolution. Confirming performs another fresh read and retains the original approval and observed category in history. It does not edit Wave or falsely mark the original target verified. Missing baselines, changed non-category fields, unsupported structure, unknown Reviewed status, transfers and overlapping current decisions stay locked.
 
 Wave may display an expense refund as **Refund for [expense category]**. For an explicitly approved incoming refund to that exact category, the saved-result check recognizes this display label while retaining the original category choice. Income, ordinary deposits and purchases do not acquire refund equivalence; all other live fields and Reviewed evidence must still match. Existing affected saves can be checked with **Recheck saved result** without repeating Save.
+
+If a refresh stops, its actual loading/filter/count reason appears beside **Retry Wave scan**. Queued approvals and previous successful preparation are retained, but Apply and its shortcut stay paused across reload until a fresh complete preparation succeeds. Clear extra searches/filters or selected checkboxes in Wave only when the specific diagnostic requests it. A stable explicit empty Not Reviewed list confirms zero; missing tables, loading, missing scope, unknown totals and partial rows do not prove an empty backlog.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
