@@ -15,7 +15,7 @@ export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.5';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.6';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();

@@ -44,7 +44,7 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   const reviewedVerified = categoryVerified && reviewedState==='Reviewed';
   const different=result.checks.filter(c=>c.state==='Different').map(c=>c.field),unknown=result.checks.filter(c=>c.state==='Unknown').map(c=>c.field);
   const reason=problems.length?problems.join(' '):different.length?different.join(', ')+(different.length===1?' differs':' differ')+' from the approved value.':unknown.length?unknown.join(', ')+' could not be read.':'Saved result could not be verified.';
-  const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Reviewed status is not confirmed; check it in Wave.' : reason+' Compare the approved and live values below. Apply will not repeat this attempt.';
+  const message = categoryVerified ? reviewedVerified ? 'Saved category and reviewed status verified after reloading Wave.' : 'Saved category verified. Apply & verify can finish a confirmed reviewed-state control.' : reason+' Compare the approved and live values below. Apply & verify can correct confirmed category or description differences to the original approval; other changes need inspection.';
   const verification={checks:result.checks.map(c=>({field:c.field,expected:c.exported,live:c.live,state:c.state})),problems,reviewed:reviewedState,capturedAt:snapshot?.capturedAt||null};
   if(refundLabel)verification.categoryLabel={kind:'refund',approvedCategory:category,displayedCategory:snapshot.fields.category};
   return { categoryVerified, reviewedVerified,descriptionVerified:!problems.length&&result.checks.find(c=>c.field==='Description')?.state==='Match', message,verification };

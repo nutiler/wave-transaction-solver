@@ -35,7 +35,7 @@ import { readWaveChart } from './chart-reader.js';
 import { validateCatalog, categoryNames } from './catalog.js';
 import { loadSession, saveSession, loadLocalFeature, saveLocalFeature,projectDataFolder } from './session.js';
 import { captureTransferMenuFromTabs, workingQueue, businessFromUrl, onlyBusiness, waitForLiveSnapshot, openBackgroundTab, exportUrlFor, reopenSavedTransaction } from './workflow.js';
-import {currentCategoryChoice,keepCurrentCategory} from './saved-recovery.js';
+import {currentCategoryChoice,keepCurrentCategory,prepareSavedCorrection} from './saved-recovery.js';
 const startupActivity=activity.begin('Loading your saved solver session',{priority:20});
 document.querySelector('main').inert=true;
 let startupPending=true;
@@ -644,7 +644,7 @@ const prepareDesk=async (scan,{progress=()=>{},stopped=()=>false,refreshFiles=tr
  return prepareCommandModel({business,policyBusiness:ruleOwner,transactions:history,queue,liveTransactions,liveProblems,rules,catalog,reports:[allCollection.report(),report],records:evidence.records,matches,accountMap:evidence.accountMap,proposals:proposalPack?.business===business?proposalPack.proposals:[],from:workFrom(),receipts:editReceipts});
 };
 async function executeDeskDecision(d,mode='run'){
- if(mode==='recheck') {
+ if(mode==='recheck'||mode==='repair') {
   if(d.business!==business)throw Error('This saved approval belongs to another Wave business.');
   if(d.treatment==='transfer') {
    const rows=d.ids.map((_,i)=>commandBaselineRecord(d,i)),out=rows.find(t=>t.direction==='out'),incoming=rows.find(t=>t.direction==='in');
@@ -652,7 +652,7 @@ async function executeDeskDecision(d,mode='run'){
    return runTransfer({out,in:incoming,key:[out.id,incoming.id].sort().join(':')},true);
   }
   const t=commandBaselineRecord(d);commandExecutionRecords.set(t.id,t);
-  try {const verified=await runExpenseBatch(t,'recheck'),key=business+':suggestion:'+t.id,previous=editReceipts[key];if(previous?.attempted&&previous.category===d.category&&verified.categoryVerified&&verified.reviewedVerified)await storeEditReceipt(key,{...previous,...verified,message:'Saved result verified by a read-only queue recheck.'});return verified;} finally {commandExecutionRecords.delete(t.id);}
+  try {const verified=mode==='repair'?await correctSavedExpense(t,{key:editReceipts[business+':'+t.id]?.saveAttempted||editReceipts[business+':'+t.id]?.attempted?business+':'+t.id:business+':suggestion:'+t.id}):await runExpenseBatch(t,'recheck'),key=business+':suggestion:'+t.id,previous=editReceipts[key];if(previous?.attempted&&previous.category===d.category&&verified.categoryVerified&&verified.reviewedVerified)await storeEditReceipt(key,{...previous,...verified,message:'Saved result verified by a read-only queue recheck.'});return verified;} finally {commandExecutionRecords.delete(t.id);}
  }
 
  const model=commandDesk.snapshot().model,problem=validateCommandDecision(d,model);if(problem)return {needsAttention:true,saveAttempted:false,message:problem};
@@ -683,6 +683,39 @@ async function recheckLegacyReceipt(key) {
  const read=await readLegacyReceipt(key);if(read.transfer)return runTransfer(read.transfer,true);
  const {owner,receipt,record,snapshot,verified}=read;
  await storeEditReceipt(key,{...receipt,...verified,snapshot,currentCategoryChoice:currentCategoryChoice(receipt,record,snapshot,owner),verifiedAt:new Date().toISOString()});return verified;
+}
+async function repairLegacyReceipt(key) {
+ const read=await readLegacyReceipt(key);if(read.transfer)return runTransfer(read.transfer,true);
+ if(read.verified.reviewedVerified&&read.verified.descriptionVerified){await storeEditReceipt(key,{...read.receipt,...read.verified,snapshot:read.snapshot});return read.verified;}
+ const t={...read.record,kind:'Merchant rule',proposed:read.receipt.category,approvedDescription:read.receipt.description};
+ if(t.direction!=='out')throw Error('The original deposit treatment is unavailable. Inspect this saved approval before correcting.');
+ return correctSavedExpense(t,{key,read});
+}
+async function correctSavedExpense(t,{key=business+':'+t.id,read=null}={}) {
+ if(applying||listCollecting||!extensionMode||sampleMode||!business)throw Error('Finish the current operation before correcting a saved outcome.');
+ const owner=business,data=dataset,from=workFrom(),previous=editReceipts[key];
+ if(!previous||Object.entries(editReceipts).some(([k,r])=>k.startsWith(owner+':transfer:')&&r.saveAttempted&&r.ids?.includes(t.id)))throw Error('An original expense receipt is required; transfer attempts need their counterpart checked.');
+ const current=()=>business===owner&&dataset===data&&workFrom()===from;
+ const fresh=async()=>{const tab=await reopenSavedTransaction(chrome.tabs,expenseWorkerTab,owner,t.id,current);expenseWorkerTab=tab.id;const value=await waitForLiveSnapshot(()=>captureLive(tab.id,owner,t.id),current);if(!value||!current())throw Error('Saved correction context changed.');return value;};
+ applying=true;document.querySelector('main').inert=true;let attempted=false;
+ try {
+  let snapshot=read?.snapshot||await fresh();
+  const prepared=prepareSavedCorrection(t,snapshot,{business:owner,receipt:previous,categories:categoryNames(catalog,dataset?.categories||[]),categoryGroups:catalog?.groups});
+  const persist=extra=>storeEditReceipt(key,{...editReceipts[key],...extra});
+  if(prepared.state==='completed'){await persist({...prepared.verified,snapshot,verifiedAt:new Date().toISOString()});return editReceipts[key];}
+  if(!current())throw Error('Saved correction context changed.');
+  const attempt={startedAt:new Date().toISOString(),approvedCategory:t.proposed,approvedDescription:t.approvedDescription??t.description,observedSnapshot:structuredClone(snapshot),previousResult:structuredClone({message:previous.message,snapshot:previous.snapshot,verification:previous.verification,editOutcome:previous.editOutcome,reviewOutcome:previous.reviewOutcome,correctionOutcome:previous.correctionOutcome,startedAt:previous.startedAt,categoryVerified:previous.categoryVerified,reviewedVerified:previous.reviewedVerified,descriptionVerified:previous.descriptionVerified})};
+  await persist({saveAttempted:true,categoryVerified:false,reviewedVerified:false,descriptionVerified:false,stage:'saved-correction',correctionAttempts:[...(previous.correctionAttempts||[]),attempt],message:'Correcting this exact record to its original approval; verification pending.'});
+  attempted=true;
+  const outcome=(await chrome.scripting.executeScript({target:{tabId:expenseWorkerTab},func:editWaveTransaction,args:[prepared.request]}))[0]?.result;
+  const audit=extra=>[...(previous.correctionAttempts||[]),{...attempt,...extra}];
+  await persist({correctionOutcome:outcome||null,correctionAttempts:audit({outcome:outcome||null})});
+  // Even a lost Save response gets a fresh read. No second Save is issued.
+  snapshot=await fresh();if(snapshot.currency!=='USD'||snapshot.structure?.singleCategory!==true||snapshot.structure?.split!==false)throw Error('Saved currency or structure became unreadable. Inspect this correction before continuing.');const verified=verifyCategoryResult(t,snapshot,owner,t.proposed);
+  await persist({...verified,snapshot,verifiedAt:new Date().toISOString(),correctionAttempts:audit({outcome:outcome||null,snapshot,verification:verified.verification,verifiedAt:new Date().toISOString()}),...(verified.reviewedVerified?{stage:'completed'}:{}),message:verified.reviewedVerified?('Saved result corrected to the approved values and verified.'):outcome?.problem||verified.message});
+  return {...editReceipts[key],correctionAttempted:true};
+ }catch(e){if(attempted){await storeEditReceipt(key,{...editReceipts[key],message:e.message});return {...editReceipts[key],correctionAttempted:true};}throw e;}
+ finally{applying=false;document.querySelector('main').inert=false;if(commandDesk?.busy())document.querySelector('main').inert=true;updateApply();}
 }
 async function keepLegacyWaveCategory(key,shown) {
  if(!extensionMode||sampleMode||applying||listCollecting||bulkInspector?.busy()||sourceReview?.busy())throw Error('Finish the current operation before resolving a saved category.');
@@ -716,7 +749,7 @@ async function refreshDeskFolder(handle,{bind}={}) {
  await saveLocalFeature('finance:index:'+owner,saved);
  document.dispatchEvent(new CustomEvent('finance-data'));if(dataset)analyze(true,false);return saved;
 }
-commandDesk=installCommandCenter({getState:()=>({business,receipts:editReceipts,workFrom:workFrom(),dataset,sourceRef:sourceReview.dataRevision(),sourceStamp:JSON.stringify([sourceReview.dataRevision()?.importIssues,sourceReview.dataRevision()?.files?.map(f=>[f.key,f.sha256,f.importedAt,(f.records||f.amazonRecords||[]).length]),sourceReview.dataRevision()?.decisions,sourceReview.dataRevision()?.links,sourceReview.dataRevision()?.accountMap,sourceReview.dataRevision()?.groups,sourceReview.dataRevision()?.exclusions]),ruleSignature:JSON.stringify(rules),catalog,catalogStamp:JSON.stringify(catalog?.groups),report:listReview.report(),busy:applying||listCollecting||!!bulkInspector?.busy()||!!sourceReview?.busy(),extensionMode,sample:sampleMode,canExport:extensionMode&&!!exportUrlFor(business,exportPages)}),openExport:()=>$('openExport').click(),importCSV:async file=>{if(!business)throw Error('Choose your Wave business first.');const next=mergeAccountingHistory(csvText,await file.text());if(next.text!==csvText){imported(next.text,file.name,false);await rememberSession();}},csvHash:()=>sourceHash(csvText),cancelScan:()=>listReview.stop(),prepare:prepareDesk,execute:d=>executeDeskDecision(d),recheck:d=>executeDeskDecision(d,'recheck'),recheckLegacy:recheckLegacyReceipt,keepLegacyCategory:keepLegacyWaveCategory,refresh:async()=>{const previous=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(listReview.report()?.capturedAt===previous||listReview.report()?.completeness!=='count-confirmed')throw Error('Final live collection is incomplete.');},loadFolder:refreshDeskFolder});
+commandDesk=installCommandCenter({getState:()=>({business,receipts:editReceipts,workFrom:workFrom(),dataset,sourceRef:sourceReview.dataRevision(),sourceStamp:JSON.stringify([sourceReview.dataRevision()?.importIssues,sourceReview.dataRevision()?.files?.map(f=>[f.key,f.sha256,f.importedAt,(f.records||f.amazonRecords||[]).length]),sourceReview.dataRevision()?.decisions,sourceReview.dataRevision()?.links,sourceReview.dataRevision()?.accountMap,sourceReview.dataRevision()?.groups,sourceReview.dataRevision()?.exclusions]),ruleSignature:JSON.stringify(rules),catalog,catalogStamp:JSON.stringify(catalog?.groups),report:listReview.report(),busy:applying||listCollecting||!!bulkInspector?.busy()||!!sourceReview?.busy(),extensionMode,sample:sampleMode,canExport:extensionMode&&!!exportUrlFor(business,exportPages)}),openExport:()=>$('openExport').click(),importCSV:async file=>{if(!business)throw Error('Choose your Wave business first.');const next=mergeAccountingHistory(csvText,await file.text());if(next.text!==csvText){imported(next.text,file.name,false);await rememberSession();}},csvHash:()=>sourceHash(csvText),cancelScan:()=>listReview.stop(),prepare:prepareDesk,execute:d=>executeDeskDecision(d),recheck:d=>executeDeskDecision(d,'recheck'),repair:d=>executeDeskDecision(d,'repair'),recheckLegacy:recheckLegacyReceipt,repairLegacy:repairLegacyReceipt,keepLegacyCategory:keepLegacyWaveCategory,refresh:async()=>{const previous=listReview.report()?.capturedAt;await listReview.collect({quiet:true});if(listReview.report()?.capturedAt===previous||listReview.report()?.completeness!=='count-confirmed')throw Error('Final live collection is incomplete.');},loadFolder:refreshDeskFolder});
 workspace=installWorkspace({command:()=>commandDesk,getState:()=>({business,receipts:editReceipts,businessLabel:$('waveTabs').selectedOptions[0]?.textContent||'',dataset,report:liveListReport(),rules,busy:applying || listCollecting || !!bulkInspector?.busy() || (!!amazonReview?.busy() || !!sourceReview?.busy()),workFrom:workFrom(),expenseMatches:expenseCandidates(liveRunQueue(queue,liveListReport(),business,workFrom()),allowedExpenseIds).filter(t=>!editReceipts[business+':'+t.id]?.reviewedVerified).length,transferMatches:transferPairs(liveRunQueue(queue,liveListReport(),business,workFrom())).filter(p=>!editReceipts[transferReceiptKey(p)]?.verified).length}),onStageChange:stage=>{rememberSoon();if(stage==='planning')renderQueue();}});
 renderRules();
 try { await restoreSession();operatorDecisions=await loadLocalFeature('operator:'+business)||{};await amazonReview.restore();await sourceReview.restore();await remainingReview.restore();await commandDesk.restore();if(dataset)analyze(true,false); } catch(e) { error(`Could not restore the previous session: ${e.message}`); }

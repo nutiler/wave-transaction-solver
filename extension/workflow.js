@@ -17,10 +17,24 @@ export function exportUrlFor(business, exportPages = {}) {
   } catch { return null; }
 }
 export async function openBackgroundTab(tabs, url, tabId = null) {
-  if (tabId !== null) return tabs.update(tabId, { url, active: false });
+  if (tabId !== null) {
+    try { return await tabs.update(tabId, { url, active: false }); }
+    catch (error) { if (!missingTab(error)) throw error; }
+  }
   const solver = await tabs.getCurrent();
   if (!Number.isInteger(solver?.windowId)) throw new Error('Could not identify the solver’s Chrome window.');
   return tabs.create({ url, active: false, windowId: solver.windowId });
+}
+export const missingTab = error => /No tab with id(?:\s*:|\b)|Invalid tab ID/i.test(error?.message || '');
+
+// A closed read-only collection tab can be replaced once. Never retry Save here.
+export async function collectWithTabRecovery(collect, {current=()=>true,stopped=()=>false,recover=()=>{}}={}) {
+  try { return await collect(false); }
+  catch (error) {
+    if (!missingTab(error) || !current() || stopped()) throw error;
+    recover();
+    return collect(true);
+  }
 }
 export async function waitForLiveSnapshot(read, isCurrent, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
   let last = null, error = null;
