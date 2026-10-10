@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.99.13",
+  "version": "0.99.14",
   "version_name": "1.0 preview",
   "description": "Update your finances: scan Wave, approve locally, apply and verify. Shared evidence folder, persistent collectors and recovery.",
   "permissions": [
@@ -11,6 +11,13 @@
   ],
   "host_permissions": [
     "https://next.waveapps.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://next.waveapps.com/*"],
+      "css": ["wave-layout.css"],
+      "run_at": "document_start"
+    }
   ],
   "action": {
     "default_title": "Open Dandelion's Wave Transaction Solver"

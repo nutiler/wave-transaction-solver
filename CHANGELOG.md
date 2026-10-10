@@ -1,5 +1,9 @@
 # Development milestones
 
+## 0.99.14 — wider Wave sheets
+
+- Remove Wave's 1,600px main-content width cap automatically on next.waveapps.com. Keep Wave's existing padding and responsive layout.
+
 ## 0.99.13 — Venmo balance and missing-transfer repair
 
 - Add a Venmo balance tab covering all saved accounting history and statement funding/destination evidence. Distinguish missing payment funding from missing cash-out withdrawals; show selected/verified balance estimates and a local actual-balance/date comparison.
