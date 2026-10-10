@@ -1,7 +1,7 @@
 import {parseCSV} from './csv.js';
 export const appleCardVersion=1;
 export const appleCardURL='https://card.apple.com/';
-export const appleCardOrigins=['https://card.apple.com/*','https://accounting.waveapps.com/transactions/*'];
+export const appleCardOrigins=['https://card.apple.com/*','https://accounting.waveapps.com/transactions/*','https://accounting.waveapps.com/manual_import/*'];
 export const defaultAppleAccountURL=''; // Personal account links live in ignored settings.local.js.
 const tidy=v=>String(v??'').normalize('NFKC').replace(/\s+/g,' ').trim();
 const iso=s=>{const m=tidy(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/),value=m?m[3]+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):tidy(s);if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value)throw Error('Invalid Apple Card date: '+tidy(s));return value;};
@@ -36,11 +36,13 @@ export function planAppleImport(statement,history,scope,state={}){
  const byID=new Map(history.records.map(r=>[r.id,r])),available=new Map(),near=new Map(),used=new Set(),existing=[],missing=[],held=[];
  for(const r of history.records){const k=matchKey(r);if(!available.has(k))available.set(k,[]);available.get(k).push(r);const n=nearKey(r);if(!near.has(n))near.set(n,[]);near.get(n).push(r);}
  // Resolve prior verified IDs first, even if the operator changed their description.
- for(const r of statement.records){const saved=state.verified?.[r.key],live=saved?.waveId?byID.get(saved.waveId):null;if(!saved)continue;if(!live){held.push({record:r,reason:'Previously imported Wave record is missing; it will not be recreated automatically.'});continue;}used.add(live.id);if(live.date!==r.date||live.direction!==r.direction||live.amountCents!==Math.abs(r.amountCents)){held.push({record:r,waveId:live.id,reason:'Previously imported Wave record changed its date, amount or direction.'});continue;}existing.push({record:r,waveId:live.id,proof:'Saved import identity'});}
+ for(const r of statement.records){const saved=state.verified?.[r.key],live=saved?.waveId?byID.get(saved.waveId):null;if(!saved)continue;if(!live){held.push({record:r,reason:'Previously imported Wave record is missing; it will not be recreated automatically.'});continue;}used.add(live.id);if(![r.date,r.transactionDate].includes(saved.date||r.date)||live.date!==(saved.date||r.date)||live.direction!==r.direction||live.amountCents!==Math.abs(r.amountCents)){held.push({record:r,waveId:live.id,reason:'Previously imported Wave record changed its date, amount or direction.'});continue;}existing.push({record:r,waveId:live.id,liveDate:live.date,proof:'Saved import identity'});}
  const resolved=new Set([...existing,...held].map(x=>x.record.key)),today=new Date().toISOString().slice(0,10);
  for(const r of statement.records){if(resolved.has(r.key))continue;if(r.date>today){held.push({record:r,reason:'Future-dated rows are not posted history and will not be imported.'});continue;}const match=(available.get(matchKey(r))||[]).find(w=>!used.has(w.id));if(match){used.add(match.id);existing.push({record:r,waveId:match.id,proof:'Exact posted date, signed amount and original description'});}else missing.push(r);}
+ // Older manual CSV imports may have selected Transaction Date instead of Clearing Date.
+ const unmatched=[];for(const r of missing){const alt=r.transactionDate!==r.date?(available.get(matchKey({...r,date:r.transactionDate}))||[]).find(w=>!used.has(w.id)):null;if(alt){used.add(alt.id);existing.push({record:r,waveId:alt.id,liveDate:alt.date,proof:'Exact original transaction date, signed amount and description (manual import)'});}else unmatched.push(r);}
  // Unknown same-date/amount records may be manual entries or renamed imports.
- const safe=[];for(const r of missing){const candidates=(near.get(nearKey(r))||[]).filter(w=>!used.has(w.id));if(candidates.length)held.push({record:r,candidates:candidates.map(w=>w.id),reason:'Possible existing transaction with the same posting date and amount. Inspect before adding.'});else safe.push(r);}
+ const safe=[];for(const r of unmatched){const candidates=[...(near.get(nearKey(r))||[]),...(r.transactionDate!==r.date?near.get(nearKey({...r,date:r.transactionDate}))||[]:[])].filter(w=>!used.has(w.id));if(candidates.length)held.push({record:r,candidates:candidates.map(w=>w.id),reason:'Possible existing transaction with the same original or posting date and amount. Inspect before adding.'});else safe.push(r);}
  const pending=state.pending?.attempted?state.pending:null;
  return {version:1,business:scope.business,accountId:scope.accountId,accountName:scope.accountName,sourceHash:statement.sha256,sourceName:statement.name,preparedAt:new Date().toISOString(),historyCapturedAt:history.capturedAt,beforeIds:history.records.map(r=>r.id),existing,missing:safe,held,locked:!!pending,pending,earliest:statement.earliest,latest:statement.latest};
 }

@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.11 — observed Apple calendar and legacy Wave CSV wizard
+
+- Wait for the More menu, follow its observed numeric legacy upload link, and bind the old payment-account ID by the configured full name within the selected business’s credit-card chart. Request manual_import host access during helper setup.
+- Select and verify posting-date, signed-amount and description columns in both prepared and eight-column CSV previews. Exclude navigation links from primary actions; support the final Upload button and retained account-binding chain.
+- Handle unlabelled Apple calendar days only within the confirmed month/year, excluding disabled or adjacent-month days.
+- Recognize prior manual imports using Transaction Date, preserve their live dates through subsequent checks, and hold renamed possibilities instead of duplicating them. No real records were imported during development.
+
 ## 0.99.10 — Apple Card statement imports
 
 - Add an Apple Card helper for original CSVs and earliest-available web exports, with preserved originals, posting dates and signed charges/payments/credits.

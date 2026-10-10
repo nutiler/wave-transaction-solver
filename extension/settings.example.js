@@ -6,3 +6,8 @@ export const exportPages = {
 export const appleCardAccounts = {
   // 'YOUR-WAVE-BUSINESS-UUID': 'PASTE-YOUR-WAVE-APPLE-CARD-ACCOUNT-URL'
 };
+
+// Full legacy Payment account label for the same configured account URL.
+export const appleCardAccountNames = {
+  // 'YOUR-WAVE-BUSINESS-UUID': '(0000) Apple Card'
+};

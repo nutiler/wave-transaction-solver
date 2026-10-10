@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.10)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.11)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -31,6 +31,8 @@ For Wave AI-categorized transactions, **Apply & verify** opens the exact record�
 Open **Data & setup → Collect Apple Card → Wave** after reloading the existing extension. The helper reads original Apple Card transaction CSVs already in the shared data folder, or collects a new one through Statements → Export Transactions. Connect its optional Apple/download access once and choose the shared data and browser download folders. The personal target account URL can be saved in ignored settings.local.js under appleCardAccounts; it is also editable in the helper. Check that it identifies your USD Apple Card credit-card account.
 
 Click **Check Wave & prepare import** to read reviewed and unreviewed transactions across every posting year in the CSV. Review the missing-row preview, then **Upload missing & verify**. The importer verifies the exact business and account ID and credit-card account type, retains source originals, and saves a filtered CSV under apple-card/uploads. It uses posting dates and preserves Apple’s positive charges and negative payments/credits, consistent with [Wave’s credit-card CSV mapping guidance](https://support.waveapps.com/hc/en-us/articles/208621626-Upload-a-bank-or-credit-card-statement-in-csv-format).
+
+The legacy Wave uploader is reached through the observed **More → Upload transactions** link from the selected business; its numeric route is never guessed or hardcoded. Its separate payment-account ID is bound to the exact configured account name and checked against the business’s credit-card chart. Later stages must retain that same business route and verified upload chain. Date, amount and description columns are clicked and their highlights checked, including the final **Upload** button. The helper also recognizes unchanged manual imports that used Transaction Date, preserving their existing dates and IDs rather than adding them again. A renamed possible manual entry is held for inspection. After upgrading, click **Connect Apple & Wave import access** to grant the newly listed legacy upload host access.
 
 Future exports may cover the full available range again. Matching uses posting date, signed amount and original description with duplicate counts; saved Wave transaction IDs continue identifying renamed records. Same-date/amount conflicts, changed or missing prior records, incomplete collections and unknown mappings are held. Apple’s CSV has no transaction ID, so exact field agreement is evidence of an existing row, not a unique bank-issued identity. A latest imported date alone is never used to discard backfilled transactions.
 
