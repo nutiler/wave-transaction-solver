@@ -2,7 +2,7 @@
 
 This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
 
-## Prepared reconciliation (0.99.19)
+## Prepared reconciliation (0.99.20)
 
 The top of **Venmo balance** loads `data/venmo/venmo-repair-plan.local.json` from the already connected project data folder. The package contains exact ledger snapshots, source identities, monthly balance proofs, retained-copy choices, deposit categories and signed balance effects. Private packages are excluded from version control; there is no customer-specific financial data in the shipped source code.
 
@@ -18,11 +18,15 @@ For the opening correction, Wave may show **If you change the amount, your books
 
 Collections are count-confirmed for the affected calendar years, including cross-year date margins. Within a run, clean years are reused and only years affected by a mutation are collected again for verification. Deletions share a batch absence check. Transfer batches finish and checkpoint one year before starting the next; an interrupted later year does not repeat completed years. Verified custom actions are skipped on resume. Stop also interrupts an active history check without making a financial click. Unchanged scan polls are throttled in diagnostic logs so the original blocker remains visible.
 
+Venmo collection now uses extension-driven page steps. Appended rows are parsed once unless their DOM changes, then scrolling jumps to the next Load More point. The final independently read count must still equal the exact identified transaction count. If jumping skips virtualized rows, the collector clears its captured rows and traverses every viewport once before checking the count again. A mismatch or missing total remains incomplete.
+
+A partial year retains a separate owned Wave tab and a business/year-scoped tab pointer in browser session storage. Retry reparses all currently loaded rows, checks the same URL, filters, business, year and original identity inputs, and resumes the loaded position when all prior IDs remain present. Otherwise it restarts traversal from the top. It does not reuse a completed financial-stage report as fresh: a subsequent collection reloads that year's page. Closed tabs and extension/browser restarts that discard the injected state require a fresh scan. There is a 45-second unchanged-progress stall limit and a 30-minute overall collection limit; progress beyond 600 polls is allowed. No new financial write uses a partial report.
+
 Equal-date/equal-amount transfer groups verify by unchanged bank/purchase snapshots, complete new counterpart counts, and reciprocal categories. No individual association is asserted when the labels are indistinguishable. A verified counterpart already assigned to another bank movement is excluded only after its prior live proof is re-established. Both Venmo interfaces share a renewed, transactionally acquired lease to prevent concurrent runs in different solver windows.
 
 The displayed balance remains a projection until a fresh Wave export confirms it. A changed record, unavailable UI control, incomplete collection or uncertain saved result can hold or stop part of a package. **Stop after current fix** does not cancel a potentially persistent click midway.
 
-Run `npm test`, `npm run test:venmo-funding`, and `npm run test:venmo-repairs`. Tests use fictional records and an isolated browser; development does not modify real Wave data. Wave documents [deposit creation](https://support.waveapps.com/hc/en-us/articles/208621566-Create-an-income-transaction), [starting balances](https://support.waveapps.com/hc/en-us/articles/208622796-Starting-balances-What-they-are-and-how-to-enter-them-in-Wave), and [transaction deletion](https://support.waveapps.com/hc/en-us/articles/25233656494356-Delete-a-transaction).
+Run `npm test`, `npm run test:list`, `npm run test:venmo-funding`, and `npm run test:venmo-repairs`. Tests use fictional records and an isolated browser; development does not modify real Wave data. Wave documents [deposit creation](https://support.waveapps.com/hc/en-us/articles/208621566-Create-an-income-transaction), [starting balances](https://support.waveapps.com/hc/en-us/articles/208622796-Starting-balances-What-they-are-and-how-to-enter-them-in-Wave), and [transaction deletion](https://support.waveapps.com/hc/en-us/articles/25233656494356-Delete-a-transaction).
 
 ## Operation
 

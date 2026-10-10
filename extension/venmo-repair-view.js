@@ -59,7 +59,7 @@ export function installVenmoRepairView({parent,getState,makeAdapter,withRun=fn=>
   finally{loading=false;render();if(owner!==getState().business)queueMicrotask(()=>void refreshPlan());}
  }
  async function execute(mode){
-  if(busy()||!saved.plan||problem||!getState().extensionMode||getState().sample)return;running=true;stopRequested=false;stop.hidden=false;stop.disabled=false;const business=owner,plan=saved.plan,source=getState().transactions,lease=crypto.randomUUID(),task=activity.begin(mode==='apply'?'Applying prepared Venmo fixes':'Checking prepared Venmo fixes',{priority:10});let heartbeat=null,leaseValid=false,leaseDeadline=0,renewal=Promise.resolve();update();
+  if(busy()||!saved.plan||problem||!getState().extensionMode||getState().sample)return;running=true;stopRequested=false;stop.hidden=false;stop.disabled=false;const business=owner,plan=saved.plan,source=getState().transactions,lease=crypto.randomUUID(),task=activity.begin(mode==='apply'?'Applying prepared Venmo fixes':'Checking prepared Venmo fixes',{priority:10});let heartbeat=null,leaseValid=false,leaseDeadline=0,renewal=Promise.resolve(),failed=false;update();
   const current=()=>leaseValid&&Date.now()<leaseDeadline&&getState().business===business&&saved.plan===plan&&getState().transactions===source;
   const progress=message=>{status.textContent=message;task.update({detail:message});logEvent(message,{provider:'venmo',detail:'Prepared reconciliation'});};
   try{
@@ -73,8 +73,8 @@ export function installVenmoRepairView({parent,getState,makeAdapter,withRun=fn=>
    const verified=plan.actions.filter(a=>result.receipts[repairKey(a)]?.verified).length,held=result.results.filter(r=>r.ready===false&&!r.verified).length;
    status.textContent=mode==='check'?result.results.filter(r=>r.ready).length+' checks passed · '+held+' held. Nothing changed.':verified+' / '+plan.actions.length+' fixes verified · '+held+' held.'+(result.stopped?' Stopped after the current fix.':'')+' Projected balance: '+money(completedRepairBalance(plan,result.receipts))+'.';
    logEvent('Prepared Venmo batch finished',{provider:'venmo',detail:status.textContent});
-  }catch(e){status.textContent='Prepared fixes stopped: '+e.message+' Saved checkpoints are preserved; Recheck saved fixes never repeats a write.';logError(e,'Prepared Venmo fixes stopped');}
-  finally{if(heartbeat)clearInterval(heartbeat);await renewal;try{await releaseVenmoLease(business,lease);}catch(e){logError(e,'Venmo run lease release failed');}running=false;stop.hidden=true;render();task.finish(status.textContent);}
+  }catch(e){failed=true;status.textContent='Prepared fixes stopped: '+e.message+' Saved checkpoints are preserved; Recheck saved fixes never repeats a write.';logError(e,'Prepared Venmo fixes stopped');}
+  finally{if(heartbeat)clearInterval(heartbeat);await renewal;try{await releaseVenmoLease(business,lease);}catch(e){logError(e,'Venmo run lease release failed');}running=false;stop.hidden=true;render();task.finish(status.textContent,{stopped:failed});}
  }
  run.onclick=()=>execute('apply');check.onclick=()=>execute('check');recheck.onclick=()=>execute('recheck');refresh.onclick=()=>refreshPlan({force:true});stop.onclick=()=>{stopRequested=true;stop.disabled=true;};
  return {refresh:refreshPlan,busy:()=>running};

@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.20 — advancing and resumable live collection
+
+- Drive Venmo history steps from the extension so background Wave timers are not the sole scrolling driver. Cache unchanged row parsing, capture table diagnostics once, and return compact progress responses while scanning.
+- Jump between Load More points for appended lists and retain exact-ID/count completeness checks. If the count reveals virtualized or missing rows, traverse every viewport once and prove the count again; never accept incomplete history for creation.
+- Retain one owned partial-list tab per business/year, save its pointer in browser session storage, and resume with a fresh parse of loaded rows. Rechecking an earlier year cannot overwrite a later partial list. Completed collections reload before another financial stage; closed tabs are replaced safely.
+- Replace the fixed 600-poll cutoff with advancing-progress/stall limits and descriptive progress. A failed prepared repair displays Stopped instead of Ready. Cover suspended timers, safe resume, virtualization, count mismatches, cross-year retry and status recovery with fictional tests.
+
 ## 0.99.19 — matched opening-balance Save confirmation
 
 - Handle Wave's exact matched-transaction amount warning after the approved opening Save. Recheck the owned record, pending fields and USD currency before clicking Save changes once; wait for both dialogs to close and verify the saved amount. Never choose the reconciliation navigation action.

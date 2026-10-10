@@ -21,12 +21,12 @@ export function installActivityConsole(){if(installed||typeof document==='undefi
  window.addEventListener('error',e=>logError(e.error||e.message,'Unhandled error'));window.addEventListener('unhandledrejection',e=>logError(e.reason,'Unhandled promise rejection'));window.addEventListener('pagehide',()=>void flush());
  const api=globalThis.chrome?.scripting;if(api?.executeScript&&!api.executeScript.diagnosticWrapped){
   const original=api.executeScript.bind(api),polls=new Map(),wrapped=async function(options){
-   const step=(options.func?.name||'Provider script')+' · '+(options.args?.[0]?.action||'read'),poll=options.func?.name==='waveListScan'&&options.args?.[0]?.action==='poll',key=String(options.target?.tabId);
+   const step=(options.func?.name||'Provider script')+' · '+(options.args?.[0]?.action||'read'),poll=options.func?.name==='waveListScan'&&['poll','step'].includes(options.args?.[0]?.action),key=String(options.target?.tabId);
    if(!poll)logEvent('Started '+step,{level:'debug'});
    try{
     const result=await original(options),r=result?.[0]?.result;
     const problem=r?.problem||r?.helperError?.message||(r?.notSubmitted?r?.message:null)||(Array.isArray(r?.problems)&&r.problems.length?r.problems.filter(p=>typeof p==='string').slice(0,3).join(' · '):null);
-    const flags=['phase','stage','mutationAttempted','saveConfirmationAttempted','formClosed','submitted','notSubmitted','finalAttempted','stagingAttempted','verified','completeness','running'].filter(k=>r?.[k]!==undefined).map(k=>k+'='+String(r[k]));if(Array.isArray(r?.records))flags.push('records='+r.records.length);
+    const flags=['phase','stage','mutationAttempted','saveConfirmationAttempted','formClosed','submitted','notSubmitted','finalAttempted','stagingAttempted','verified','completeness','running'].filter(k=>r?.[k]!==undefined).map(k=>k+'='+String(r[k]));if(Array.isArray(r?.records))flags.push('records='+(r.recordCount??r.records.length));
     const signature=flags.join(' · '),previous=polls.get(key),unchanged=poll&&!problem&&r&&previous?.signature===signature&&Date.now()-previous.time<10000;
     if(!unchanged){if(poll)polls.set(key,{signature,time:Date.now()});logEvent((problem?'Stopped ':!r?'Empty response from ':'Completed ')+step+(problem?': '+problem:''),{level:problem?'error':!r?'warn':'debug',detail:[signature,Array.isArray(r?.steps)?r.steps.join(' → '):'',problem&&Array.isArray(r?.controlDiagnostics)?'Controls: '+r.controlDiagnostics.map(c=>c.names?.join(' / ')+(c.disabled?' (disabled)':'')).join('; '):'',r?.helperError?.stack||''].filter(Boolean).join('\n')});}
     return result;
