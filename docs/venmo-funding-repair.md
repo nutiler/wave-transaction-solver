@@ -2,7 +2,7 @@
 
 This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
 
-## Prepared reconciliation (0.99.17)
+## Prepared reconciliation (0.99.18)
 
 The top of **Venmo balance** loads `data/venmo/venmo-repair-plan.local.json` from the already connected project data folder. The package contains exact ledger snapshots, source identities, monthly balance proofs, retained-copy choices, deposit categories and signed balance effects. Private packages are excluded from version control; there is no customer-specific financial data in the shipped source code.
 
@@ -11,6 +11,10 @@ The top of **Venmo balance** loads `data/venmo/venmo-repair-plan.local.json` fro
 Deletion compares the original fields and an intact retained copy. Receipts, notes, customer/vendor information, reconciliation protection, and unreadable or different split allocations hold the record. The selected retained copy's existing category is preserved. A fee split must reproduce every exported allocation, not just the aggregate amount. An ambiguous total may use an independently count-confirmed live-list total only when all live split allocations sum to the exact same amount.
 
 Each mutation is durably checkpointed before a potentially persistent click. Exact new deposits are checked against complete live history before creation, then verified by a new ID, date, amount, description, account, type and category after save. A lost response keeps the write locked. **Recheck saved fixes** only reads outcomes; it never repeats a deletion, Save or creation. Transfers use the existing shared receipt store, including older verified or uncertain attempts. Older attempts are recovered before a duplicate copy they reference can be removed.
+
+Opening recovery reads its exact dialog before any history collection. The approved target verifies immediately; an unexpected amount, changed field or reviewed state stops with a specific comparison. If the original amount and all checked fields are unchanged, **Do fixes** may make one additional idempotent amount assignment. Its earlier attempt remains in the checkpoint, and a failed retry cannot loop across reloads. This exception applies only to the exact opening amount, never to deletion or deposit/transfer creation. Save waits for the form to close before another navigation; validation failures preserve the attempted-save lock.
+
+Collections are count-confirmed for the affected calendar years, including cross-year date margins. Within a run, clean years are reused and only years affected by a mutation are collected again for verification. Deletions share a batch absence check. Transfer batches finish and checkpoint one year before starting the next; an interrupted later year does not repeat completed years. Verified custom actions are skipped on resume. Stop also interrupts an active history check without making a financial click. Unchanged scan polls are throttled in diagnostic logs so the original blocker remains visible.
 
 Equal-date/equal-amount transfer groups verify by unchanged bank/purchase snapshots, complete new counterpart counts, and reciprocal categories. No individual association is asserted when the labels are indistinguishable. A verified counterpart already assigned to another bank movement is excluded only after its prior live proof is re-established. Both Venmo interfaces share a renewed, transactionally acquired lease to prevent concurrent runs in different solver windows.
 

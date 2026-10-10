@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.18 — Venmo repair recovery and affected-year scans
+
+- Check a saved opening balance directly before history collection, distinguish the unchanged original from the approved target or an actual conflict, and allow one guarded idempotent amount retry through Do fixes. Preserve the earlier checkpoint; recheck stays read-only and creation/deletion attempts never repeat.
+- Collect only affected years, share deletion absence checks, and finish transfer batches year by year. Resume skips verified work and preserves completed years when later collection fails. Stop interrupts history collection.
+- Recognize delete controls through exact accessible text and icon metadata, wait for transaction forms to close after Save, and preserve uncertain outcomes on validation or timeout. Report expected and actual amounts plus safe control diagnostics.
+- Throttle unchanged scan polling logs. Add fictional regressions for direct recovery, retry limits, yearly resume, icon-only deletion and delayed/failed Save.
+
 ## 0.99.17 — prepared Venmo reconciliation
 
 - Add a prepared reconciliation panel with a single Do fixes approval for its exact displayed batch. Load the private package and original evidence from the connected data folder; revalidate the package, source IDs, monthly balances and archived ledger before running.

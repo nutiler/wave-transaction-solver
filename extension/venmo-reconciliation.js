@@ -57,7 +57,7 @@ export function assertRepairSnapshot(a,s,{after=false}={}){
  const t=a.record,fields=s?.fields;
  if(!t||!fields||s.identity?.business!==a.business||s.identity.transaction!==t.id||s.currency!=='USD')throw Error('Exact USD wallet record could not be confirmed.');
  const expected=repairRecordFields(t);if(after&&a.kind==='opening')expected.amount=(a.targetCents/100).toFixed(2);
- for(const k of ['date','description','account','type','amount'])if(k==='amount'?cents(fields[k])!==cents(expected[k]):fields[k]!==expected[k])throw Error('Live '+k+' changed; repair held.');
+ for(const k of ['date','description','account','type','amount'])if(k==='amount'?cents(fields[k])!==cents(expected[k]):fields[k]!==expected[k])throw Error(k==='amount'?'Live amount changed for '+a.kind+' on '+t.date+': expected USD '+expected[k]+', found USD '+fields[k]+'. Repair held.':'Live '+k+' changed; repair held.');
  if(t.postings.length===2&&t.categories.length===1){if(s.problems?.length||s.structure?.singleCategory!==true||s.structure.split!==false||fields.category!==expected.category)throw Error('Live category or structure changed; repair held.');}
  else{const allocations=t.postings.filter(p=>p.account!==t.primary.account).map(p=>[p.account,p.debit-p.credit]).sort(),actual=s.repairDetails?.allocations?.map(p=>[p.category,p.amountCents]).sort();if(s.structure?.split!==true||s.problems?.some(p=>!/^Category:/.test(p))||JSON.stringify(actual)!==JSON.stringify(allocations))throw Error('Exact live split allocations could not be verified.');}
  if(s.repairDetails?.protected&&['duplicate','fee'].includes(a.kind))throw Error('This copy has a receipt, notes, customer/vendor, or reconciliation protection. Inspect it before removing it.');

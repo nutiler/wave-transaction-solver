@@ -6,7 +6,7 @@ import {openBackgroundTab,reopenSavedTransaction,waitForLiveSnapshot} from './wo
 import {venmoRepairPage} from './venmo-repair-page.js';
 const workers=new Map();
 
-export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=[],isCurrent=()=>true,onProgress=()=>{}}){
+export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=[],isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{}}){
  const tabs=workers.get(business)||{list:null,bank:null,purchase:null};workers.set(business,tabs);let activeBank=null;
  const current=()=>{if(!isCurrent())throw Error('Repair context changed.');};
  const script=async(tabId,func,args=[])=>{current();const r=await api.scripting.executeScript({target:{tabId},func,args});current();if(!r[0]?.result)throw Error('No Wave response returned.');return r[0].result;};
@@ -16,9 +16,11 @@ export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=
  async function collect(years){
   const records=new Map();
   for(const year of years){
+   if(stopRequested())throw Error('History check stopped; saved checkpoints are preserved.');
    const tab=await navigate('https://next.waveapps.com/'+business+'/transactions?startDate='+year+'-01-01&endDate='+year+'-12-31');
    let report=await script(tab.id,waveListScan,[{action:'start',business,mode:'ALL',year,known:known.filter(r=>r.date.startsWith(year+'-'))}]);
-   for(let i=0;report.running&&i<600;i++){onProgress('Checking '+year+' live history · '+report.records.length+' transactions collected…');await new Promise(resolve=>setTimeout(resolve,500));report=await script(tab.id,waveListScan,[{action:'poll'}]);}
+   let lastCount=-1,lastProgress=0;
+   for(let i=0;report.running&&i<600;i++){if(stopRequested()){await script(tab.id,waveListScan,[{action:'stop'}]);throw Error('History check stopped; saved checkpoints are preserved.');}if(report.records.length!==lastCount||Date.now()-lastProgress>=10000){lastCount=report.records.length;lastProgress=Date.now();onProgress('Checking '+year+' live history · '+lastCount+' transactions collected…');}await new Promise(resolve=>setTimeout(resolve,1000));report=await script(tab.id,waveListScan,[{action:'poll'}]);}
    if(report.running){await script(tab.id,waveListScan,[{action:'stop'}]);throw Error('History scan timed out. No complete collection established.');}
    if(report.business!==business||report.year!==year||report.filter!=='ALL'||report.completeness!=='count-confirmed')throw Error('Wave did not establish complete '+year+' history. '+(report.status||''));
    for(const r of report.records){if(!/^\d+$/.test(r.id||''))throw Error('A live transaction has no exact ID. Import a fresh Wave export and retry the check.');const old=records.get(r.id);if(old&&JSON.stringify(old)!==JSON.stringify(r))throw Error('Conflicting live transaction identities.');records.set(r.id,r);}

@@ -8,7 +8,7 @@ const view=installVenmoRepairView({parent:document.getElementById('view'),getSta
 await view.refresh();
 globalThis.repairFixture={writes:()=>h.writes,collections:()=>h.collections,other:async()=>{business='22222222-2222-2222-2222-222222222222';await view.refresh();},original:async()=>{business=h.plan.business;await view.refresh();}};
 const el=(tag,text)=>Object.assign(document.createElement(tag),text===undefined?{}:{textContent:text});
-function formFixture({creating=false,protectedCopy=false,split=false,changed=false}={}){
+function formFixture({creating=false,protectedCopy=false,split=false,changed=false,iconDelete=false,delayedSave=false,failedSave=false,existingNotice=false}={}){
  const host=document.getElementById('forms');host.replaceChildren();let saves=0,deletes=0,reviewClicks=0,category='Tools',values={};const expected={date:'2026-01-15',description:'Fictional entry',account:'(fictional) Venmo',type:'Withdrawal',amount:'0.05',category:'Tools'};
  const build=()=>{
   const root=el('section');root.setAttribute('role','dialog');root.append(el('h2',creating?'Add deposit':'Edit transaction'));
@@ -21,10 +21,11 @@ function formFixture({creating=false,protectedCopy=false,split=false,changed=fal
   }
   if(split)for(const [amount,name] of [['0.02','Fee A'],['0.03','Fee B']]){const row=el('div');row.dataset.splitRow='true';const input=el('input');input.value=amount;const label=el('span',name);label.className='wv-select__label';row.append(input,label);root.append(row);}
   const notes=el('textarea');notes.value=protectedCopy?'Retain this receipt note':'';root.append(notes);
-  const review=el('button','Reviewed');review.onclick=()=>reviewClicks++;const save=el('button','Save');save.onclick=()=>{saves++;root.hidden=true;};const trash=el('button','Delete transaction');trash.onclick=()=>{const d=el('div');d.setAttribute('role','dialog');d.append(el('h2','Delete transaction?'));const confirm=el('button','Delete');confirm.onclick=()=>{deletes++;d.hidden=true;root.hidden=true;};d.append(confirm);host.append(d);};root.append(review,save,trash);host.append(root);
+  if(existingNotice){const notice=el('p','This transaction has already been reconciled');notice.setAttribute('role','alert');root.append(notice);}
+  const review=el('button','Reviewed');review.onclick=()=>reviewClicks++;const save=el('button','Save');save.onclick=()=>{saves++;if(failedSave){const alert=el('p','Amount could not be saved');alert.setAttribute('role','alert');root.append(alert);}else if(delayedSave)setTimeout(()=>root.hidden=true,50);else root.hidden=true;};const trash=el('button',iconDelete?'':'Delete transaction');if(iconDelete){const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('aria-label','TrashIcon');trash.append(icon);}trash.onclick=()=>{const d=el('div');d.setAttribute('role','dialog');d.append(el('h2','Delete transaction?'));const confirm=el('button','Delete');confirm.onclick=()=>{deletes++;d.hidden=true;root.hidden=true;};d.append(confirm);host.append(d);};root.append(review,save,trash);host.append(root);
  };
  if(creating){const add=el('button','Add transaction');add.onclick=()=>{const deposit=el('button','Add deposit');deposit.onclick=()=>{add.hidden=deposit.hidden=true;build();};host.append(deposit);};host.append(add);}else build();
- const context={document,location:{href:'https://next.waveapps.com/'+h.plan.business+'/transactions'+(creating?'':'/50')},getComputedStyle,wait:async()=>{}};
+ const context={document,location:{href:'https://next.waveapps.com/'+h.plan.business+'/transactions'+(creating?'':'/50')},getComputedStyle,wait:delayedSave?ms=>new Promise(r=>setTimeout(r,Math.min(ms,20))):async()=>{}};
  return {context,expected,state:()=>({saves,deletes,reviewClicks,category,amount:values.Amount?.value,account:values.Account?.value})};
 }
 document.getElementById('formChecks').onclick=async()=>{
@@ -32,6 +33,10 @@ document.getElementById('formChecks').onclick=async()=>{
  const check=async(name,options,request,test)=>{const f=formFixture(options),r=await venmoRepairPage({business:h.plan.business,id:'50',expected:f.expected,...request},f.context),ok=test(r,f.state());count++;if(ok)passed++;rows.append(el('li',(ok?'PASS: ':'FAIL: ')+name+(r.problem?' · '+r.problem:'')));};
  await check('Opening amount changes without reviewed clicks',{}, {kind:'opening',targetCents:1000},(r,s)=>r.mutationAttempted&&!r.problem&&s.saves===1&&s.reviewClicks===0&&s.amount==='10.00');
  await check('Exact duplicate deletion confirms once',{}, {kind:'duplicate'},(r,s)=>r.mutationAttempted&&!r.problem&&s.deletes===1&&s.reviewClicks===0);
+ await check('Icon-only delete control confirms once',{iconDelete:true},{kind:'duplicate'},(r,s)=>r.mutationAttempted&&!r.problem&&s.deletes===1);
+ await check('Delayed Save closes before verification can navigate',{delayedSave:true},{kind:'opening',targetCents:1000},(r,s)=>r.formClosed&&!r.problem&&s.saves===1);
+ await check('Existing notice is preserved while Save finishes',{delayedSave:true,existingNotice:true},{kind:'opening',targetCents:1000},(r,s)=>r.formClosed&&!r.problem&&s.saves===1);
+ await check('Save validation failure remains locked without another click',{failedSave:true},{kind:'opening',targetCents:1000},(r,s)=>r.mutationAttempted&&/Amount could not be saved/.test(r.problem)&&s.saves===1);
  await check('Protected copy cannot be deleted',{protectedCopy:true},{kind:'duplicate'},(r,s)=>!r.mutationAttempted&&!!r.problem&&s.deletes===0);
  await check('Changed amount cannot be deleted',{changed:true},{kind:'fee'},(r,s)=>!r.mutationAttempted&&!!r.problem&&s.deletes===0);
  await check('Exact split fee allocations can be removed',{split:true},{kind:'fee',split:true,allocations:[['Fee A',2],['Fee B',3]]},(r,s)=>r.mutationAttempted&&!r.problem&&s.deletes===1);

@@ -2,13 +2,13 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.17)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.18)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Prepared Venmo fixes
 
 Open **Venmo balance** to load a prepared, business-scoped repair package from `data/venmo/venmo-repair-plan.local.json`. Review its exact changes, then press **Do fixes**. That click approves the displayed batch; no separate selection or consent checkbox is needed. It supports statement-derived opening corrections, missing receipts and personal funding deposits, removal of exact excess copies and unsupported fee debits (including confirmed splits), and bank-funded/cash-out transfer repairs. It preserves retained payment categories and refuses protected or changed deletion targets.
 
-All writes have durable checkpoints. **Recheck saved fixes** is read-only. Another solver window cannot run Venmo repairs concurrently, and the older funding tool shares the same saved transfer receipts. The preview reports an estimate; refresh the Wave export after completion to confirm the balance. Private packages and source files are excluded from Git.
+All writes have durable checkpoints. **Recheck saved fixes** is read-only. Opening recovery reads the exact record first; **Do fixes** can retry the same amount assignment once only if the original amount and every checked field remain unchanged. Other saved mutations never repeat. History checks cover affected years and transfers finish in yearly batches, preserving completed checkpoints on interruption. Another solver window cannot run Venmo repairs concurrently, and the older funding tool shares the same saved transfer receipts. The preview reports an estimate; refresh the Wave export after completion to confirm the balance. Private packages and source files are excluded from Git.
 
 ## Venmo balance and funding repairs
 
