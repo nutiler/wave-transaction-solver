@@ -15,7 +15,7 @@ export async function readEvidenceFile(file,name=file.webkitRelativePath||file.n
  let provider=csv?detectDataProvider(text,name):detectDataProvider(pages?.join('\n')||'',name);
  if(!provider&&/\.pdf$/i.test(name)){pages=await extractLocalPDF(file);provider=detectDataProvider(pages.join('\n'),name);}
  if(!['amazon','paypal','venmo'].includes(provider))throw Error('Use Amazon order CSVs, PayPal activity CSVs or text-based monthly statement PDFs, or Venmo transaction CSVs.');
- const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join(''),base={parseVersion:provider==='paypal'&&csv?3:1,key:provider+':'+name,name,provider,sha256,size:file.size,importedAt:new Date().toISOString()};
+ const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join(''),base={parseVersion:provider==='paypal'&&csv?3:provider==='venmo'?2:1,key:provider+':'+name,name,provider,sha256,size:file.size,importedAt:new Date().toISOString()};
  if(previous?.sha256===sha256&&previous.parseVersion===base.parseVersion)return previous;
  if(provider==='paypal'&&csv)return {...base,...importPayPalCSV(text,{name,dateOrder:/-dmy(?:-[a-f0-9]+)?\.csv$/i.test(name)?'dmy':'mdy'}),key:base.key};
  if(provider==='paypal'){const parsed=parsePayPalPages(pages||await extractLocalPDF(file),{name});if(parsed.issues.length)throw Error(parsed.issues[0]);return {...base,...parsed,key:base.key};}

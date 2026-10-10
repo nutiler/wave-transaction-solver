@@ -1,18 +1,21 @@
-import {fundingKey,fundingFingerprint,fundingYears,assertFundingRecord,assertFundingCollection,fundingLiveCounterparts,fundingCategoryMatches,prepareFundingCreate,verifyFundingRepair} from './venmo-funding.js';
+import {fundingKey,fundingFingerprint,fundingYears,assertFundingRecord,assertFundingCollection,fundingLiveCounterparts,fundingCategoryMatches,prepareFundingCreate,verifyFundingRepair,verifyFundingBatch} from './venmo-funding.js';
 
 // Every possible financial click has a durable checkpoint. A lost response is
 // recovered by reading the saved result, never by retrying creation.
 export async function runFundingRepairs({proposals,business,approvals={},receipts={},collect,read,openMenu,edit,persist,isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{},mode='check',hasLock=()=>false}){
  const current=()=>{if(!isCurrent())throw Error('Business or source history changed. Repair stopped.');};
  if(!['check','apply','recheck'].includes(mode)||!proposals.length||proposals.some(p=>p.business!==business))throw Error('Choose repairs for one Wave business.');
- const saved={...receipts},results=[],attempts=[],years=fundingYears(proposals);let stoppedError=null;
+ const saved={...receipts},results=[],attempts=[],years=fundingYears(proposals);let stoppedError=null,batchReport=null,batchResults=new Map();
  const checkpoint=async(key,value)=>{current();const next={...saved,[key]:value};await persist(next);Object.assign(saved,next);};
  const snapshotsFor=async p=>{const s={};for(const t of [p.bank,p.purchase].filter(Boolean)){current();s[t.id]=await read(t,business);current();}return s;};
  const verify=async(p,report)=>{
   const k=fundingKey(p),receipt=saved[k];if(!receipt?.saveAttempted)return null;
+  if(batchReport===report&&batchResults.has(k))return batchResults.get(k);
   if(receipt.fingerprint!==fundingFingerprint(p))return {verified:false,message:'Original repair proposal changed. Recover its stored proposal and recheck; no creation will repeat.'};
   const snapshots=await snapshotsFor(p);
-  for(const r of report.records.filter(r=>r.account===p.walletAccount.account&&r.amountCents===p.bank.amount&&r.date===p.bank.date&&r.description==='Created Transfer'&&!receipt.beforeIds.includes(r.id))){current();snapshots[r.id]=await read({id:r.id},business);}
+  for(const r of report.records.filter(r=>r.account===p.walletAccount.account&&r.amountCents===p.bank.amount&&r.date===p.bank.date&&r.description==='Created Transfer')){current();snapshots[r.id]=await read({id:r.id},business);}
+  const group=Object.values(saved).filter(r=>r.saveAttempted&&r.proposal?.business===business&&r.proposal.bank.date===p.bank.date&&r.proposal.bank.amount===p.bank.amount&&r.proposal.bank.primary.account===p.bank.primary.account&&r.proposal.walletAccount.account===p.walletAccount.account&&r.proposal.kind===p.kind).map(r=>r.proposal);
+  if(group.length>1){for(const other of group)if(other.bank.id!==p.bank.id)Object.assign(snapshots,await snapshotsFor(other));const checked=verifyFundingBatch(group,snapshots,report,saved);if(batchReport!==report){batchReport=report;batchResults=new Map();}for(const [key,result] of Object.entries(checked)){await checkpoint(key,{...saved[key],...result,snapshots,checkedAt:new Date().toISOString()});batchResults.set(key,result);}return checked[k];}
   const result=verifyFundingRepair(p,snapshots,report,receipt);
   await checkpoint(k,{...receipt,...result,snapshots,checkedAt:new Date().toISOString()});return result;
  };
@@ -21,6 +24,16 @@ export async function runFundingRepairs({proposals,business,approvals={},receipt
  if(mode==='recheck'){
   for(const p of proposals){if(stopRequested())break;current();const result=await verify(p,report);results.push({key:fundingKey(p),...(result||{verified:false,message:'No saved attempt exists.'})});onProgress('Rechecked '+results.length+' of '+proposals.length+' saved outcomes.');}
   return {results,receipts:saved};
+ }
+ // Existing counterparts that belong to earlier verified repairs are not
+ // available to the next equal-amount payment. Re-establish their saved proof
+ // before excluding them from duplicate detection; never infer assignment.
+ report.verifiedAssignments=[];
+ for(const previous of Object.values(saved).filter(r=>r.verified&&r.proposal?.business===business)){
+  const old=previous.proposal,ids=[previous.counterpartId,...(previous.groupVerification?.counterpartIds||[])].filter(Boolean);
+  if(!ids.some(id=>report.records.some(r=>r.id===id))||!proposals.some(p=>p.walletAccount.account===old.walletAccount.account&&p.bank.amount===old.bank.amount&&Math.abs(Date.parse(p.bank.date)-Date.parse(old.bank.date))<=20*86400000))continue;
+  const result=await verify(old,report);if(!result?.verified)throw Error('An existing transfer assignment could not be reverified. No new creation started.');
+  report.verifiedAssignments.push({business,bankIds:result.groupVerification?.bankIds||[old.bank.id],counterpartIds:result.groupVerification?.counterpartIds||[result.counterpartId]});
  }
  try{
   for(const p of proposals){
@@ -34,7 +47,11 @@ export async function runFundingRepairs({proposals,business,approvals={},receipt
     results.push({key:k,ready:false,message:'Bank already shows this transfer. Refresh accounting history to confirm both sides; no creation was attempted.'});continue;
    }
    assertFundingRecord(p.bank,snapshots[p.bank.id],business);if(p.purchase)assertFundingRecord(p.purchase,snapshots[p.purchase.id],business);
-   if(fundingLiveCounterparts(p,report).length){results.push({key:k,ready:false,message:'Live Wave has a same-amount Venmo record. Inspect it before creating anything.'});continue;}
+   const possible=fundingLiveCounterparts(p,report);
+   for(const row of possible){current();row.directionEvidence=await read({id:row.id},business);current();}
+   // Reading same-amount wallet candidates uses the purchase tab, so the owned
+   // bank dialog remains available for its transfer menu.
+   if(fundingLiveCounterparts(p,report).length){results.push({key:k,ready:false,message:'Live Wave has a same-amount opposite Venmo record. Inspect it before creating anything.'});continue;}
    const menu=await openMenu(p,snapshots[p.bank.id],business);current();
    request=prepareFundingCreate(p,snapshots,menu,report);
    }catch(e){current();results.push({key:k,ready:false,message:'Held before creation: '+e.message});onProgress('Held one changed or unsupported repair; checking the next selected record.');continue;}

@@ -1,6 +1,22 @@
 # Venmo funding repair acceptance
 
-This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. Its scope is Wells Fargo movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
+This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
+
+## Prepared reconciliation (0.99.17)
+
+The top of **Venmo balance** loads `data/venmo/venmo-repair-plan.local.json` from the already connected project data folder. The package contains exact ledger snapshots, source identities, monthly balance proofs, retained-copy choices, deposit categories and signed balance effects. Private packages are excluded from version control; there is no customer-specific financial data in the shipped source code.
+
+**Do fixes** approves the displayed package as one batch. It reloads its source CSVs and archived Wave export, validates that monthly opening/activity/closing balances reconcile, then checks complete live history and exact dialog fields before mutations. It supports an opening amount derived from the opening month and pre-opening activity, missing receipts, explicitly prepared personal funding from an account absent from the Wave ledger, duplicate removal, and unsupported standalone fee removal. Fee-bearing cash-out splits and uncertain account mappings outside the prepared package remain separate review work; the tool does not invent a balancing entry.
+
+Deletion compares the original fields and an intact retained copy. Receipts, notes, customer/vendor information, reconciliation protection, and unreadable or different split allocations hold the record. The selected retained copy's existing category is preserved. A fee split must reproduce every exported allocation, not just the aggregate amount. An ambiguous total may use an independently count-confirmed live-list total only when all live split allocations sum to the exact same amount.
+
+Each mutation is durably checkpointed before a potentially persistent click. Exact new deposits are checked against complete live history before creation, then verified by a new ID, date, amount, description, account, type and category after save. A lost response keeps the write locked. **Recheck saved fixes** only reads outcomes; it never repeats a deletion, Save or creation. Transfers use the existing shared receipt store, including older verified or uncertain attempts. Older attempts are recovered before a duplicate copy they reference can be removed.
+
+Equal-date/equal-amount transfer groups verify by unchanged bank/purchase snapshots, complete new counterpart counts, and reciprocal categories. No individual association is asserted when the labels are indistinguishable. A verified counterpart already assigned to another bank movement is excluded only after its prior live proof is re-established. Both Venmo interfaces share a renewed, transactionally acquired lease to prevent concurrent runs in different solver windows.
+
+The displayed balance remains a projection until a fresh Wave export confirms it. A changed record, unavailable UI control, incomplete collection or uncertain saved result can hold or stop part of a package. **Stop after current fix** does not cancel a potentially persistent click midway.
+
+Run `npm test`, `npm run test:venmo-funding`, and `npm run test:venmo-repairs`. Tests use fictional records and an isolated browser; development does not modify real Wave data. Wave documents [deposit creation](https://support.waveapps.com/hc/en-us/articles/208621566-Create-an-income-transaction), [starting balances](https://support.waveapps.com/hc/en-us/articles/208622796-Starting-balances-What-they-are-and-how-to-enter-them-in-Wave), and [transaction deletion](https://support.waveapps.com/hc/en-us/articles/25233656494356-Delete-a-transaction).
 
 ## Operation
 

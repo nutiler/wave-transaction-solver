@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.99.17 — prepared Venmo reconciliation
+
+- Add a prepared reconciliation panel with a single Do fixes approval for its exact displayed batch. Load the private package and original evidence from the connected data folder; revalidate the package, source IDs, monthly balances and archived ledger before running.
+- Support statement-derived starting amounts, missing receipt/personal-funding deposits, excess-copy removal with an intact retained record, and standalone unsupported fee removal with exact split allocation checks. Preserve protected records for inspection.
+- Extend funding repairs to supported banks including Chase, understand Wave expense-refund display labels, prove same-amount candidate direction, and verify equal-date/equal-amount transfers together without inventing individual links.
+- Share durable creation receipts with the older tool, recover prior outcomes before cleanup, and prevent concurrent Venmo runs across windows with a renewed local lease. Uncertain writes stay locked for read-only recovery.
+- Cover all financial forms and batch action types using fictional data, including one-click execution, interrupted saves, reloads, business isolation and mobile layout. No real Wave transactions are changed during development.
+
 ## 0.99.16 — accounting width override on open tabs
 
 - Apply the width override directly to Wave’s main wrapper without requiring a particular ancestor. Reapply it to already-open Wave tabs when the extension is installed or reloaded.

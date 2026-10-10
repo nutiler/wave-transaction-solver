@@ -2,6 +2,7 @@ import {installFinanceHome} from './finance-home.js';
 import {installDataWorkspace} from './data-workspace.js';
 import {installSubscriptionView} from './subscription-view.js';
 import {installVenmoFundingView} from './venmo-funding-view.js';
+import {installVenmoRepairView} from './venmo-repair-view.js';
 
 let controller=null;
 const make=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -17,7 +18,7 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.16';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.17';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();
@@ -30,6 +31,7 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  const home=installFinanceHome({parent:daily,getState,command,openData:()=>controller.open('setup')});
  const subscriptions=installSubscriptionView({parent:groups.get('subscriptions'),getState:getSubscriptionState,openHistory:()=>showUsageSection('allCollection'),openData:()=>controller.open('setup')});
  const funding=installVenmoFundingView({parent:groups.get('funding'),getState:getFundingState,makeAdapter:fundingAdapter,withRun:fundingRun,openData:()=>controller.open('setup'),openHistory:()=>showUsageSection('allCollection')});
+ const preparedFunding=installVenmoRepairView({parent:groups.get('funding'),getState:getFundingState,makeAdapter:fundingAdapter,withRun:fundingRun});
  if(section('commandCenter'))daily.append(section('commandCenter'));
  data.append(make('h2','Your data & connections'),make('p','Connect once. Scan Wave for daily work; refresh files when you need history or purchase details.'));
  installDataWorkspace({parent:data,getState,command});
@@ -48,7 +50,7 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  for(const title of document.querySelectorAll('.step-title'))title.textContent=title.textContent.replace(/^\d+\.\s*/,'');
  main.querySelector('footer').textContent='Your files and decisions stay on this computer. Wave changes require your explicit local approval.';
  let active='transactions',seen=null;
- function refresh(){home.refresh();if(active==='subscriptions')subscriptions.refresh();if(active==='funding')void funding.refresh();ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
+ function refresh(){home.refresh();if(active==='subscriptions')subscriptions.refresh();if(active==='funding'){void funding.refresh();void preparedFunding.refresh();}ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
  function open(id,{save=true,focus=false}={}){
   if(['collection','planning','usage'].includes(id))id='transactions';if(!groups.has(id))id='transactions';active=id;
   for(const [key,g] of groups)g.hidden=key!==id;

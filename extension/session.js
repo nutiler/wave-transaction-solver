@@ -57,3 +57,14 @@ export async function writeLocalRecords(records) {
 // A single locally stored project root is shared by the command center and helpers.
 export async function projectDataFolder(){const saved=await loadLocalFeature('downloads:folders');return saved?.version===1&&saved.data?.name?.toLowerCase()==='data'?saved.data:null;}
 export async function rememberDataFolder(folder){if(folder?.name?.toLowerCase()!=='data')throw Error('Choose the data folder in your wave-solver project.');await saveLocalFeature('downloads:folders',{version:1,data:folder,inbox:null});return folder;}
+
+// Compare-and-set prevents two solver windows from writing Venmo concurrently.
+export async function claimVenmoLease(business,owner,now=Date.now()){
+ if(!/^[0-9a-f-]{36}$/i.test(business||'')||typeof owner!=='string'||!owner)throw Error('Invalid Venmo run lease.');
+ const db=await database(),key='venmo:write-lease:'+business;
+ try{return await new Promise((resolve,reject)=>{const tx=db.transaction('session','readwrite'),store=tx.objectStore('session'),request=store.get(key);let failure=null;
+ request.onsuccess=()=>{const old=request.result;if(old&&old.owner!==owner&&old.expiresAt>now){failure=Error('Another solver window is checking or applying Venmo repairs. Finish or stop that run first.');tx.abort();return;}store.put({business,owner,expiresAt:now+300000},key);};
+ tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(failure||tx.error);tx.onabort=()=>reject(failure||tx.error||Error('Venmo lease was not saved.'));});}finally{db.close();}
+}
+export async function releaseVenmoLease(business,owner){const db=await database(),key='venmo:write-lease:'+business;try{await new Promise((resolve,reject)=>{const tx=db.transaction('session','readwrite'),store=tx.objectStore('session'),request=store.get(key);request.onsuccess=()=>{if(request.result?.owner===owner)store.delete(key);};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}finally{db.close();}}
+export async function updateLocalFeature(key,update){if(!/^venmo:/.test(key)||typeof update!=='function')throw Error('Unsupported atomic feature update.');const db=await database();try{return await new Promise((resolve,reject)=>{const tx=db.transaction('session','readwrite'),store=tx.objectStore('session'),request=store.get(key);let value,failure;request.onsuccess=()=>{try{value=update(request.result||null);store.put(value,key);}catch(e){failure=e;tx.abort();}};tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(failure||tx.error);tx.onabort=()=>reject(failure||tx.error);});}finally{db.close();}}

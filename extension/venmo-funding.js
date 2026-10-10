@@ -24,14 +24,14 @@ export function auditVenmoFunding({business,sourceBusiness=business,transactions
  for(const t of all)for(const p of t.postings.filter(endpoint))paymentAccounts.set(key(p),{account:p.account,accountId:p.accountId,type:p.type});
  const accounts=[...paymentAccounts.values()].filter(p=>/\bVenmo\b/i.test(p.account)).map(p=>{const postings=all.flatMap(t=>t.postings.filter(x=>key(x)===key(p))),dates=postings.map(x=>x.date).sort();return {...p,balanceCents:postings.reduce((n,x)=>n+movement(x),0),earliest:dates[0],latest:dates.at(-1),rows:postings.length};});
  const walletRows=all.flatMap(t=>t.postings.filter(p=>accounts.some(a=>key(a)===key(p))).map(p=>({t,p,signed:movement(p)})));
- const banks=all.filter(t=>t.primary&&/Wells Fargo/i.test(t.primary.account)&&/\bVenmo\b/i.test(t.description)&&t.amount>0);
+ const banks=all.filter(t=>t.primary&&t.primary.type==='Cash and Bank'&&!/\bVenmo\b/i.test(t.primary.account)&&/\bVenmo\b/i.test(t.description)&&t.amount>0);
  const sourceMap=new Map(),conflicts=new Set();
  for(const r of records.filter(r=>r.provider==='venmo')){const id=r.profileIdentity+':'+r.sourceId,old=sourceMap.get(id);if(old&&JSON.stringify(evidenceSnapshot(old))!==JSON.stringify(evidenceSnapshot(r)))conflicts.add(id);sourceMap.set(id,r);}
  const sources=[...sourceMap.values()].filter(r=>!conflicts.has(r.profileIdentity+':'+r.sourceId)&&!r.conflict&&!r.issues?.length&&r.currency==='USD'&&r.feeCents===0&&r.accountEnding&&r.signedCents<0&&((r.kind==='Purchase'&&r.bankExpected&&/^(Complete|Completed|Settled)$/i.test(r.status))||(r.kind==='Transfer'&&/^(Standard|Instant) Transfer$/i.test(r.type)&&/^(Issued|Complete|Completed|Settled)$/i.test(r.status))));
  const compatible=(t,r)=>t.amount===r.amountCents&&bankEnding(t.primary)===r.accountEnding&&near(t.date,r.date,7)&&t.direction===(r.kind==='Transfer'?'in':'out');
  const proposals=[],held=[];
  for(const t of banks){
-  const h={bank:t,status:'Needs evidence',reason:'No unique fee-free statement payment confirms the amount, date, direction and Wells Fargo funding/destination account.'};
+  const h={bank:t,status:'Needs evidence',reason:'No unique fee-free statement payment confirms the amount, date, direction and exact bank funding/destination account.'};
   if(sourceBusiness!==business){held.push({...h,reason:'Venmo evidence belongs to another business. Import evidence for this business.'});continue;}
   const matches=sources.filter(r=>compatible(t,r));
   if(matches.length!==1){const fees=[...sourceMap.values()].filter(r=>r.feeCents&&r.currency==='USD'&&r.accountEnding===bankEnding(t.primary)&&near(t.date,r.date,7)&&t.direction===(r.kind==='Transfer'?'in':'out')&&[r.amountCents,r.amountCents-Math.abs(r.feeCents),r.amountCents+Math.abs(r.feeCents)].includes(t.amount));held.push({...h,status:matches.length?'Ambiguous statement match':fees.length?'Fee-bearing movement':h.status,reason:matches.length?'Several statement movements match this bank record. Choose the exact one before changing anything.':fees.length?'Possible fee-bearing movement: statement amount and bank proceeds differ. Inspect gross amount and fees; no automatic split or adjustment is proposed.':h.reason,feeEvidence:fees});continue;}
@@ -61,6 +61,8 @@ export function assertFundingRecord(record,snapshot,business,{ignoreCategory=fal
  if(snapshot?.currency!=='USD'||snapshot.structure?.singleCategory!==true||snapshot.structure?.split!==false)throw Error('Live currency or single-category structure is not confirmed. Nothing changed.');
  if(snapshot?.identity?.business!==business||snapshot.problems?.length)throw Error('Wrong business or unreadable live record. Nothing changed.');
  const checks=compareLive(record,snapshot).checks.filter(c=>!ignoreCategory||c.field!=='Category');
+ const category=record.categories?.[0],refund=record.direction==='in'&&record.categories?.length===1&&snapshot.fields?.type==='Deposit'&&record.postings?.some(p=>p.account===category&&['Expense','Expenses'].includes(p.group))&&normalize(snapshot.fields.category)===normalize('Refund for '+category);
+ if(refund){const check=checks.find(c=>c.field==='Category');if(check)check.state='Match';}
  if(checks.some(c=>c.state!=='Match'))throw Error('Live '+checks.filter(c=>c.state!=='Match').map(c=>c.field).join(', ')+' changed. Refresh the audit; nothing changed.');
 }
 const transferCategory=(direction,account)=>'Transfer '+(direction==='out'?'to ':'from ')+account;
@@ -76,14 +78,15 @@ export function assertFundingCollection(report,business,years){
  if(report?.business!==business||report.completeness!=='count-confirmed'||report.filter!=='ALL'||!Array.isArray(report.records)||!years.every(y=>report.years?.includes(y))||report.records.some(r=>!/^\d+$/.test(r.id||''))||new Set(report.records.map(r=>r.id)).size!==report.records.length)throw Error('Complete live history with exact transaction IDs is required; no creation was attempted.');
 }
 export function fundingYears(proposals){return [...new Set(proposals.flatMap(p=>[-20,20].map(n=>new Date((day(p.bank.date)+n)*86400000).getUTCFullYear())))].sort();}
-export function fundingLiveCounterparts(p,report){return report.records.filter(r=>r.account===p.walletAccount.account&&r.amountCents===p.bank.amount&&near(r.date,p.bank.date,20)&&r.id!==p.purchase?.id);}
+export function fundingLiveCounterparts(p,report){return report.records.filter(r=>{if(r.account!==p.walletAccount.account||r.amountCents!==p.bank.amount||!near(r.date,p.bank.date,20)||r.id===p.purchase?.id)return false;if(report.verifiedAssignments?.some(a=>a.business===p.business&&!a.bankIds.includes(p.bank.id)&&a.counterpartIds.includes(r.id)))return false;const s=r.directionEvidence,f=s?.fields,amount=String(f?.amount??'').replace(/[$,]/g,'');if(s?.identity?.business===p.business&&s.identity.transaction===r.id&&s.currency==='USD'&&!s.problems?.length&&f.account===r.account&&f.date===r.date&&/^\d+(?:\.\d{1,2})?$/.test(amount)&&Math.round(Number(amount)*100)===r.amountCents&&['Deposit','Withdrawal'].includes(f.type))return f.type===(p.kind==='funding'?'Deposit':'Withdrawal');return true;});}
 export function prepareFundingCreate(p,snapshots,menu,report){
  assertFundingCollection(report,p.business,fundingYears([p]));
  assertFundingRecord(p.bank,snapshots[p.bank.id],p.business);if(p.purchase)assertFundingRecord(p.purchase,snapshots[p.purchase.id],p.business);
  for(const t of [p.bank,p.purchase].filter(Boolean))if(!report.records.some(r=>r.id===t.id&&r.date===t.date&&r.account===t.primary.account&&r.amountCents===t.amount))throw Error('An original record is absent or changed in the complete live collection.');
  if(fundingLiveCounterparts(p,report).length)throw Error('A same-amount Venmo record exists in live Wave. Inspect it instead of creating a duplicate.');
  if(menu?.format!=='wave-solver-transfer-menu'||menu.identity?.business!==p.business||menu.identity?.transaction!==p.bank.id||menu.matchingGroups!==1||menu.createGroups!==1||!Array.isArray(menu.matchingOptions)||!Array.isArray(menu.createOptions)||!Array.isArray(menu.problems)||menu.problems.some(s=>s!=='No recognizable matching options captured. The menu HTML is included for selector inspection.'))throw Error('Transfer creation menu is incomplete or ambiguous.');
- if(menu.matchingOptions.some(o=>String(o.text||'').includes(p.walletAccount.account)))throw Error('Wave offers an existing Venmo match. Inspect it; creation is blocked.');
+ const assigned=new Set((report.verifiedAssignments||[]).filter(a=>a.business===p.business&&!a.bankIds.includes(p.bank.id)).flatMap(a=>a.counterpartIds));
+ if(menu.matchingOptions.some(o=>String(o.text||'').includes(p.walletAccount.account)&&!assigned.has(o.transactionId)))throw Error('Wave offers an existing Venmo match. Inspect it; creation is blocked.');
  const options=menu.createOptions.filter(o=>o.text===p.walletAccount.account&&!o.disabled&&!o.transactionId&&!o.href);
  if(options.length!==1)throw Error('Cannot identify one exact Venmo account under Select Account to Create Transfer.');
  return {business:p.business,id:p.bank.id,category:transferCategory(p.bank.direction,p.walletAccount.account),expected:{...snapshots[p.bank.id].fields},liveOnly:true,preserveReviewed:true,transferCreate:{account:p.walletAccount.account,direction:p.bank.direction,label:options[0].text,confirmed:true}};
@@ -105,3 +108,23 @@ export function verifyFundingRepair(p,snapshots,report,receipt){
  }catch(e){return {verified:false,message:e.message};}
 }
 export function projectedVenmoBalance(account,proposals,selected){return account.balanceCents+proposals.filter(p=>key(p.walletAccount)===key(account)&&selected.has(fundingKey(p))).reduce((n,p)=>n+p.deltaCents,0);}
+
+// Equal-date/equal-amount bank payments can create indistinguishable labels.
+// Verify the entire count-preserving group, rather than pretending one label
+// establishes an individual association or treating both new rows as duplicates.
+export function verifyFundingBatch(proposals,snapshots,report,receipts){
+ const failed=message=>Object.fromEntries(proposals.map(p=>[fundingKey(p),{verified:false,message}]));
+ try{
+  if(proposals.length<2)throw Error('A batch verification needs several actual bank movements.');
+  const first=proposals[0];assertFundingCollection(report,first.business,fundingYears(proposals));
+  if(new Set(proposals.map(p=>p.bank.id)).size!==proposals.length||proposals.some(p=>p.business!==first.business||p.walletAccount.account!==first.walletAccount.account||p.bank.date!==first.bank.date||p.bank.amount!==first.bank.amount||p.bank.primary.account!==first.bank.primary.account||p.kind!==first.kind))throw Error('Transfer group differs in account, direction, date or amount.');
+  for(const p of proposals){const r=receipts[fundingKey(p)];if(!r?.saveAttempted||r.fingerprint!==fundingFingerprint(p))throw Error('Every bank movement needs its own durable creation checkpoint.');assertFundingRecord(p.bank,snapshots[p.bank.id],p.business,{ignoreCategory:true});if(p.purchase)assertFundingRecord(p.purchase,snapshots[p.purchase.id],p.business);if(r.originalSnapshots[p.bank.id].reviewed!==snapshots[p.bank.id].reviewed||p.purchase&&r.originalSnapshots[p.purchase.id].reviewed!==snapshots[p.purchase.id].reviewed)throw Error('Original reviewed status changed.');}
+  const before=new Set(proposals.flatMap(p=>receipts[fundingKey(p)].beforeIds)),known=new Set(proposals.flatMap(p=>{const r=receipts[fundingKey(p)];return r.verified?[r.counterpartId,...(r.groupVerification?.counterpartIds||[])].filter(Boolean):[];}));
+  const rows=report.records.filter(r=>r.account===first.walletAccount.account&&r.amountCents===first.bank.amount&&r.date===first.bank.date&&r.description==='Created Transfer'&&(!before.has(r.id)||known.has(r.id)));
+  if(rows.length!==proposals.length)throw Error('New counterpart count does not match the bank movement count.');
+  const used=new Set();
+  for(const p of proposals){const candidates=rows.filter(row=>{if(used.has(row.id))return false;const s=snapshots[row.id],t={id:row.id,date:row.date,description:row.description,primary:{account:p.walletAccount.account},direction:p.bank.direction==='out'?'in':'out',amount:p.bank.amount,categories:[s?.fields?.category||''],postings:[{},{}]};try{assertFundingRecord(t,s,p.business);return fundingCategoryMatches(snapshots[p.bank.id].fields.category,p.bank.direction,p.walletAccount.account,t)&&fundingCategoryMatches(s.fields.category,t.direction,p.bank.primary.account,p.bank);}catch{return false;}});if(!candidates.length)throw Error('A reciprocal transfer side is missing or differs.');used.add(candidates[0].id);}
+  const group={bankIds:proposals.map(p=>p.bank.id).sort(),counterpartIds:rows.map(r=>r.id).sort()};
+  return Object.fromEntries(proposals.map(p=>[fundingKey(p),{verified:true,groupVerification:group,message:proposals.length+' equal-amount transfer pairs verified together by exact new count, reciprocal categories and unchanged purchases.'}]));
+ }catch(e){return failed(e.message);}
+}
