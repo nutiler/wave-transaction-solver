@@ -1,6 +1,6 @@
 // Export-only UI adapters; no account, payment, inbox mutation or financial-edit actions.
 export async function amazonDownloadPage(request={},testContext) {
- let submitted=false;
+ let submitted=false;const steps=[];
  try{
  const doc=testContext?.document||document,loc=testContext?.location||location,win=doc.defaultView||window,pause=testContext?.pause||(()=>new Promise(r=>setTimeout(r,250)));
  const text=e=>String(e?.innerText||e?.textContent||'').trim().replace(/\s+/g,' '),visible=e=>e?.isConnected&&!e.hidden&&e.getClientRects().length&&win.getComputedStyle(e).visibility!=='hidden',all=s=>[...(testContext?.root||doc).querySelectorAll(s)].filter(visible);
@@ -22,34 +22,35 @@ export async function amazonDownloadPage(request={},testContext) {
  const valid=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;if(!valid(request.start)||!valid(request.end)||request.end<request.start)throw Error('Invalid requested Amazon dates.');
  const nativeRanges=all('select').filter(e=>[...e.options].some(o=>text(o)==='Custom Range'));
  if(nativeRanges.length===1&&!nativeRanges[0].disabled){const select=nativeRanges[0],custom=[...select.options].filter(o=>text(o)==='Custom Range');if(custom.length===1){Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype,'value').set.call(select,custom[0].value);select.dispatchEvent(new win.Event('change',{bubbles:true}));await pause();}}
- else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled){
+ else if(!field('Start date')||!field('End date')||field('Start date').disabled||field('End date').disabled||field('Start date').readOnly||field('End date').readOnly||all('[id="date_range_selector_range"]').some(e=>/month.?to.?date/i.test(text(e)))){
   const known=[...new Set(all('[id="date_range_selector_range"]').map(e=>{const parent=e.closest('button,[role="combobox"],[role="button"],a'),children=[...e.querySelectorAll('button,[role="combobox"],[role="button"],a')].filter(visible);return parent||(children.length===1?children[0]:e);} ))],ranges=known.length?known:all('button,[role="combobox"],[role="button"],a').filter(e=>/^(Order Date|Date range)$/i.test(e.getAttribute('aria-label')||'')||/^(Month to date|Month-to-date|Custom(?: date)? range)$/i.test(text(e)));
-  if(ranges.length===1){const range=ranges[0];range.click();await pause();const menu=doc.getElementById(range.getAttribute('aria-controls'));
+  if(ranges.length===1){const range=ranges[0];steps.push('Opening Order Date range menu');range.scrollIntoView?.({block:'center'});range.click();await pause();const menu=doc.getElementById(range.getAttribute('aria-controls'));
    for(let attempt=0;attempt<24;attempt++){
     const currentMenu=doc.getElementById(range.getAttribute('aria-controls'))||menu;
     let options=(currentMenu?[...currentMenu.querySelectorAll('[role="option"],[role="menuitem"],a,button,li,span,div')].filter(visible):all('[role="option"],[role="menuitem"],a,button,li,span,div')).filter(e=>/^Custom(?: date)? range$/i.test(text(e)));
     // The menu can render late or virtualize choices below the initial scroll position.
     options=options.filter(e=>!options.some(child=>child!==e&&e.contains(child)));
-    if(options.length===1){options[0].scrollIntoView?.({block:'nearest'});options[0].click();for(let i=0;i<20;i++){await pause();if(field('Start date')&&field('End date'))break;}break;}
+    if(options.length===1){steps.push('Selecting Custom Range');options[0].scrollIntoView?.({block:'nearest'});options[0].click();for(let i=0;i<20;i++){await pause();if(field('Start date')&&field('End date')&&!field('Start date').disabled&&!field('End date').disabled&&!field('Start date').readOnly&&!field('End date').readOnly)break;}break;}
     if(options.length>1)break;
-    const menus=currentMenu?[currentMenu,...currentMenu.querySelectorAll('*')]:all('[role="listbox"],[role="menu"],.a-popover-inner');
+    if(attempt===3){range.focus?.();for(const kind of ['mousedown','mouseup'])range.dispatchEvent(new win.MouseEvent(kind,{bubbles:true,button:0}));steps.push('Trying Order Date mouse controls');}
+    const menus=currentMenu?[currentMenu,...currentMenu.querySelectorAll('*')]:all('[role="listbox"],[role="menu"],.a-popover-inner,.a-popover-wrapper,.a-dropdown-container,[class*=dropdown],[class*=popover]');
     for(const container of menus.filter(visible).filter(e=>e.scrollHeight>e.clientHeight)){container.scrollTop=Math.min(container.scrollHeight,container.scrollTop+Math.max(container.clientHeight*.8,80));container.dispatchEvent(new win.Event('scroll',{bubbles:false}));}
     await pause();
    }
   }
  }
- const start=field('Start date'),end=field('End date');if(!start||!end||start.disabled||end.disabled||start.readOnly||end.readOnly)return {notSubmitted:true,message:'Choose Custom Range so Start date and End date are visible, then Resume. Nothing generated.'};
- const form=v=>v.slice(5,7)+'/'+v.slice(8,10)+'/'+v.slice(0,4),readDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:v.replace(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,(match,m,d,y)=>y+'-'+m.padStart(2,'0')+'-'+d.padStart(2,'0'));
- for(const [e,value] of [[start,request.start],[end,request.end]]){Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(e,e.type==='date'?value:form(value));for(const kind of ['input','change','blur'])e.dispatchEvent(new win.Event(kind,{bubbles:true}));}
- await pause();if(readDate(field('Start date')?.value)!==request.start||readDate(field('End date')?.value)!==request.end)return {notSubmitted:true,message:'Amazon did not retain the requested dates. Nothing generated.'};
- const submit=all('button,input[type="submit"]').filter(e=>(e.value||text(e))==='Submit');if(submit.length!==1||submit[0].disabled)return {notSubmitted:true,message:'Cannot identify an enabled Submit button. Nothing generated.'};submit[0].click();
+ const start=field('Start date'),end=field('End date');if(!start||!end||start.disabled||end.disabled||start.readOnly||end.readOnly)return {notSubmitted:true,steps,message:'Choose Custom Range so Start date and End date are visible, then Resume. Nothing generated.'};
+ const form=v=>v.slice(5,7)+'/'+v.slice(8,10)+'/'+v.slice(0,4),readDate=v=>{const text=String(v??'');return /^\d{4}-\d{2}-\d{2}$/.test(text)?text:text.replace(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,(match,m,d,y)=>y+'-'+m.padStart(2,'0')+'-'+d.padStart(2,'0'));};
+ for(const [name,value] of [['Start date',request.start],['End date',request.end]]){let e=null;for(let i=0;i<20;i++){e=field(name);if(e&&!e.disabled&&!e.readOnly)break;await pause();}if(!e||e.disabled||e.readOnly)return {notSubmitted:true,steps,message:name+' changed while setting the range. Nothing generated.'};Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value').set.call(e,e.type==='date'?value:form(value));for(const kind of ['input','change','blur'])e.dispatchEvent(new win.Event(kind,{bubbles:true}));await pause();}
+ let retained=false;for(let i=0;i<20;i++){if(readDate(field('Start date')?.value)===request.start&&readDate(field('End date')?.value)===request.end){retained=true;break;}await pause();}if(!retained)return {notSubmitted:true,steps,message:'Amazon replaced or did not retain the requested date fields. Nothing generated.'};steps.push('Requested dates verified before Submit');
+ const submit=all('button,input[type="submit"]').filter(e=>(e.value||text(e))==='Submit');if(submit.length!==1||submit[0].disabled)return {notSubmitted:true,steps,message:'Cannot identify an enabled Submit button. Nothing generated.'};submit[0].click();
  let generate=[];for(let i=0;i<40;i++){await pause();generate=all('button,a,[role="button"]').filter(e=>/^Generate report$/i.test(text(e))&&!e.disabled&&e.getAttribute('aria-disabled')!=='true');if(generate.length===1)break;}
- if(generate.length!==1||readDate(field('Start date')?.value)!==request.start||readDate(field('End date')?.value)!==request.end)return {notSubmitted:true,message:'The requested Amazon range has not loaded with Generate report enabled. Resume when it is ready.'};
- submitted=true;generate[0].click();return {submitted:true};
+ const liveStart=field('Start date'),liveEnd=field('End date'),changedRange=(liveStart||liveEnd)&&(readDate(liveStart?.value)!==request.start||readDate(liveEnd?.value)!==request.end),presetReset=all('[id="date_range_selector_range"]').some(e=>/month.?to.?date/i.test(text(e)));if(generate.length!==1||changedRange||presetReset)return {notSubmitted:true,steps,message:'The requested Amazon range has not loaded with Generate report enabled. Resume when it is ready.'};
+ steps.push(!liveStart&&!liveEnd?'Date fields collapsed after Submit; prior validated range retained':'Submitted dates verified');submitted=true;generate[0].click();return {submitted:true,steps};
  }catch(error){
   if(!request.bridge)throw error;
   const message=String(error?.message||'Provider controls could not be read.').replace(/https?:\/\/\S+/g,'[URL]').slice(0,400);
-  return {helperError:{message,retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
+  return {steps,helperError:{message,stack:String(error?.stack||'').slice(0,1800),retryable:/not ready|Wait for|wait for|not.*loaded|context.*destroyed/i.test(message)},notSubmitted:['generate','create','request'].includes(request.action)&&!submitted};
  }
 }
 export async function waveExportPage(request={},testContext) {

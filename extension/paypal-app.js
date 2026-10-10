@@ -1,3 +1,4 @@
+import {logError} from './diagnostic-console.js';
 import {installHelperLaunch} from './helper-launch.js';
 import {watchHelperStatus} from './helper-status.js';
 import {helperTabs} from './helper-tabs.js';
@@ -43,7 +44,7 @@ async function page(action,request={}){
  const tab=await chrome.tabs.get(tabId),url=new URL(tab.url);if(url.origin!=='https://www.paypal.com'||!/^\/reports\/dlog\/?$/.test(url.pathname))throw Error('Sign in to PayPal and reopen its report page.');
  const token=generation;return helperCall({current:()=>generation===token,request:{dateOrder:state.dateOrder,...request,action},onWait:message=>{$('status').textContent=message;},execute:args=>chrome.scripting.executeScript({target:{tabId},world:['prepare','create','download'].includes(action)?'MAIN':'ISOLATED',func:paypalPage,args:[args]})});
 }
-const guarded=fn=>async()=>{if(busy)return;busy=true;paint();try{await fn();}catch(e){$('status').textContent=e.message;}finally{busy=false;paint();}};
+const guarded=fn=>async()=>{if(busy)return;busy=true;paint();try{await fn();}catch(e){logError(e,'PayPal helper stopped');$('status').textContent=e.message;}finally{busy=false;paint();}};
 $('connect').onclick=guarded(async()=>{if(!real)throw Error('Use the installed extension.');if(!await chrome.permissions.request({permissions:['downloads'],origins:paypalOrigins}))throw Error('PayPal access was not granted.');await refreshTabs();$('status').textContent='PayPal connected.';});
 $('open').onclick=guarded(async()=>{workingTab=await working.open('paypal',paypalReportURL,true);await refreshTabs();$('tabs').value=String(workingTab);$('status').textContent='Sign in if needed, then Start fresh.';});
 $('refreshTabs').onclick=guarded(refreshTabs);
@@ -96,7 +97,7 @@ async function run(fresh){
   diagnostics={format:'wave-solver-paypal-batch-status',version:1,batchId:state.batch.id,...result,reports:state.batch.reports};$('diagnostics').textContent=JSON.stringify(diagnostics,null,2);
   $('status').textContent=result.stopped?'Stopped. Resume continues this batch.':result.paused?'Paused: '+result.message+' Sign in, then Resume this batch.':result.complete?result.downloaded+'/'+result.total+' yearly CSVs downloaded and verified. '+result.imported+' imported'+(result.imported<result.total?'; import details are in Advanced.':'. Refresh data folder in the Command center.'):'This batch has '+result.downloaded+'/'+result.total+' originals saved. Resume checks the remaining years; existing submissions stay protected.';
   if(result.complete){await working.finish();workingTab=null;await refreshTabs();}
- }catch(e){$('status').textContent='Stopped: '+e.message;}finally{busy=false;task.finish();paint();}
+ }catch(e){logError(e,'PayPal helper stopped');$('status').textContent='Stopped: '+e.message;}finally{busy=false;task.finish();paint();}
 }
 $('run').onclick=()=>run(true);$('resume').onclick=()=>run(false);
 $('stop').onclick=()=>{generation++;$('status').textContent='Stopping. Saved originals and request checkpoints remain available.';};
@@ -105,7 +106,7 @@ try{
  if(saved?.version===2)state=saved;
  else if(saved?.version===1){state={...state,folder:saved.folder,dateOrder:saved.dateOrder||'mdy',legacyEntries:saved.entries||{}};}
  const root=await projectDataFolder();if(root)state.folder=await root.getDirectoryHandle('paypal',{create:true});
-}catch(e){$('status').textContent='Setup could not be restored: '+e.message;}
+}catch(e){logError(e,'PayPal helper stopped');$('status').textContent='Setup could not be restored: '+e.message;}
 state.downloads||={};$('dateOrder').value=state.dateOrder;await refreshTabs();$('setupPanel').open=!connected||!state.folder;paint();
 
 watchHelperStatus(document,{busy:()=>busy});

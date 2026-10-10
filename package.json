@@ -1,6 +1,6 @@
 {
   "name": "wave-transaction-solver",
-  "version": "0.99.11",
+  "version": "0.99.12",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "test:browser": "node scripts/check-v1-browser.mjs",
     "test:subscriptions": "node scripts/check-subscriptions-browser.mjs",
     "test:ai-review": "node scripts/check-ai-review-browser.mjs",
-    "test:apple-card": "node scripts/check-apple-card-browser.mjs"
+    "test:apple-card": "node scripts/check-apple-card-browser.mjs",
+    "test:console": "node scripts/check-console-browser.mjs"
   },
   "engines": {
     "node": ">=20"

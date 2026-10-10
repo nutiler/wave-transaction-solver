@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.11)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.12)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -25,6 +25,14 @@ If a scan tab closes, collection automatically opens a replacement in the same C
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 For Wave AI-categorized transactions, **Apply & verify** opens the exact record’s **Review updates** menu. If the displayed category matches your local approval, it uses **Confirm category**; otherwise it uses **Change category** and selects your approved category. It then uses **Mark as reviewed** and verifies the saved fields and reviewed status after reopening the record. Unrecognized, disabled or ambiguous menu actions stop with diagnostics. Category confirmation is treated as a possible write and retained in the save history; an uncertain response never triggers a blind repeat.
+
+## Activity console
+
+Click **Console** in the top activity bar, or expand **Activity console** at the bottom of any app/helper page. It records timestamped activity, status changes, provider script/action starts and outcomes, bounded counts/flags, and error stacks. **Copy all logs** includes recent lines from all open helpers and the main app; provider/severity/search filters, Copy filtered logs and Download logs are also available. Logs persist across reloads in a separate local diagnostics database, capped at 1,000 lines. If that store is unavailable, the current page retains a bounded copy without stopping bookkeeping. Clear logs removes diagnostics only, preserving approvals, data and uncertain-save locks.
+
+Logs strip URLs, credentials, email addresses, long IDs and local paths; code filenames/line numbers remain useful. Full CSVs, provider responses, receipts and request arguments are never serialized into the console. Visible progress may include transaction labels, so review copied logs before sharing. Nothing is sent automatically. For troubleshooting, reload the extension and close/reopen helper tabs to load the current code; reproduce the issue, click Console and paste Copy all logs. The opening line records the loaded extension version.
+
+Amazon now reacquires fields replaced during date entry and treats missing values as a diagnostic rather than calling replace on undefined. It waits/scrolls for Custom Range, supports mousedown menu triggers, and verifies both dates before Submit. A recognized Generate step may collapse the date inputs; contradictory dates or a reset Month to date preset still prevent generation. Apple supports the observed month-year-text span, plain menu labels and flat calendar grids, and verifies the resulting date after year/month/day selection.
 
 ## Apple Card → Wave
 

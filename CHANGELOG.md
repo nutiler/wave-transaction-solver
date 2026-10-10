@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.12 — shareable activity console and provider controls
+
+- Add cross-page local diagnostics with timestamped activity/status/provider steps and error stacks; support search, provider/severity filters, copy and text download. Keep 1,000 lines in a separate database and strip URLs, credentials, email addresses, long IDs and paths. Clear preserves financial state.
+- Handle Amazon Custom Range through scrolling and mousedown controls, reacquire replaced date inputs, and replace undefined date reads with actionable no-generation results. Retain the validated submitted range when Generate collapses the fields; reject changed values or a reset preset.
+- Support Apple’s observed month-year-text span, plain year/month menu entries and flat calendar cells, including immediate date commitment after Done.
+- Cover persistence, bounds, redaction, clear/queue isolation, mobile layout and the new provider cases with fictional browser fixtures.
+
 ## 0.99.11 — observed Apple calendar and legacy Wave CSV wizard
 
 - Wait for the More menu, follow its observed numeric legacy upload link, and bind the old payment-account ID by the configured full name within the selected business’s credit-card chart. Request manual_import host access during helper setup.
