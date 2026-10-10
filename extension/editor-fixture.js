@@ -3,7 +3,7 @@ const business = '11111111-1111-1111-1111-111111111111', id = '10000000000000000
 const expected = { date: '2026-09-20', description: 'Test Store', account: 'Test Card', type: 'Withdrawal', amount: '52.80', category: 'Uncategorized Expense' };
 const request = { business, id, category: 'Personal Groceries', expected };
 const mount = document.getElementById('fixture');
-function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category, displayedPrefix='' } = {}) {
+function fixture({ aiUpdates=null,liveSimple=false,liveSplit=false,currency='USD',checkboxReview=null, ariaReview=false, noReview=false, custom = false, reviewSave = false, original = expected, missing = false, duplicate = false, validationError = false, reviewDisabled = false, reviewEnablesOnCategory = false, personalSubmenu = false, submenuLabel = 'Personal Expense or Withdrawal', searchRequired = false, distractor = false, innerToggleOnly = false, portal = false, confirmedReviewed = false, transferMenu = null, targetCategory = request.category, displayedPrefix='' } = {}) {
   mount.replaceChildren();
   const dialog = document.createElement('section'); dialog.setAttribute('role','dialog');
   dialog.innerHTML = '<h2>Edit transaction</h2>';
@@ -17,7 +17,7 @@ function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxRevie
     wrapper.append(label,field); dialog.append(wrapper);
   }
   if(liveSimple){const button=document.createElement('button');button.textContent=liveSplit?'Add another split':'Split transaction';dialog.append(button);const code=document.createElement('span');code.textContent=currency;dialog.querySelector('[aria-label=Amount]').parentElement.append(code);}
-  let selected = original.category, reviewed = confirmedReviewed, saves = 0;
+  let selected = original.category, reviewed = confirmedReviewed, saves = 0,confirms=0,changes=0,menuReviews=0;
   const category = dialog.querySelector('[aria-label="Category"]');
   category.onchange = () => { selected = category.value; if (reviewEnablesOnCategory) mark.disabled = false; };
   if (custom) {
@@ -62,9 +62,26 @@ function fixture({ liveSimple=false,liveSplit=false,currency='USD',checkboxRevie
   const save = document.createElement('button'); save.textContent = 'Save'; save.onclick = () => { saves++; if(!validationError) dialog.hidden = true; };
   if(checkboxReview!==null){mark=document.createElement('input');mark.type='checkbox';mark.setAttribute('aria-label','Transaction reviewed');mark.checked=checkboxReview;reviewed=checkboxReview;mark.onclick=()=>{reviewed=mark.checked;if(reviewSave){saves++;dialog.hidden=true;}};}
   if(ariaReview){mark.setAttribute('aria-label','Mark as reviewed');mark.innerHTML='<svg><title>review icon</title></svg>   ';}
-  if(noReview){mark.textContent='Review updates';mark.onclick=()=>{reviewed=true;};}
+  if(noReview){mark.textContent='Review updates';mark.onclick=()=>{};}
+  if(aiUpdates){
+    let accepted=false,menu=null;
+    mark.textContent='Review updates';mark.disabled=!!aiUpdates.disabled;
+    const close=()=>{menu?.remove();menu=null;};
+    mark.onclick=()=>{
+      close();menu=document.createElement('div');menu.className='actions-dropdown__menu';
+      const action=(name,fn,disabled=false)=>{const row=document.createElement('div');row.className='actions-dropdown__item';if(disabled)row.setAttribute('aria-disabled','true');const icon=document.createElement('svg'),title=document.createElement('span'),subtitle=document.createElement('span');title.className='actions-dropdown__item__title';title.textContent=name;subtitle.textContent='Fictional secondary help text';row.append(icon,title,subtitle);row.onclick=fn;menu.append(row);};
+      if(!accepted){
+        const confirm=()=>{confirms++;accepted=true;close();if(aiUpdates.mutateAmount)dialog.querySelector('[aria-label=Amount]').value='99.00';if(aiUpdates.directMark){mark.textContent='Mark as reviewed';mark.onclick=()=>{reviewed=true;menuReviews++;mark.textContent='Reviewed';};}if(aiUpdates.confirmCloses){saves++;dialog.hidden=true;}};
+        action('Confirm category',confirm,aiUpdates.confirmDisabled);if(aiUpdates.duplicateConfirm)action('Confirm category',confirm);
+        action('Change category',()=>{changes++;accepted=true;close();if(custom)dialog.querySelector('.wv-select__toggle').click();},aiUpdates.changeDisabled);
+      }
+      if(!aiUpdates.missingMark)action('Mark as reviewed',()=>{if(!accepted){throw Error('Fictional AI suggestion must be resolved first');}menuReviews++;reviewed=true;close();mark.textContent='Reviewed';mark.onclick=()=>{throw Error('Reviewed must not be clicked');};if(reviewSave){saves++;dialog.hidden=true;}},aiUpdates.markDisabled);
+      (aiUpdates.portal?mount:dialog).append(menu);
+      if(aiUpdates.distractor){const decoy=document.createElement('button');decoy.textContent='Confirm category';decoy.onclick=()=>{selected='WRONG OUTSIDE MENU';};dialog.append(decoy);}
+    };
+  }
   dialog.append(mark,save); mount.append(dialog);
-  return { document, location: { href: 'https://next.waveapps.com/' + business + '/transactions/' + id }, getComputedStyle, wait: async () => {}, state: () => ({ selected, reviewed, saves }) };
+  return { document, location: { href: 'https://next.waveapps.com/' + business + '/transactions/' + id }, getComputedStyle, wait: async () => {}, state: () => ({ selected, reviewed, saves,confirms,changes,menuReviews }) };
 }
 document.getElementById('run').onclick = async () => {
   const checks = document.getElementById('checks'); checks.replaceChildren(); let failures = 0;
@@ -108,7 +125,20 @@ document.getElementById('run').onclick = async () => {
   await check('Explicit unchecked reviewed checkbox can be marked and saved', {checkboxReview:false},(r,s)=>!r.problem && s.reviewed && s.saves===1,{...request,category:expected.category,reviewOnly:true});
   await check('Checked reviewed checkbox is preserved without clicking Save',{checkboxReview:true},(r,s)=>!r.problem && !r.saveAttempted && s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
   await check('Icon-only review button uses its exact accessible label',{ariaReview:true},(r,s)=>!r.problem && s.reviewed && s.saves===1,{...request,category:expected.category,reviewOnly:true});
-  await check('Review updates is never mistaken for mark reviewed',{noReview:true},(r,s)=>!!r.problem && r.stage==='preflight' && !r.saveAttempted && !s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  await check('Unrecognized Review updates menu is never mistaken for mark reviewed',{noReview:true},(r,s)=>!!r.problem && r.stage==='review updates' && !r.saveAttempted && !s.reviewed && s.saves===0,{...request,category:expected.category,reviewOnly:true});
+  const sameAI={...request,category:expected.category,reviewOnly:true};
+  await check('AI category matching approval is confirmed then reviewed and saved once',{aiUpdates:{}},(r,s)=>!r.problem&&s.confirms===1&&s.changes===0&&s.menuReviews===1&&s.reviewed&&s.saves===1&&r.categoryConfirmationAttempted,sameAI);
+  await check('AI different category uses Change category then approved selection and review',{aiUpdates:{}},(r,s)=>!r.problem&&s.confirms===0&&s.changes===1&&s.menuReviews===1&&s.selected===request.category&&s.reviewed&&s.saves===1&&r.categoryChangeRequested);
+  await check('AI Change category opens the custom category picker',{aiUpdates:{},custom:true,innerToggleOnly:true},(r,s)=>!r.problem&&s.confirms===0&&s.changes===1&&s.selected===request.category&&s.reviewed&&s.saves===1);
+  await check('AI review menu can use portal spans with subtitles and outside distractors',{aiUpdates:{portal:true,distractor:true}},(r,s)=>!r.problem&&s.confirms===1&&s.menuReviews===1&&s.saves===1&&s.selected===expected.category,sameAI);
+  await check('AI confirm can expose a direct mark-reviewed control',{aiUpdates:{directMark:true}},(r,s)=>!r.problem&&s.confirms===1&&s.menuReviews===1&&s.saves===1,sameAI);
+  await check('AI menu mark-review that saves never issues another Save',{aiUpdates:{},reviewSave:true},(r,s)=>!r.problem&&s.confirms===1&&s.menuReviews===1&&s.saves===1,sameAI);
+  await check('Disabled AI menu trigger makes no category or review writes',{aiUpdates:{disabled:true}},(r,s)=>!!r.problem&&!r.saveAttempted&&s.confirms===0&&s.changes===0&&s.menuReviews===0&&s.saves===0,sameAI);
+  await check('Duplicate AI confirm titles make no category or review writes',{aiUpdates:{duplicateConfirm:true}},(r,s)=>!!r.problem&&!r.saveAttempted&&s.confirms===0&&s.menuReviews===0&&s.saves===0,sameAI);
+  await check('Disabled AI category action makes no category or review writes',{aiUpdates:{changeDisabled:true}},(r,s)=>!!r.problem&&!r.saveAttempted&&s.changes===0&&s.menuReviews===0&&s.saves===0);
+  await check('AI confirmation changing amount stops before review or another save',{aiUpdates:{mutateAmount:true}},(r,s)=>!!r.problem&&r.saveAttempted&&s.confirms===1&&s.menuReviews===0&&s.saves===0,sameAI);
+  await check('Missing AI mark-reviewed action preserves the attempted-confirmation lock',{aiUpdates:{missingMark:true}},(r,s)=>!!r.problem&&r.saveAttempted&&s.confirms===1&&s.menuReviews===0&&s.saves===0,sameAI);
+  await check('AI confirmation closing dialog stops without another Save',{aiUpdates:{confirmCloses:true}},(r,s)=>!!r.problem&&r.saveAttempted&&s.confirms===1&&s.menuReviews===0&&s.saves===1,sameAI);
   const refundExpected={...expected,type:'Deposit',category:'Uncategorized Income'};
   for(const path of ['Deposit from Personal','Refund for Expense'])await check('Incoming refund uses '+path+' and preserves Deposit',{custom:true,personalSubmenu:true,submenuLabel:path,original:refundExpected},(r,s)=>!r.problem&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:[path]});
   await check('Business refund accepts the exact Refund for category label before review and Save',{custom:true,personalSubmenu:true,submenuLabel:'Refund for Expense',original:refundExpected,displayedPrefix:'Refund for '},(r,s)=>!r.problem&&s.selected===request.category&&s.reviewed&&s.saves===1,{...request,refund:true,expected:refundExpected,categoryPath:['Refund for Expense']});
@@ -122,5 +152,5 @@ document.getElementById('run').onclick = async () => {
   await check('Live-only simple record applies and reviews with explicit USD',{liveSimple:true},(r,s)=>!r.problem&&s.saves===1,{...request,liveOnly:true});
   await check('A newly split live-only record cannot click Save',{liveSimple:true,liveSplit:true},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
   await check('A changed live-only currency cannot click Save',{liveSimple:true,currency:'CAD'},(r,s)=>!!r.problem&&!r.saveAttempted&&s.saves===0,{...request,liveOnly:true});
-  mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All 45 editor checks passed';
+  const count=checks.children.length;mount.replaceChildren(); document.getElementById('result').textContent = failures ? failures + ' failed' : 'All '+count+' editor checks passed';
 };

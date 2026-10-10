@@ -4,6 +4,12 @@ import {approvedRefund} from './operator-decisions.js';
 import { compareLive,normalize } from './model.js';
 import { buildPlan, validatePlan } from './plan.js';
 
+// An enabled, unambiguous menu trigger permits inspection, not proof of review.
+export function reviewUpdateControl(snapshot) {
+  const controls=snapshot?.controls||[],updates=snapshot?.reviewUpdates;
+  return snapshot?.reviewed!=='Reviewed' && updates?.count===1 && updates.disabled===false && controls.filter(c=>/^Review updates$/i.test(c)).length===1 && !controls.some(c=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(c)) && !snapshot?.reviewCheckbox;
+}
+
 export function prepareCategoryEdit(transaction, snapshot, { business, sample, shortlist, queue, loadedPlan, categories, categoryGroups }) {
   assertLiveStructure(transaction,snapshot);
   if (sample || !business) throw new Error('Select a real Wave business first.');
@@ -40,7 +46,7 @@ export function verifyCategoryResult(transaction, snapshot, business, category) 
   const controls = snapshot?.controls || [];
   const inverse = controls.filter(name => /^(Reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(name));
   const mark = controls.filter(name => /^Mark (as )?reviewed$/i.test(name));
-  const reviewedState=snapshot?.reviewed==='Reviewed'||(inverse.length===1&&mark.length===0)?'Reviewed':snapshot?.reviewed||'Unknown';
+  const reviewedState=controls.some(c=>/^Review updates$/i.test(c))?'Unknown':snapshot?.reviewed==='Reviewed'||(inverse.length===1&&mark.length===0)?'Reviewed':snapshot?.reviewed||'Unknown';
   const reviewedVerified = categoryVerified && reviewedState==='Reviewed';
   const different=result.checks.filter(c=>c.state==='Different').map(c=>c.field),unknown=result.checks.filter(c=>c.state==='Unknown').map(c=>c.field);
   const reason=problems.length?problems.join(' '):different.length?different.join(', ')+(different.length===1?' differs':' differ')+' from the approved value.':unknown.length?unknown.join(', ')+' could not be read.':'Saved result could not be verified.';
@@ -67,7 +73,7 @@ export async function editWaveTransaction(request, testContext) {
   const wait = testContext?.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const tidy = value => String(value || '').replace(/\s+/g, ' ').trim();
   const visible = el => !!el && !el.hidden && !el.closest('[hidden],[aria-hidden="true"]') && style(el).display !== 'none' && style(el).visibility !== 'hidden' && el.getClientRects().length > 0;
-  let saveAttempted = false, reviewRequested = false, descriptionUpdated=false,stage = 'preflight';
+  let saveAttempted = false, reviewRequested = false, descriptionUpdated=false,categoryConfirmationAttempted=false,categoryChangeRequested=false,stage = 'preflight';
   function identity() {
     const url = new URL(loc.href);
     if (url.origin !== 'https://next.waveapps.com' || url.pathname !== '/' + request.business + '/transactions/' + request.id) throw new Error('Wave navigated away from the requested transaction.');
@@ -136,13 +142,39 @@ export async function editWaveTransaction(request, testContext) {
     return {mark:[...buttons(dialog,['Mark as reviewed','Mark reviewed']),...boxes.filter(el=>checked(el)===false)],confirmed:[...buttons(dialog,['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']),...boxes.filter(el=>checked(el)===true)]};
   }
   function enabled(el) { return !el.disabled && el.getAttribute('aria-disabled') !== 'true'; }
+  function updateScopes(dialog) {
+    const triggers=buttons(dialog,['Review updates']);
+    if(triggers.length!==1)throw Error('Cannot identify one Review updates menu trigger.');
+    const linked=triggers[0].getAttribute('aria-controls');
+    const candidates=[...doc.querySelectorAll('[class*="actions-dropdown"],[role="menu"]')].filter(el=>visible(el)&&(!linked||el.id===linked||doc.getElementById(linked)?.contains(el)));
+    const titles=scope=>[...scope.querySelectorAll('.actions-dropdown__item__title,button,[role="menuitem"],span')].filter(el=>visible(el)&&['Confirm category','Change category','Mark as reviewed'].includes(tidy(el.textContent)));
+    const matches=candidates.filter(el=>titles(el).length&&(!el.contains(control(dialog,'Date'))&&!el.contains(control(dialog,'Category'))));
+    const outer=matches.filter(el=>!matches.some(other=>other!==el&&other.contains(el)));
+    if(outer.length>1)throw Error('Multiple Review updates menus are visible. Nothing further clicked.');
+    return outer;
+  }
+  function updateAction(dialog,name) {
+    const scopes=updateScopes(dialog),matches=new Set(scopes.flatMap(scope=>[...scope.querySelectorAll('.actions-dropdown__item__title,button,[role="menuitem"],span')]).filter(el=>visible(el)&&tidy(el.textContent)===name));
+    const leaf=[...matches].filter(el=>![...matches].some(other=>other!==el&&el.contains(other)));
+    if(leaf.length!==1)throw Error('Cannot identify one '+name+' action in Review updates. Nothing further clicked.');
+    for(let el=leaf[0];el;el=el.parentElement){if(!enabled(el))throw Error(name+' is disabled. Nothing further clicked.');if(scopes.includes(el))break;}
+    return leaf[0];
+  }
+  async function openUpdates(category) {
+    let dialog=assertFields(category);
+    if(!updateScopes(dialog).length){const trigger=buttons(dialog,['Review updates']);if(trigger.length!==1||!enabled(trigger[0]))throw Error('Review updates is unavailable.');assertFields(category);trigger[0].click();}
+    for(let i=0;i<20;i++){dialog=assertFields(category);if(updateScopes(dialog).length)return dialog;await wait(100);}
+    throw Error('Review updates did not expose its category actions. Nothing saved.');
+  }
   try {
     if (!request || !/^[0-9a-f-]{36}$/i.test(request.business || '') || !/^\d+$/.test(request.id || '') || !tidy(request.category) || !request.expected) throw new Error('Invalid edit request.');
     let dialog = assertFields(request.expected.category);
     if(request.description!==undefined){const input=control(dialog,'Description');if(typeof request.description!=='string'||!request.description.trim()||input.tagName!=='INPUT'||!enabled(input)||(input.maxLength>0&&request.description.length>input.maxLength))throw Error('Approved description is invalid or exceeds Wave’s field limit. Nothing edited.');}
     if (buttons(dialog, ['Save']).length !== 1) throw new Error('Cannot identify one Save button.');
     const {mark:review,confirmed:alreadyReviewed}=reviewControls(dialog);
-    if (review.length + alreadyReviewed.length !== 1) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
+    const updates=buttons(dialog,['Review updates']),usesUpdates=updates.length===1&&review.length+alreadyReviewed.length===0;
+    if (review.length + alreadyReviewed.length !== 1 && !usesUpdates || updates.length&& !usesUpdates) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
+    if(usesUpdates&&(!enabled(updates[0])||request.transfer||request.openTransferMenu))throw Error('Review updates is disabled or unsupported for this transfer. Nothing edited.');
     reviewRequested = alreadyReviewed.length === 1;
     if (request.openTransferMenu) {
       stage='open transfer menu';
@@ -170,6 +202,16 @@ export async function editWaveTransaction(request, testContext) {
     if(request.reviewOnly){
       if(tidy(request.expected.category)!==tidy(request.category))throw Error('Review-only requests cannot change the category.');
       if(alreadyReviewed.length===1)return {saveAttempted:false,reviewRequested:true,stage:'already reviewed'};
+    }
+    if(usesUpdates){
+      stage='review updates';dialog=await openUpdates(request.expected.category);
+      // Both primary category actions must be recognizable before either is used.
+      const confirm=updateAction(dialog,'Confirm category'),change=updateAction(dialog,'Change category');
+      assertFields(request.expected.category);
+      saveAttempted=true; // Category confirmation may persist without pressing Save.
+      if(tidy(request.expected.category)===tidy(request.category)){categoryConfirmationAttempted=true;confirm.click();}
+      else {categoryChangeRequested=true;change.click();}
+      await wait(150);dialog=assertFields(request.expected.category);
     }
     if (request.transfer) {
       stage = 'existing transfer selection';
@@ -283,6 +325,10 @@ export async function editWaveTransaction(request, testContext) {
     if(request.description!==undefined&&request.description!==request.expected.description){stage='description edit';const input=control(dialog,'Description'),setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input),'value')?.set;if(!setter)throw Error('Cannot update the description input. Save was not clicked.');setter.call(input,request.description);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));descriptionUpdated=true;dialog=assertFields(request.category);}
     stage = 'review';
     let mark = reviewControls(dialog).mark;
+    if(!mark.length&&usesUpdates){
+      dialog=await openUpdates(request.category);
+      mark=[updateAction(dialog,'Mark as reviewed')];
+    }
     // Wave may keep Review disabled while the purchase is uncategorized or loading.
     for (let i = 0; mark.length === 1 && !enabled(mark[0]) && i < 15; i++) {
       await wait(100); dialog = assertFields(request.category);
@@ -291,17 +337,17 @@ export async function editWaveTransaction(request, testContext) {
     if (mark.length === 1 && enabled(mark[0])) {
       // Some Wave layouts use this as a save-and-review action.
       assertFields(request.category); saveAttempted = true; reviewRequested = true; mark[0].click();
-      for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
+      for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested,categoryConfirmationAttempted,categoryChangeRequested }; }
       dialog = assertFields(request.category);
     }
-    if(request.reviewOnly && !reviewRequested)throw Error('The review control is unavailable. No Save was clicked.');
+    if((request.reviewOnly||usesUpdates) && !reviewRequested)throw Error('The review control is unavailable. No Save was clicked.');
     stage = 'save';
     const save = buttons(dialog, ['Save']);
     if (save.length !== 1 || !enabled(save[0])) throw new Error('Save is unavailable. Check the Wave dialog before continuing.');
     assertFields(request.category); saveAttempted = true; save[0].click();
-    for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested }; }
-    return { saveAttempted, reviewRequested, stage, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
+    for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested,categoryConfirmationAttempted,categoryChangeRequested }; }
+    return { saveAttempted, reviewRequested, stage,categoryConfirmationAttempted,categoryChangeRequested, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    return { saveAttempted, stage, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+    return { saveAttempted, stage,reviewRequested,categoryConfirmationAttempted,categoryChangeRequested, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }

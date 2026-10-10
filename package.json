@@ -1,13 +1,14 @@
 {
   "name": "wave-transaction-solver",
-  "version": "0.99.7",
+  "version": "0.99.8",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
     "test:browser": "node scripts/check-v1-browser.mjs",
-    "test:subscriptions": "node scripts/check-subscriptions-browser.mjs"
+    "test:subscriptions": "node scripts/check-subscriptions-browser.mjs",
+    "test:ai-review": "node scripts/check-ai-review-browser.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -1,4 +1,4 @@
-import {verifyCategoryResult} from './editor.js';
+import {verifyCategoryResult,reviewUpdateControl} from './editor.js';
 import {simpleRecord} from './live-records.js';
 import {approvedCommandRecord} from './command-center.js';
 import {approvedRefund} from './operator-decisions.js';
@@ -26,7 +26,8 @@ export function prepareSavedCorrection(record,snapshot,{business,categories=[],c
  if(!(['refund'].includes(treatment)?['Expenses','Equity']:treatment==='income'?['Income']:treatment==='personal-deposit'?['Equity']:['Expenses','Equity']).includes(group))throw Error('The approved category does not match this transaction treatment. Nothing corrected.');
  if(verified.reviewedVerified&&verified.descriptionVerified)return {state:'completed',verified};
  const actions=(snapshot.controls||[]).filter(c=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(c)),checkbox=snapshot.reviewCheckbox;
- if(actions.length+(typeof checkbox?.checked==='boolean'?1:0)!==1||snapshot.reviewed==='Reviewed'&&actions.some(c=>/^Mark (as )?reviewed$/i.test(c))||checkbox?.disabled||snapshot.reviewActions?.some(a=>/^Mark (as )?reviewed$/i.test(a.name)&&a.disabled))throw Error('One usable reviewed-state control must be confirmed before correction.');
+ const updates=(snapshot.controls||[]).some(c=>/^Review updates$/i.test(c));
+ if((updates?!reviewUpdateControl(snapshot):actions.length+(typeof checkbox?.checked==='boolean'?1:0)!==1)||snapshot.reviewed==='Reviewed'&&actions.some(c=>/^Mark (as )?reviewed$/i.test(c))||checkbox?.disabled||snapshot.reviewActions?.some(a=>/^Mark (as )?reviewed$/i.test(a.name)&&a.disabled))throw Error('One usable reviewed-state control must be confirmed before correction.');
  const personal=group==='Equity',categoryPath=treatment==='refund'?[personal?'Deposit from Personal':'Refund for Expense']:treatment==='personal-deposit'?['Deposit from Personal']:treatment==='income'?[]:personal?['Personal Expense or Withdrawal']:[];
  return {state:'correction',request:{business,id:record.id,liveOnly:true,category:record.proposed,categoryPath,refund:['refund','personal-deposit'].includes(treatment),description:record.approvedDescription??record.description,expected:{...snapshot.fields},...(verified.categoryVerified&&verified.descriptionVerified?{reviewOnly:true,category:snapshot.fields.category}: {})}};
 }

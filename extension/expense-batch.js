@@ -4,7 +4,7 @@ import {approvedRefund} from './operator-decisions.js';
 import {activity,paintActivity} from './activity.js';
 import {debugSlot,debugLink,showUsageSection} from './workspace-ui.js';
 import {compareLive} from './model.js';
-import {prepareCategoryEdit,verifyCategoryResult} from './editor.js';
+import {prepareCategoryEdit,verifyCategoryResult,reviewUpdateControl} from './editor.js';
 export function expenseCandidates(queue,allowedIds=null){return queue.filter(t=>(!allowedIds || allowedIds.has(t.id)) && (t.kind==='Merchant rule' && t.direction==='out'||approvedRefund(t)||approvedCommandRecord(t)) && t.amount>0 && simpleRecord(t) && typeof t.proposed==='string');}
 export function prepareExpenseBatch(t,snapshot,options){
  assertLiveStructure(t,snapshot);
@@ -13,9 +13,9 @@ export function prepareExpenseBatch(t,snapshot,options){
  if(!target.reviewedVerified){
   const actions=(snapshot?.controls || []).filter(c=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(c));
   const checkbox=snapshot?.reviewCheckbox;
-  if(actions.length+(typeof checkbox?.checked==='boolean'?1:0)!==1){
+  if((snapshot?.controls||[]).some(c=>/^Review updates$/i.test(c))?!reviewUpdateControl(snapshot):actions.length+(typeof checkbox?.checked==='boolean'?1:0)!==1){
    const updates=(snapshot?.controls || []).includes('Review updates');
-   const error=Error(updates?'Wave shows Review updates instead of a reviewed-state control. Resolve its suggested updates manually; this expense was not edited.':'Cannot identify one reviewed-state control. This expense was not edited. Copy expense diagnostics.');error.diagnostics={snapshot,reviewDiagnostics:snapshot?.reviewDiagnostics || []};throw error;
+   const error=Error(updates?'Wave’s Review updates control is disabled, ambiguous or unreadable. This expense was not edited. Copy expense diagnostics.':'Cannot identify one reviewed-state control. This expense was not edited. Copy expense diagnostics.');error.diagnostics={snapshot,reviewDiagnostics:snapshot?.reviewDiagnostics || []};throw error;
   }
   if(target.categoryVerified && (checkbox?.disabled || snapshot?.reviewActions?.some(a=>/^Mark (as )?reviewed$/i.test(a.name) && a.disabled))){const error=Error('The review control is disabled. This expense was not edited.');error.diagnostics={snapshot};throw error;}
  }
@@ -69,9 +69,10 @@ export function installExpenseBatch({getState,receipt,apply,inspect,availability
  search.oninput=()=>{limit=100;render();};return {render,open:ids=>{showUsageSection('expenseBatch');search.value='';limit=100;render();if(ids){selected.clear();const s=getState();for(const t of expenseCandidates(s.queue,s.allowedIds))if(ids.has(t.id) && eligible(t))selected.add(t.id);render();}fold.open=true;fold.scrollIntoView({block:'start',behavior:'smooth'});summary.tabIndex=-1;summary.focus({preventScroll:true});}};
 }
 
-// Editor preflight returns before any category, review, or Save click.
+// Preflight or menu recognition may stop before any financial action. Opening
+// Review updates alone is reversible; confirming a category keeps the save lock.
 export function recoverStoppedExpenseReceipt(receipt){
- if(receipt?.stage!=='expense-edit' || !receipt.saveAttempted || !receipt.originalSnapshot?.identity?.transaction || receipt.editOutcome?.stage!=='preflight' || receipt.editOutcome.saveAttempted!==false || !receipt.editOutcome.problem)return receipt;
+ if(receipt?.stage!=='expense-edit' || !receipt.saveAttempted || !receipt.originalSnapshot?.identity?.transaction || !['preflight','review updates'].includes(receipt.editOutcome?.stage) || receipt.editOutcome.saveAttempted!==false || receipt.editOutcome.categoryConfirmationAttempted || receipt.editOutcome.categoryChangeRequested || !receipt.editOutcome.problem)return receipt;
  const {previousAttempts=[],...previous}=receipt;
  return {...receipt,saveAttempted:false,reviewAttempted:false,stage:'expense-preflight',previousAttempts:[...previousAttempts,previous],message:receipt.editOutcome.problem+' Stopped before editing; moved to Needs attention. Use Retry expense preflight after inspecting the Wave dialog.'};
 }

@@ -870,7 +870,8 @@ async function runTransfer(pair,mode=false){
 
 let expenseWorkerTab=null;const commandExecutionRecords=new Map();
 async function runExpenseBatch(t,mode='run'){
- if(mode==='run' && (!t.commandDecision||t.approvedDescription===t.description) && !editReceipts[business+':suggestion:'+t.id]?.attempted && !editReceipts[business+':suggestion:'+t.id]?.reviewedVerified && suggestionCandidates(listReview.report(),[...queue,...commandExecutionRecords.values()],rules,business,workFrom()).some(record=>record.id===t.id && record.proposed===t.proposed))return runWaveSuggestion(t);
+ // Approved expenses use the exact-record editor, including Wave's AI menu.
+ // The separate legacy suggestion tool retains its explicit list confirmation.
  if(listCollecting || bulkInspector?.busy())throw Error('Finish collection or bulk inspection before editing transactions.');
  if(applying || !extensionMode || sampleMode || !business)throw Error('Select your real Wave business.');
  const expectedBusiness=business,data=dataset,from=workFrom(),target=t.proposed,key=business+':'+t.id,previous=editReceipts[key];

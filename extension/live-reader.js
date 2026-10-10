@@ -101,6 +101,8 @@ export function readWavePage(testContext) {
     if(checked!==null)result.reviewed=checked?'Reviewed':'Not reviewed';else result.problems.push('Reviewed checkbox has no explicit state.');
   }else if(reviewed.length>1)result.problems.push('Multiple reviewed checkboxes.');
   result.reviewActions=[...root.querySelectorAll('button,[role="button"]')].filter(visible).map(el=>({name:buttonText(el),disabled:!!el.disabled || el.getAttribute('aria-disabled')==='true'})).filter(a=>/^(Reviewed|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(a.name));
+  const updates=[...root.querySelectorAll('button,[role="button"]')].filter(el=>visible(el)&&/^Review updates$/i.test(buttonText(el)));
+  if(updates.length)result.reviewUpdates={count:updates.length,disabled:updates.some(el=>!!el.disabled||el.getAttribute('aria-disabled')==='true')};
   result.reviewDiagnostics=[...root.querySelectorAll('button,[role="button"],[role="checkbox"],input[type="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,role:el.getAttribute('role'),name:buttonText(el),ariaLabel:el.getAttribute('aria-label'),checked:el.getAttribute('aria-checked'),disabled:!!el.disabled || el.getAttribute('aria-disabled')==='true',html:el.outerHTML.slice(0,1800)}));
   if(true===result.reviewCheckbox?.checked && result.controls.some(text=>/^Mark (as )?reviewed$/i.test(text))){result.reviewed='Unknown';result.problems.push('Conflicting checkbox and reviewed-action indicators.');}
   const confirmations = result.controls.filter(text=>/^Reviewed$/i.test(text));

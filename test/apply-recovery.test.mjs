@@ -20,6 +20,12 @@ test('correction refuses changed immutable fields, missing or ambiguous readings
  assert.throws(()=>prepareSavedCorrection(t,snapshot,{...options,receipt:{...options.receipt,category:'Different approval'}}));
  assert.throws(()=>prepareSavedCorrection(t,snapshot,{...options,categoryGroups:[{name:'Income',accounts:[{name:category}]}]}));
 });
+test('saved AI-category outcomes can finish the original approval through a confirmed menu trigger',()=>{
+ const ai={...snapshot,reviewed:'Unknown',controls:['Review updates'],reviewUpdates:{count:1,disabled:false}};
+ assert.equal(prepareSavedCorrection(t,ai,options).request.category,category);
+ const matching={...ai,fields:{...ai.fields,category,description:approval.description}};assert.equal(prepareSavedCorrection(t,matching,options).request.reviewOnly,true);
+ for(const change of [{reviewUpdates:{count:1,disabled:true}},{reviewUpdates:{count:2,disabled:false}},{controls:['Review updates','Mark as reviewed']},{controls:['Review updates','Reviewed']},{reviewed:'Reviewed'},{reviewCheckbox:{checked:false}}])assert.throws(()=>prepareSavedCorrection(t,{...ai,...change},options));
+});
 test('deposit refunds use their approved expense path; ordinary income cannot inherit it',()=>{
  const incoming={...record,direction:'in',categories:['Uncategorized Income']},refund={...approval,treatment:'refund',expected:[recordSnapshot(incoming)]},rt=decisionRecord(incoming,refund),s={...snapshot,fields:{...snapshot.fields,type:'Deposit'}};
  assert.deepEqual(prepareSavedCorrection(rt,s,options).request.categoryPath,['Refund for Expense']);

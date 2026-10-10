@@ -67,3 +67,7 @@ test('Wave Reviewed confirmation verifies the saved result and blocks resetting 
   assert.equal(verifyCategoryResult(transaction,{...saved,controls:['Reviewed','Mark as reviewed']},business,'Personal Groceries').reviewedVerified,false);
   assert.throws(()=>resetAttemptReceipt(transaction,{...snapshot,controls:['Reviewed']},business,{saveAttempted:true,category:'Personal Groceries'}));
 });
+test('an unresolved Review updates menu is never evidence of saved Reviewed status',()=>{
+ const saved={...snapshot,fields:{...snapshot.fields,category:'Personal Groceries'},reviewed:'Reviewed',controls:['Reviewed','Review updates']};
+ const result=verifyCategoryResult(transaction,saved,business,'Personal Groceries');assert.equal(result.categoryVerified,true);assert.equal(result.reviewedVerified,false);assert.equal(result.verification.reviewed,'Unknown');
+});

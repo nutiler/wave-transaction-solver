@@ -15,10 +15,20 @@ test('Review updates and absent or disabled review controls need attention befor
  const matching={...snapshot,fields:{...snapshot.fields,category:'Software'},reviewActions:[{name:'Mark as reviewed',disabled:true}]};assert.throws(()=>prepareExpenseBatch(t,matching,options),/disabled/);
  const checkbox={...snapshot,fields:{...snapshot.fields,category:'Software'},controls:['Save','Cancel'],reviewCheckbox:{checked:false,disabled:false}};assert.equal(prepareExpenseBatch(t,checkbox,options).state,'review');
 });
+test('enabled AI review menu permits the approved category only; raw, disabled or conflicting menus stay held',()=>{
+ const ai={...snapshot,controls:['Save','Cancel','Review updates'],reviewUpdates:{count:1,disabled:false}};
+ assert.equal(prepareExpenseBatch(t,ai,options).state,'change');
+ const same={...ai,fields:{...ai.fields,category:t.proposed}};assert.equal(prepareExpenseBatch(t,same,options).request.reviewOnly,true);
+ for(const extra of [{reviewUpdates:undefined},{reviewUpdates:{count:2,disabled:false}},{reviewUpdates:{count:1,disabled:true}},{controls:['Review updates','Reviewed']},{controls:['Review updates','Mark as reviewed']},{reviewCheckbox:{checked:false,disabled:false}},{fields:{...ai.fields,amount:'10.01'}},{fields:{...ai.fields,category:'Unapproved AI category'}},{identity:{business:'other',transaction:t.id}}])assert.throws(()=>prepareExpenseBatch(t,{...ai,...extra},options));
+ assert.equal(prepareExpenseBatch(t,{...same,reviewed:'Unknown'},options).state,'review');
+});
 import {recoverStoppedExpenseReceipt} from '../extension/expense-batch.js';
 test('only explicit no-click editor preflight failures can move a persisted lock to attention',()=>{
  const receipt={category:'Software',stage:'expense-edit',saveAttempted:true,reviewAttempted:true,originalSnapshot:snapshot,editOutcome:{stage:'preflight',saveAttempted:false,problem:'Cannot identify a reviewed-state control.'}};
  const recovered=recoverStoppedExpenseReceipt(receipt);assert.equal(recovered.saveAttempted,false);assert.equal(recovered.reviewAttempted,false);assert.equal(recovered.stage,'expense-preflight');assert.equal(recovered.previousAttempts.length,1);assert.equal(receipt.saveAttempted,true);
  for(const bad of [{...receipt,editOutcome:undefined},{...receipt,editOutcome:{...receipt.editOutcome,saveAttempted:true}},{...receipt,editOutcome:{...receipt.editOutcome,stage:'review'}},{...receipt,editOutcome:{...receipt.editOutcome,stage:'category selection'}},{...receipt,originalSnapshot:null}])assert.equal(recoverStoppedExpenseReceipt(bad),bad);
  assert.equal(recoverStoppedExpenseReceipt(recovered),recovered);
+ const menuFailure={...receipt,editOutcome:{stage:'review updates',saveAttempted:false,categoryConfirmationAttempted:false,categoryChangeRequested:false,problem:'Menu unavailable'}};
+ assert.equal(recoverStoppedExpenseReceipt(menuFailure).saveAttempted,false);
+ for(const change of [{saveAttempted:true},{categoryConfirmationAttempted:true},{categoryChangeRequested:true}])assert.equal(recoverStoppedExpenseReceipt({...menuFailure,editOutcome:{...menuFailure.editOutcome,...change}}).saveAttempted,true);
 });

@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.7)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.8)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -23,6 +23,8 @@ Wave may display an expense refund as **Refund for [expense category]**. For an 
 If a scan tab closes, collection automatically opens a replacement in the same Chrome window without taking focus. A closure during collection restarts it once. Other scan failures show their actual loading/filter/count reason. **Apply & verify** retries a failed or outdated preparation before saving queued work; only a fresh complete collection permits execution. Approvals remain saved if preparation still fails. Clear extra searches/filters or selected checkboxes in Wave only when the specific diagnostic requests it. A stable explicit empty Not Reviewed list confirms zero; missing tables, loading, missing scope, unknown totals and partial rows do not prove an empty backlog.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
+
+For Wave AI-categorized transactions, **Apply & verify** opens the exact record’s **Review updates** menu. If the displayed category matches your local approval, it uses **Confirm category**; otherwise it uses **Change category** and selects your approved category. It then uses **Mark as reviewed** and verifies the saved fields and reviewed status after reopening the record. Unrecognized, disabled or ambiguous menu actions stop with diagnostics. Category confirmation is treated as a possible write and retained in the save history; an uncertain response never triggers a blind repeat.
 
 ## Subscription Finder
 
