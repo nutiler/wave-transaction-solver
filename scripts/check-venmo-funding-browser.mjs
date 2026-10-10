@@ -1,0 +1,28 @@
+import {spawn} from 'node:child_process';
+import {createRequire} from 'node:module';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const require=createRequire(import.meta.url),{chromium}=require(process.env.WAVE_PLAYWRIGHT_ROOT||'playwright');
+const port=Number(process.env.WAVE_TEST_PORT||4323),base='http://127.0.0.1:'+port;
+const server=spawn(process.execPath,['server.mjs'],{windowsHide:true,stdio:'pipe',env:{...process.env,PORT:String(port)}});let browser;
+try{
+ await new Promise((resolve,reject)=>{server.stdout.once('data',resolve);server.once('error',reject);server.once('exit',code=>reject(Error('Preview exited '+code)));});
+ browser=await chromium.launch({headless:true,executablePath:process.env.WAVE_TEST_CHROME||undefined});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/extension/venmo-funding-fixture.html');await page.waitForFunction(()=>!!globalThis.fundingFixture);
+ await page.getByRole('button',{name:'Run transfer creation editor checks',exact:true}).click();await page.waitForFunction(()=>document.getElementById('editorResult').textContent==='10 of 10 passed');
+ await page.getByRole('button',{name:'Select matching repairs',exact:true}).click();assert(await page.getByRole('button',{name:'Create selected transfers & verify',exact:true}).isDisabled());
+ await page.getByRole('button',{name:'Check selected in Wave',exact:true}).click();await page.waitForFunction(()=>document.getElementById('venmoFundingStatus').textContent.includes('1 repairs passed'));assert.equal(await page.evaluate(()=>fundingFixture.saves()),0);
+ await page.getByLabel('Actual balance for (phantom) Venmo',{exact:true}).fill('0.00');await page.getByLabel('Actual balance for (phantom) Venmo',{exact:true}).press('Tab');await page.waitForFunction(()=>document.querySelector('[data-gap]').textContent.includes('$0.00'));
+ await page.locator('#fundingConsent').check();await page.getByRole('button',{name:'Create selected transfers & verify',exact:true}).click();await page.waitForFunction(()=>document.getElementById('venmoFundingStatus').textContent.includes('1 repairs verified'));
+ assert.equal(await page.evaluate(()=>fundingFixture.saves()),1);assert(await page.getByRole('button',{name:'Create selected transfers & verify',exact:true}).isDisabled());
+ assert.match(await page.locator('[data-wallet]').textContent(),/\$0\.00/);
+ const unchanged=await page.evaluate(async()=>{const {saveLocalFeature,loadLocalFeature}=await import('/extension/session.js');await saveLocalFeature('prepared:fictional-preservation',{approved:['fictional-original']});return loadLocalFeature('prepared:fictional-preservation');});assert.deepEqual(unchanged,{approved:['fictional-original']});
+ await page.reload();await page.waitForFunction(()=>!!globalThis.fundingFixture);assert(await page.locator('.funding-card input').isDisabled());assert(await page.locator('.funding-results').textContent().then(s=>s.includes('1 transfer repairs verified')));assert.equal(await page.evaluate(()=>fundingFixture.saves()),0);
+ assert.equal(await page.getByLabel('Actual balance for (phantom) Venmo',{exact:true}).inputValue(),'0.00');assert.match(await page.locator('[data-wallet]').textContent(),/\$0\.00/);
+ await page.evaluate(()=>fundingFixture.otherBusiness());assert.equal(await page.locator('.funding-card').count(),0);await page.evaluate(()=>fundingFixture.originalBusiness());assert(await page.locator('.funding-card input').isDisabled());
+ const preserved=await page.evaluate(async()=>{const {loadLocalFeature}=await import('/extension/session.js');return loadLocalFeature('prepared:fictional-preservation');});assert.deepEqual(preserved,unchanged);
+ fs.mkdirSync('data/qa',{recursive:true});await page.screenshot({path:'data/qa/venmo-funding-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:'data/qa/venmo-funding-mobile.png',fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+ const app=await context.newPage();app.on('pageerror',e=>errors.push(e.message));await app.goto(base+'/extension/app.html');await app.getByRole('tab',{name:'Venmo balance',exact:true}).click();assert(await app.locator('#venmoFunding').isVisible());assert(await app.locator('#venmoFundingStatus').textContent().then(s=>s.includes('Choose a Wave business')));assert.deepEqual(errors,[]);
+ const broken=await context.newPage();await broken.addInitScript(()=>Object.defineProperty(window,'indexedDB',{value:{open(){throw Error('Fictional checkpoint read failure');}}}));await broken.goto(base+'/extension/venmo-funding-fixture.html');await broken.waitForFunction(()=>document.getElementById('venmoFundingStatus').textContent.includes('Repair state could not be loaded'));assert(await broken.getByRole('button',{name:'Create selected transfers & verify',exact:true}).isDisabled());assert(!(await broken.getByRole('button',{name:'Check saved history',exact:true}).isDisabled()));assert.equal(await broken.evaluate(()=>fundingFixture.saves()),0);
+ console.log('Venmo funding browser checks passed: 10 editor cases, read-only check, explicit approval, persisted verified lock, reload, business isolation, preserved approvals, and desktop/mobile UI.');
+}finally{await browser?.close();server.kill();}

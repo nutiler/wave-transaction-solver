@@ -125,6 +125,7 @@ export async function editWaveTransaction(request, testContext) {
       const actual = value(control(dialog, name)), expected = name === 'Category' ? category : name==='Description'&&descriptionUpdated?request.description:request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
       const transferLabels=name==='Category' && request.transfer && category===request.category ? [tidy(request.transfer.label),tidy('Transfer to '+String(request.transfer.label || '').replace(/^Transfer to /i,''))] : [];
+      if(name==='Category'&&request.transferCreate&&category===request.category){const date=new Date(request.expected.date+'T00:00:00Z');for(const d of [request.expected.date,...['short','long'].map(month=>new Intl.DateTimeFormat('en-US',{month,day:'numeric',year:'numeric',timeZone:'UTC'}).format(date))])transferLabels.push(tidy(request.category+' - '+d+' - Created Transfer'));}
       const refundLabel=name==='Category'&&category===request.category&&request.refund===true&&request.expected.type==='Deposit'&&request.categoryPath?.length===1&&request.categoryPath[0]==='Refund for Expense'&&actual===tidy('Refund for '+request.category);
       if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual) && !refundLabel) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
     }
@@ -174,7 +175,7 @@ export async function editWaveTransaction(request, testContext) {
     const {mark:review,confirmed:alreadyReviewed}=reviewControls(dialog);
     const updates=buttons(dialog,['Review updates']),usesUpdates=updates.length===1&&review.length+alreadyReviewed.length===0;
     if (review.length + alreadyReviewed.length !== 1 && !usesUpdates || updates.length&& !usesUpdates) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
-    if(usesUpdates&&(!enabled(updates[0])||request.transfer||request.openTransferMenu))throw Error('Review updates is disabled or unsupported for this transfer. Nothing edited.');
+    if(usesUpdates&&(!enabled(updates[0])||request.transfer||request.transferCreate||request.openTransferMenu))throw Error('Review updates is disabled or unsupported for this transfer. Nothing edited.');
     reviewRequested = alreadyReviewed.length === 1;
     if (request.openTransferMenu) {
       stage='open transfer menu';
@@ -187,7 +188,8 @@ export async function editWaveTransaction(request, testContext) {
         let branches=[];
         for(let i=0;i<20;i++){
           assertFields(request.expected.category);
-          const candidates=new Set(scopes().flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el) && clean(el)==='Transfer to Bank, Credit Card, or Loan'));
+          const branch=request.expected.type==='Deposit'?'Transfer from Bank, Credit Card, or Loan':'Transfer to Bank, Credit Card, or Loan';
+          const candidates=new Set(scopes().flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el) && clean(el)===branch));
           branches=[...candidates].filter(el=>![...candidates].some(other=>other!==el && el.contains(other)));
           if(branches.length)break;await wait(100);
         }
@@ -213,7 +215,26 @@ export async function editWaveTransaction(request, testContext) {
       else {categoryChangeRequested=true;change.click();}
       await wait(150);dialog=assertFields(request.expected.category);
     }
-    if (request.transfer) {
+    if(request.transferCreate){
+      stage='create transfer counterpart';
+      const t=request.transferCreate,direction=request.expected.type==='Withdrawal'?'out':request.expected.type==='Deposit'?'in':null;
+      if(request.transfer||request.reviewOnly||request.description!==undefined||request.preserveReviewed!==true||request.liveOnly!==true||t.confirmed!==true||t.direction!==direction||!direction||t.label!==t.account||!tidy(t.account)||t.account===request.expected.account||request.category!=='Transfer '+(direction==='out'?'to ':'from ')+t.account)throw Error('Invalid explicit transfer-creation request.');
+      const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,script,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
+      const menus=[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el)&&clean(el).includes('Select Account with Matching Transaction'));
+      const scopes=menus.filter(el=>!menus.some(other=>other!==el&&el.contains(other)));
+      if(scopes.length!==1)throw Error('One transfer submenu must be open. Nothing created.');
+      const menu=scopes[0],heading=text=>[...menu.querySelectorAll('div,span,h3,h4,strong')].filter(el=>visible(el)&&clean(el)===text).filter(el=>![...el.children].some(c=>visible(c)&&clean(c)===text));
+      const matching=heading('Select Account with Matching Transaction'),create=heading('Select Account to Create Transfer'),follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
+      if(matching.length!==1||create.length!==1||!follows(matching[0],create[0]))throw Error('Transfer creation sections are ambiguous.');
+      const all=[...menu.querySelectorAll('[role="menuitemradio"],.wv-select__menu__option,[role="option"],[role="menuitem"],li,button')].filter(visible);
+      const options=all.filter(el=>!all.some(child=>child!==el&&el.contains(child)&&clean(child)===clean(el)));
+      if(options.some(el=>follows(matching[0],el)&&follows(el,create[0])&&clean(el).includes(t.account)))throw Error('An existing Venmo matching option is present. Do not create another transfer.');
+      const exact=options.filter(el=>follows(create[0],el)&&clean(el)===t.label);
+      if(exact.length!==1||!enabled(exact[0])||exact[0].getAttribute('data-transaction-id')||exact[0].querySelector('[data-transaction-id]')||exact[0].getAttribute('href')||exact[0].querySelector('a[href]'))throw Error('Exact create-transfer account is missing, disabled or ambiguous.');
+      assertFields(request.expected.category);saveAttempted=true;exact[0].click();
+      let ready=false;for(let i=0;i<20;i++){try{dialog=assertFields(request.category);ready=true;break;}catch{await wait(100);}}
+      if(!ready)throw Error('Creation was attempted but the selected transfer category is uncertain. Recheck; never repeat creation.');
+    } else if (request.transfer) {
       stage = 'existing transfer selection';
       const t=request.transfer;
       if(typeof t.id!=='string' || !/^\d+$/.test(t.id) || t.id===request.id || !tidy(t.account) || !tidy(t.description) || !/^\d{4}-\d{2}-\d{2}$/.test(t.date) || request.expected.type!=='Withdrawal' || request.category!=='Transfer to '+t.account)throw Error('Invalid existing-transfer request.');
@@ -334,7 +355,7 @@ export async function editWaveTransaction(request, testContext) {
       await wait(100); dialog = assertFields(request.category);
       mark = reviewControls(dialog).mark;
     }
-    if (mark.length === 1 && enabled(mark[0])) {
+    if (!request.preserveReviewed && mark.length === 1 && enabled(mark[0])) {
       // Some Wave layouts use this as a save-and-review action.
       assertFields(request.category); saveAttempted = true; reviewRequested = true; mark[0].click();
       for (let i = 0; i < 10; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested,categoryConfirmationAttempted,categoryChangeRequested }; }

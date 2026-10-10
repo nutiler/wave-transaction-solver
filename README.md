@@ -2,7 +2,15 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.12)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.13)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+
+## Venmo balance and funding repairs
+
+Open **Venmo balance** after refreshing Wave accounting history and Venmo statements in **Data & setup**. The tool uses reviewed and unreviewed history, matches explicit Wells Fargo funding/destination details, and distinguishes externally funded payments from Venmo cash-outs. It shows the saved balance, the effect of selected repairs, verified repairs not yet reflected in that export, and an optional actual Venmo balance/date comparison. It never invents an adjustment to reach zero.
+
+Filter or select the exact candidates you recognize. **Check selected in Wave** is an optional read-only preflight. Tick the local approval checkbox, then **Create selected transfers & verify**. This action performs its own live preflight: complete ALL history for the relevant years, original bank/payment fields, USD/simple structure, and the exact transfer-creation account. It changes the bank category to a transfer and lets Wave create the missing counterpart. The Venmo purchase/category and reviewed statuses are preserved. Same-amount existing Venmo entries, fees, conflicting evidence, missing purchases and transactions before the recorded account opening stay held for inspection.
+
+The batch reuses owned background tabs, reports progress, and can stop after the current repair. Creation is checkpointed before the first possible financial click. **Recheck saved repairs** reads and verifies both transfer sides; it never repeats Save or creation. Verified and uncertain attempts survive reloads per business. Existing bookkeeping approvals and provider downloads are preserved. Refresh the Wave accounting export afterward to update the saved ledger balance. See [Venmo repair acceptance](docs/venmo-funding-repair.md).
 
 ## Install
 

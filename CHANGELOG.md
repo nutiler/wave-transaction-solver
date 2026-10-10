@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.99.13 — Venmo balance and missing-transfer repair
+
+- Add a Venmo balance tab covering all saved accounting history and statement funding/destination evidence. Distinguish missing payment funding from missing cash-out withdrawals; show selected/verified balance estimates and a local actual-balance/date comparison.
+- Hold fees, missing purchase records, pre-opening movements, existing counterparts, ambiguous matches, conflicting source copies and business/profile mismatches. Never create a balance adjustment to force zero.
+- Add explicit approved transfer creation through Wave's exact create-transfer account section. Check complete live history and original records; preserve the Venmo payment and reviewed states. Verify the exact new counterpart and reciprocal categories.
+- Checkpoint before any potentially persistent menu click. Reuse owned tabs; verify batches read-only; retain saved attempts and approvals per business across reloads. Unreadable checkpoints block creation. No real Wave transactions changed during development.
+- Add fictional model/runner tests and desktop/mobile browser coverage for creation in both directions, duplicate prevention, lost-response recovery, local approvals, balance comparison, reloads and business isolation.
+
 ## 0.99.12 — shareable activity console and provider controls
 
 - Add cross-page local diagnostics with timestamped activity/status/provider steps and error stacks; support search, provider/severity filters, copy and text download. Keep 1,000 lines in a separate database and strip URLs, credentials, email addresses, long IDs and paths. Clear preserves financial state.

@@ -1,6 +1,7 @@
 import {installFinanceHome} from './finance-home.js';
 import {installDataWorkspace} from './data-workspace.js';
 import {installSubscriptionView} from './subscription-view.js';
+import {installVenmoFundingView} from './venmo-funding-view.js';
 
 let controller=null;
 const make=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -11,16 +12,16 @@ export function showDebug(id){controller?.open('debug');const slot=document.getE
 export function debugLink(id,label='View diagnostics'){const b=make('button',label);b.type='button';b.className='secondary';b.onclick=()=>showDebug(id);return b;}
 export function showUsageSection(id){const target=document.getElementById(id);if(!target)return;if(target.closest('#debugWorkspace'))showDebug(target.closest('.debug-body')?.id);else controller?.open(target.closest('[data-stage]')?.dataset.stage||'transactions');if(target.tagName==='DETAILS')target.open=true;}
 
-export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}),onStageChange=()=>{},command=()=>null}={}){
+export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}),getFundingState=()=>({}),fundingAdapter,fundingRun,onStageChange=()=>{},command=()=>null}={}){
  const main=document.querySelector('main');document.body.classList.add('finance-app');
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.12';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.13';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();
- for(const [id,label] of [['transactions','Update finances'],['subscriptions','Subscriptions'],['setup','Data & setup'],['rules','Rules'],['debug','Advanced']]){
+ for(const [id,label] of [['transactions','Update finances'],['subscriptions','Subscriptions'],['funding','Venmo balance'],['setup','Data & setup'],['rules','Rules'],['debug','Advanced']]){
   const group=id==='debug'?debugRoot():make('div');if(id!=='debug'){group.id='usage-'+id;group.className='workflow-group';group.dataset.stage=id;group.setAttribute('role','tabpanel');usage.append(group);}group.setAttribute('aria-labelledby','workspace-'+id);groups.set(id,group);
   const b=make('button',label);b.type='button';b.id='workspace-'+id;b.dataset.stage=id;b.setAttribute('role','tab');b.setAttribute('aria-controls',group.id);b.onclick=()=>controller.open(id);buttons.set(id,b);nav.append(b);
  }
@@ -28,6 +29,7 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  const daily=groups.get('transactions'),data=groups.get('setup'),rules=groups.get('rules');
  const home=installFinanceHome({parent:daily,getState,command,openData:()=>controller.open('setup')});
  const subscriptions=installSubscriptionView({parent:groups.get('subscriptions'),getState:getSubscriptionState,openHistory:()=>showUsageSection('allCollection'),openData:()=>controller.open('setup')});
+ const funding=installVenmoFundingView({parent:groups.get('funding'),getState:getFundingState,makeAdapter:fundingAdapter,withRun:fundingRun,openData:()=>controller.open('setup'),openHistory:()=>showUsageSection('allCollection')});
  if(section('commandCenter'))daily.append(section('commandCenter'));
  data.append(make('h2','Your data & connections'),make('p','Connect once. Scan Wave for daily work; refresh files when you need history or purchase details.'));
  installDataWorkspace({parent:data,getState,command});
@@ -44,15 +46,15 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  const options=make('details');options.className='setup-options';options.append(make('summary','Working period & session options'),document.getElementById('workFrom')?.closest('label'),document.getElementById('clear'));data.append(options);
  debugSlot('sampleTools','Fictional sample').append(document.getElementById('sample'));
  for(const title of document.querySelectorAll('.step-title'))title.textContent=title.textContent.replace(/^\d+\.\s*/,'');
- main.querySelector('footer').textContent='Your files and decisions stay on this computer. Wave changes require your approved queue.';
+ main.querySelector('footer').textContent='Your files and decisions stay on this computer. Wave changes require your explicit local approval.';
  let active='transactions',seen=null;
- function refresh(){home.refresh();if(active==='subscriptions')subscriptions.refresh();ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
+ function refresh(){home.refresh();if(active==='subscriptions')subscriptions.refresh();if(active==='funding')void funding.refresh();ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
  function open(id,{save=true,focus=false}={}){
   if(['collection','planning','usage'].includes(id))id='transactions';if(!groups.has(id))id='transactions';active=id;
   for(const [key,g] of groups)g.hidden=key!==id;
   usage.hidden=id==='debug';
   for(const [key,b] of buttons){b.setAttribute('aria-selected',String(key===id));b.tabIndex=key===id?0:-1;}
-  heading.textContent=id==='subscriptions'?'Subscriptions':'Update my finances';intro.textContent=id==='subscriptions'?'Your recurring charges, costs, and expected billing dates.':'A clear path from new transactions to verified bookkeeping.';
+  heading.textContent=id==='subscriptions'?'Subscriptions':id==='funding'?'Venmo balance':'Update my finances';intro.textContent=id==='subscriptions'?'Your recurring charges, costs, and expected billing dates.':id==='funding'?'Find missing funding and cash-outs, then verify exact transfer repairs.':'A clear path from new transactions to verified bookkeeping.';
   document.getElementById('commandCenter').open=true;
   if(focus)buttons.get(id).focus();refresh();document.dispatchEvent(new CustomEvent('finance-workspace',{detail:id}));if(save)onStageChange(id);
  }
