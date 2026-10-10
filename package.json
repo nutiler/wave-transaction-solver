@@ -1,6 +1,6 @@
 {
   "name": "wave-transaction-solver",
-  "version": "0.99.18",
+  "version": "0.99.19",
   "private": true,
   "type": "module",
   "scripts": {

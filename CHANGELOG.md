@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.99.19 — matched opening-balance Save confirmation
+
+- Handle Wave's exact matched-transaction amount warning after the approved opening Save. Recheck the owned record, pending fields and USD currency before clicking Save changes once; wait for both dialogs to close and verify the saved amount. Never choose the reconciliation navigation action.
+- Preserve read-only rechecks and saved attempts. Allow one guarded recovery of the specific older form-close timeout when it exhausted the amount retry; preserve the earlier audit and prevent another recovery loop. A manually completed Save verifies without another write.
+- Add fictional browser checks for the observed warning, overlays without a dialog role, changed fields/business, ambiguous or disabled controls, unknown warnings, a stalled confirmation and deposit isolation.
+
 ## 0.99.18 — Venmo repair recovery and affected-year scans
 
 - Check a saved opening balance directly before history collection, distinguish the unchanged original from the approved target or an actual conflict, and allow one guarded idempotent amount retry through Do fixes. Preserve the earlier checkpoint; recheck stays read-only and creation/deletion attempts never repeat.

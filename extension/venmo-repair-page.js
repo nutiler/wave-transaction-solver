@@ -10,7 +10,7 @@ export async function venmoRepairPage(request={},context){
  const button=(root,names)=>[...root.querySelectorAll('button,[role="button"],a,[role="menuitem"]')].filter(e=>visible(e)&&names.includes(text(e))).filter(e=>![...e.querySelectorAll('button,[role="button"],a,[role="menuitem"]')].some(c=>visible(c)&&names.includes(text(c))));
  const dialog=()=>{const ds=[...doc.querySelectorAll('[role="dialog"],[aria-modal="true"]')].filter(visible),roots=ds.filter(e=>!ds.some(o=>o!==e&&o.contains(e)));if(roots.length===1)return roots[0];const headings=[...doc.querySelectorAll('h1,h2,h3,h4')].filter(e=>visible(e)&&/^(Edit transaction|Add deposit|Add transaction)$/.test(text(e)));if(headings.length===1)for(let e=headings[0].parentElement;e&&e!==doc.body;e=e.parentElement)if(e.querySelectorAll('input').length>=3&&button(e,['Save']).length===1)return e;throw Error('Cannot identify one Wave transaction form.');};
  const field=(root,name)=>{const selector='input:not([type="hidden"]):not([type="checkbox"]),select,.wv-select,[role="combobox"]';const named=[...root.querySelectorAll(selector)].filter(e=>visible(e)&&tidy(e.getAttribute('aria-label'))===name);if(named.length===1)return named[0];const found=new Set();for(const l of [...root.querySelectorAll('label,span')].filter(e=>visible(e)&&!e.children.length&&text(e)===name)){const linked=l.control||doc.getElementById(l.htmlFor);if(linked&&root.contains(linked)&&visible(linked)){found.add(linked);continue;}for(let e=l.parentElement;e&&e!==root;e=e.parentElement){const others=[...e.querySelectorAll('label,span')].filter(n=>!n.children.length&&['Date','Description','Account','Type','Amount','Category'].includes(text(n))&&text(n)!==name);if(others.length)break;const controls=[...e.querySelectorAll(selector)].filter(visible),top=controls.filter(c=>!controls.some(o=>o!==c&&o.contains(c)));if(top.length===1){found.add(top[0]);break;}}}if(found.size!==1)throw Error(name+' control is missing or ambiguous.');return [...found][0];};
- const value=e=>e.tagName==='INPUT'?tidy(e.value):e.tagName==='SELECT'?tidy(e.selectedOptions[0]?.textContent):(()=>{const l=[...e.querySelectorAll('.wv-select__label')].filter(visible);if(l.length!==1)throw Error('Selected dropdown label is ambiguous.');return text(l[0]);})();
+ const value=(e,covered=false)=>e.tagName==='INPUT'?tidy(e.value):e.tagName==='SELECT'?tidy(e.selectedOptions[0]?.textContent):(()=>{const l=[...e.querySelectorAll('.wv-select__label')].filter(n=>covered||visible(n));if(l.length!==1)throw Error('Selected dropdown label is ambiguous.');return text(l[0]);})();
  const set=(input,v)=>{if(input.tagName!=='INPUT'||!enabled(input))throw Error('Editable input is unavailable.');const setter=Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype,'value')?.set;if(!setter)throw Error('Input setter unavailable.');setter.call(input,v);input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));};
  const extra=root=>{
   const notes=[...root.querySelectorAll('textarea')].filter(visible).some(e=>tidy(e.value));
@@ -37,9 +37,29 @@ export async function venmoRepairPage(request={},context){
   const trigger=control.querySelector('.wv-select__toggle')||control;if(!enabled(trigger))throw Error(name+' is disabled.');trigger.click();
   for(const target of [...path,label]){let choices=[];for(let n=0;n<20;n++){const candidates=[...doc.querySelectorAll('.wv-select__menu__option,[role="option"],[role="menuitem"],.wv-list__item,button,li')].filter(e=>visible(e)&&text(e)===target);choices=candidates.filter(e=>!candidates.some(o=>o!==e&&e.contains(o)));if(choices.length===1)break;await pause(100);}if(choices.length!==1||!enabled(choices[0]))throw Error('Cannot identify exact '+name+' menu option '+target+'.');scope();choices[0].click();await pause(100);}
  }
- let mutationAttempted=false,stage='preflight';
+ let mutationAttempted=false,saveConfirmationAttempted=false,stage='preflight';
  const alerts=root=>new Set([...root.querySelectorAll('[role="alert"]')].filter(visible).map(text));
- const settleSave=async(root,priorAlerts)=>{for(let n=0;n<100;n++){await pause(150);if(!root.isConnected||!visible(root))return;const errors=[...root.querySelectorAll('[role="alert"],.wv-form-field__error,[aria-invalid="true"]')].filter(e=>visible(e)&&(!e.matches('[role="alert"]')||!priorAlerts.has(text(e))));if(errors.length)throw Error('Wave did not finish Save: '+(errors.map(e=>text(e)).filter(Boolean).join('; ')||'a field is invalid')+'. Saved outcome remains locked for recheck.');}throw Error('Wave has not closed the transaction form after Save. Saved outcome remains locked; recheck before continuing.');};
+ const warningHeading='If you change the amount, your books will be out-of-sync',warningBody="You've already matched this transaction. Are you sure you want to make these changes?";
+ const warningText=e=>text(e).replace(/[’]/g,"'").replace(/[‑–]/g,'-');
+ const openingConfirmation=root=>{
+  const matches=e=>e!==root&&visible(e)&&warningText(e).includes(warningHeading)&&warningText(e).includes(warningBody)&&button(e,['Save changes']).length>0;
+  let candidates=[...doc.querySelectorAll('[role="dialog"],[aria-modal="true"]')].filter(matches);
+  // Wave also renders some confirmation overlays without a dialog role.
+  if(!candidates.length)for(const heading of [...doc.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],p,strong,div')].filter(e=>visible(e)&&warningText(e)===warningHeading))for(let e=heading.parentElement;e&&e!==doc.body&&e!==root;e=e.parentElement){if(matches(e)){candidates.push(e);break;}}
+  candidates=[...new Set(candidates)].filter(e=>!candidates.some(other=>other!==e&&e.contains(other)));
+  if(candidates.length>1)throw Error('Multiple opening-amount confirmations are open.');
+  return candidates[0]||null;
+ };
+ const openingGuard=root=>{
+  const controls=Object.fromEntries(['Date','Description','Account','Type','Amount','Category'].map(name=>[name,field(root,name)])),values=Object.fromEntries(Object.entries(controls).map(([name,e])=>[name,value(e)])),currencies=[...root.querySelectorAll('span,div')].filter(e=>visible(e)&&!e.children.length&&text(e)==='USD');
+  return ()=>{scope();if(!root.isConnected||!currencies.length||currencies.some(e=>!root.contains(e)||text(e)!=='USD'))throw Error('Opening form identity or currency changed before confirmation.');for(const [name,e] of Object.entries(controls))if(!root.contains(e)||!e.isConnected||(name==='Amount'?cash(value(e,true))!==cash(values[name]):value(e,true)!==values[name]))throw Error(name+' changed before opening confirmation.');};
+ };
+ const settleSave=async(root,priorAlerts,guard)=>{let confirmed=null;for(let n=0;n<100;n++){
+  await pause(150);
+  if(guard){const confirmation=openingConfirmation(root);if(confirmation){const save=button(confirmation,['Save changes']);if(save.length!==1||!enabled(save[0]))throw Error('Opening Save changes confirmation is missing, disabled or ambiguous.');if(!saveConfirmationAttempted){guard();saveConfirmationAttempted=true;stage='opening confirmation submitted';confirmed=confirmation;save[0].click();}continue;}}
+  if((!root.isConnected||root.hidden||root.closest('[hidden]')||style(root).display==='none'||style(root).visibility==='hidden')&&(!confirmed||!confirmed.isConnected||!visible(confirmed)))return;
+  const errors=[...root.querySelectorAll('[role="alert"],.wv-form-field__error,[aria-invalid="true"]')].filter(e=>visible(e)&&(!e.matches('[role="alert"]')||!priorAlerts.has(text(e))));if(errors.length)throw Error('Wave did not finish Save: '+(errors.map(e=>text(e)).filter(Boolean).join('; ')||'a field is invalid')+'. Saved outcome remains locked for recheck.');
+ }throw Error('Wave has not closed the transaction form after Save. Saved outcome remains locked; recheck before continuing.');};
  try{
   scope();
   if(request.action==='inspect')return extra(dialog());
@@ -51,12 +71,12 @@ export async function venmoRepairPage(request={},context){
   }
   let root=assertFields(request.expected);const details=extra(root);
   if(request.kind==='opening'){
-   if(!Number.isSafeInteger(request.targetCents)||request.targetCents<0)throw Error('Invalid opening amount.');set(field(root,'Amount'),(request.targetCents/100).toFixed(2));root=assertFields(request.expected,(request.targetCents/100).toFixed(2));const save=button(root,['Save']);if(save.length!==1||!enabled(save[0]))throw Error('Opening balance Save unavailable.');const priorAlerts=alerts(root);mutationAttempted=true;stage='opening submitted';save[0].click();await settleSave(root,priorAlerts);return {mutationAttempted,stage,formClosed:true};
+   if(!Number.isSafeInteger(request.targetCents)||request.targetCents<0)throw Error('Invalid opening amount.');set(field(root,'Amount'),(request.targetCents/100).toFixed(2));root=assertFields(request.expected,(request.targetCents/100).toFixed(2));const save=button(root,['Save']);if(save.length!==1||!enabled(save[0]))throw Error('Opening balance Save unavailable.');const priorAlerts=alerts(root),guard=openingGuard(root);mutationAttempted=true;stage='opening submitted';save[0].click();await settleSave(root,priorAlerts,guard);return {mutationAttempted,saveConfirmationAttempted,stage,formClosed:true};
   }
   if(!['duplicate','fee'].includes(request.kind)||details.protected)throw Error('Deletion is blocked by protected details or unsupported action.');
   if(request.split){const actual=details.allocations.map(p=>[p.category,p.amountCents]).sort();if(JSON.stringify(actual)!==JSON.stringify(request.allocations))throw Error('Split fee allocation changed.');}
   const trash=[...root.querySelectorAll('button,[role="button"]')].filter(e=>visible(e)&&accessible(e).some(n=>/^(Delete(?: transaction)?|TrashIcon|DeleteIcon)$/i.test(n)));if(trash.length!==1||!enabled(trash[0]))throw Error('Cannot identify one exact Delete transaction control.');assertFields(request.expected);mutationAttempted=true;trash[0].click();
   for(let n=0;n<15;n++){await pause(100);const confirmations=[...doc.querySelectorAll('[role="dialog"],[aria-modal="true"]')].filter(e=>visible(e)&&/delete/i.test(text(e))&&e!==root);if(confirmations.length>1)throw Error('Multiple deletion confirmations are open.');if(confirmations.length===1){const confirm=button(confirmations[0],['Delete','Delete transaction']);if(confirm.length!==1||!enabled(confirm[0]))throw Error('Deletion confirmation is ambiguous.');scope();confirm[0].click();break;}if(!visible(root))break;}
   return {mutationAttempted,stage:'deletion requested'};
- }catch(e){return {mutationAttempted,stage,problem:e.message,controlDiagnostics:(()=>{try{return [...dialog().querySelectorAll('button,[role="button"]')].filter(visible).map(e=>({names:accessible(e).filter(Boolean),disabled:!enabled(e)}));}catch{return [];}})()};}
+ }catch(e){return {mutationAttempted,saveConfirmationAttempted,stage,problem:e.message,controlDiagnostics:(()=>{try{return [...dialog().querySelectorAll('button,[role="button"]')].filter(visible).map(e=>({names:accessible(e).filter(Boolean),disabled:!enabled(e)}));}catch{return [];}})()};}
 }
