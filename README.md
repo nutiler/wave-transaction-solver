@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.9)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.10)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -25,6 +25,18 @@ If a scan tab closes, collection automatically opens a replacement in the same C
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
 
 For Wave AI-categorized transactions, **Apply & verify** opens the exact record’s **Review updates** menu. If the displayed category matches your local approval, it uses **Confirm category**; otherwise it uses **Change category** and selects your approved category. It then uses **Mark as reviewed** and verifies the saved fields and reviewed status after reopening the record. Unrecognized, disabled or ambiguous menu actions stop with diagnostics. Category confirmation is treated as a possible write and retained in the save history; an uncertain response never triggers a blind repeat.
+
+## Apple Card → Wave
+
+Open **Data & setup → Collect Apple Card → Wave** after reloading the existing extension. The helper reads original Apple Card transaction CSVs already in the shared data folder, or collects a new one through Statements → Export Transactions. Connect its optional Apple/download access once and choose the shared data and browser download folders. The personal target account URL can be saved in ignored settings.local.js under appleCardAccounts; it is also editable in the helper. Check that it identifies your USD Apple Card credit-card account.
+
+Click **Check Wave & prepare import** to read reviewed and unreviewed transactions across every posting year in the CSV. Review the missing-row preview, then **Upload missing & verify**. The importer verifies the exact business and account ID and credit-card account type, retains source originals, and saves a filtered CSV under apple-card/uploads. It uses posting dates and preserves Apple’s positive charges and negative payments/credits, consistent with [Wave’s credit-card CSV mapping guidance](https://support.waveapps.com/hc/en-us/articles/208621626-Upload-a-bank-or-credit-card-statement-in-csv-format).
+
+Future exports may cover the full available range again. Matching uses posting date, signed amount and original description with duplicate counts; saved Wave transaction IDs continue identifying renamed records. Same-date/amount conflicts, changed or missing prior records, incomplete collections and unknown mappings are held. Apple’s CSV has no transaction ID, so exact field agreement is evidence of an existing row, not a unique bank-issued identity. A latest imported date alone is never used to discard backfilled transactions.
+
+A checkpoint is saved before file submission and again before final import. An uncertain outcome disables another upload; **Recheck previous import** reads Wave without repeating the file or final submission. New transactions are not categorized or marked reviewed by this helper. Existing bookkeeping approvals and recovery receipts are retained. Verified account history also becomes available to Subscription Finder; raw Apple CSV rows are not presented as Wave records before import.
+
+Automated validation uses fictional provider pages and Wave records. Signed-in Apple calendars and Wave upload layouts still require live acceptance; unfamiliar controls or missing exact-account evidence pause with diagnostics instead of guessing. The original CSV in data is available even when automatic export needs manual date selection.
 
 ## Subscription Finder
 

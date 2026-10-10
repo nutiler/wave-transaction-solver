@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dandelion's Wave Transaction Solver",
-  "version": "0.99.9",
+  "version": "0.99.10",
   "version_name": "1.0 preview",
   "description": "Update your finances: scan Wave, approve locally, apply and verify. Shared evidence folder, persistent collectors and recovery.",
   "permissions": [
@@ -33,6 +33,8 @@
     "https://www.amazon.com/b2b/aba/*",
     "https://accounting.waveapps.com/settings/export/*",
     "https://mail.google.com/mail/*",
-    "https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/*"
+    "https://wave-prod-accounting.s3.amazonaws.com/accounting_exports/*",
+    "https://card.apple.com/*",
+    "https://accounting.waveapps.com/transactions/*"
   ]
 }

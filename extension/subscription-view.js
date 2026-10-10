@@ -82,7 +82,7 @@ export function installSubscriptionView({parent,getState,openHistory=()=>{},open
   loading=true;controls();status.textContent='Reading available history…';
   try{
    if(owner!==business){owner=business;choices=restoreChoices(await loadLocalFeature('finance:subscriptions:'+business),business);analysis=null;stamp=null;render();}
-   await paintActivity();const prepared=prepareSubscriptionTransactions(input),asOf=localDate(),nextStamp=await fingerprint({version:subscriptionVersion,prepared,asOf});
+   await paintActivity();const apple=await loadLocalFeature('finance:apple-history:'+business),reports=apple?.business===business?Object.values(apple.accounts||{}).filter(r=>r.business===business&&r.filter==='APPLE_CARD'):[];const prepared=prepareSubscriptionTransactions({...input,reports:[...(input.reports||[]),...reports]}),asOf=localDate(),nextStamp=await fingerprint({version:subscriptionVersion,prepared,asOf});
    if(token!==epoch||getState().business!==business)return;
    if(!force&&nextStamp===stamp&&analysis){status.textContent='Up to date · analyzed '+analysis.coverage.observed+' available transactions. No Wave changes.';return;}
    const cached=!force?await loadLocalFeature('finance:subscription-cache:'+business):null;

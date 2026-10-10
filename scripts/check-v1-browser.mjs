@@ -68,7 +68,7 @@ try {
  await page.evaluate(()=>{const real=chrome.scripting.executeScript;let closed=false;chrome.scripting.executeScript=async options=>{if(!closed&&options.func.name==='waveListScan'&&options.args?.[0]?.action==='start'){closed=true;await chrome.tabs.remove(options.target.tabId);throw Error('No tab with id: '+options.target.tabId);}return real(options);};});await page.locator('#updateFinances').click();await idle();assert.doesNotMatch(await page.locator('#commandProgress').innerText(),/Preparation stopped/);
  console.log('Apply retries failed preparation, verifies prior saves without duplicate edits, continues approvals, and replaces closed scan tabs.');
 
- await page.getByRole('tab',{name:'Data & setup',exact:true}).click();await page.screenshot({path:'data/qa/v1-data.png',fullPage:true});assert.equal(await page.locator('.finance-providers section').count(),4);assert.equal(await page.getByRole('button',{name:'Export local backup',exact:true}).isVisible(),true);
+ await page.getByRole('tab',{name:'Data & setup',exact:true}).click();await page.screenshot({path:'data/qa/v1-data.png',fullPage:true});assert.equal(await page.locator('.finance-providers section').count(),5);assert.equal(await page.getByRole('button',{name:'Export local backup',exact:true}).isVisible(),true);
  await page.getByRole('tab',{name:'Rules',exact:true}).click();assert.equal(await page.locator('#rules .rule').count(),1);
  await page.evaluate(async()=>{
   const root=await navigator.storage.getDirectory(),data=await root.getDirectoryHandle('data',{create:true});

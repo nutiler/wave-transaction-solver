@@ -1,11 +1,13 @@
 import {parseCSV} from './csv.js';
 import {importAccounting} from './model.js';
 import {extractLocalPDF} from './source-pdf.js';
+import {appleStatementHeader,parseAppleCard} from './apple-card.js';
 
 export function detectDataProvider(text,name='') {
  if(/\.pdf$/i.test(name))return /PAYPAL (?:BALANCE )?ACCOUNT/i.test(text)&&/ACCOUNT ACTIVITY/i.test(text)?'paypal':/paypal|statement-/i.test(name)?'paypal':'';
  const rows=parseCSV(text,{excelText:true}).slice(0,30),has=(row,names)=>names.every(n=>row.includes(n));
  if(rows.some(r=>has(r,['Transaction ID','Account Name','Account Group','Debit Amount (Two Column Approach)'])))return 'wave';
+ if(rows.some(appleStatementHeader))return 'apple';
  if(rows.some(r=>has(r,['Order ID','ASIN','Payment Reference ID'])))return 'amazon';
  if(rows.some(r=>r.some(c=>/^Transaction ID$/i.test(c))&&r.some(c=>/^Currency$/i.test(c))&&r.some(c=>/^(Gross|Amount)$/i.test(c))&&r.some(c=>/^(Net|Total)$/i.test(c))))return 'paypal';
  if(rows.some(r=>r.some(c=>/^(ID|Transaction ID)$/i.test(c))&&r.some(c=>/^Amount\s*\(total\)$/i.test(c))&&r.some(c=>/^Type$/i.test(c))))return 'venmo';
@@ -44,12 +46,14 @@ export async function indexDataFolder(folder) {
   try {
    const file=await entry.handle.getFile();
    if(file.size>30*1024*1024)throw Error('File exceeds 30 MB. Split the export into smaller reports.');
+   if(/^apple-card\/uploads\/.*\.csv$/i.test(entry.path)){results.push({path:entry.path,provider:'apple',status:'supporting',size:file.size,message:'Prepared Wave upload retained with its import checkpoint; this is not Wave accounting history.'});continue;}
    if(/^wave\/exports\/export-[a-f0-9]{16}\/(wave-export\.zip|customers\.csv|vendors\.csv|bill_items\.csv)$/i.test(entry.path)||/^paypal\/raw\/paypal-(all|balance)-.*\.response\.local\.txt$/i.test(entry.path)){results.push({path:entry.path,provider:entry.path.split('/')[0],status:'supporting',size:file.size,message:'Helper original or companion file preserved. The accounting and provider CSVs are imported separately.'});continue;}
    if(!/\.(csv|pdf)$/i.test(file.name))throw Error(/\.zip$/i.test(file.name)?'Use the Wave export helper to safely extract this ZIP, or extract accounting.csv here.':'Use a supported CSV or text-based PayPal PDF export.');
    const pages=/\.pdf$/i.test(file.name)?await extractLocalPDF(file):null,text=pages?pages.join('\n'):await file.text();
    const provider=detectDataProvider(text,entry.path);
-   if(!provider)throw Error('Report type was not recognized. Use Wave Accounting CSV, Amazon order/item CSV, PayPal activity CSV or statement PDF, or Venmo transaction CSV.');
+   if(!provider)throw Error('Report type was not recognized. Use Wave Accounting CSV, Amazon order/item CSV, PayPal activity CSV or statement PDF, Venmo transaction CSV, or an original Apple Card transactions CSV.');
    const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),b=>b.toString(16).padStart(2,'0')).join('');
+   if(provider==='apple'){const parsed=await parseAppleCard(text,{name:file.name});results.push({path:entry.path,provider,status:'supporting',sha256,size:file.size,count:parsed.records.length,message:'Apple Card original recognized. Use Apple Card → Wave to check this account and import only missing transactions.'});continue;}
    if(provider==='wave'){const dataset=importAccounting(text);wave.push({...entry,text,file,sha256,dataset});}
    else evidence.push({...entry,provider,file,sha256,pages});
    results.push({path:entry.path,provider,status:'recognized',sha256,size:file.size});

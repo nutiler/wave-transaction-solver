@@ -42,7 +42,7 @@ export function prepareSubscriptionTransactions({business,transactions=[],liveTr
  const fullReports=reports.filter(r=>r?.business===business&&r.filter==='ALL');
  for(const report of reports.filter(r=>r?.business===business))for(const r of report.records||[]){
   const direction=r.direction||(r.type==='Withdrawal'?'out':r.type==='Deposit'?'in':/^\s*[-−]/.test(r.amountText||'')?'out':/^\s*\+/.test(r.amountText||'')?'in':null);
-  add({id:r.id,date:r.date,description:r.description,account:r.account,accountKey:r.accountId||clean(r.account),amountCents:r.amountCents,direction,currency:code(r.currency),categories:[r.category||''],transfer:/^(?:Transfer(?: to| from| Clearing)?|Payment (?:Sent|Received) for)\b/i.test(r.category||''),source:report.filter==='ALL'?'Full live collection':'Not Reviewed collection',capture:report.capturedAt});
+  add({id:r.id,date:r.date,description:r.description,account:r.account,accountKey:r.accountId||clean(r.account),amountCents:r.amountCents,direction,currency:code(r.currency),categories:[r.category||''],transfer:/^(?:Transfer(?: to| from| Clearing)?|Payment (?:Sent|Received) for)\b/i.test(r.category||''),source:report.filter==='ALL'?'Full live collection':report.filter==='APPLE_CARD'?'Apple Card account collection':'Not Reviewed collection',capture:report.capturedAt});
  }
  const transferIDs=new Set();
  for(const [key,r] of Object.entries(receipts)){

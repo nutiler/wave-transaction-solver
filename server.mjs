@@ -12,11 +12,14 @@ extensionFiles['venmo-empty-fixture.html']='text/html';
 extensionFiles['venmo-empty-fixture.js']='text/javascript';
 for(const name of ['subscriptions.js','subscription-view.js','subscription-worker.js','subscription-fixture.js'])extensionFiles[name]='text/javascript';
 extensionFiles['subscription-fixture.html']='text/html';
+for(const name of ['apple-card.js','apple-card-page.js','apple-card-wave.js','apple-card-runner.js','apple-card-app.js','apple-card-fixture.js'])extensionFiles[name]='text/javascript';
+extensionFiles['apple-card.html']='text/html';extensionFiles['apple-card-fixture.html']='text/html';extensionFiles['apple-card.css']='text/css';
 const port = Number(process.env.PORT || 4317);
 http.createServer(async (req, res) => {
-  const extensionName = req.url?.startsWith('/extension/') ? req.url.slice('/extension/'.length) : '';
+  const requestPath=new URL(req.url,'http://127.0.0.1').pathname;
+  const extensionName = requestPath.startsWith('/extension/') ? requestPath.slice('/extension/'.length) : '';
   const isExtension = Object.hasOwn(extensionFiles, extensionName);
-  const file = isExtension ? [extensionName, extensionFiles[extensionName]] : files[req.url];
+  const file = isExtension ? [extensionName, extensionFiles[extensionName]] : files[requestPath];
   if (req.method !== 'GET' || !file) { res.writeHead(404); res.end('Not found'); return; }
   try {
     const body = await readFile(new URL(`./${isExtension ? 'extension' : 'public'}/${file[0]}`, import.meta.url));

@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.99.10 — Apple Card statement imports
+
+- Add an Apple Card helper for original CSVs and earliest-available web exports, with preserved originals, posting dates and signed charges/payments/credits.
+- Compare complete reviewed and unreviewed history against the exact USD credit-card account; retain duplicate counts and verified Wave IDs instead of relying on a latest-date cutoff. Hold conflicts and incomplete reads.
+- Preview missing rows, drive the CSV upload stages, checkpoint before submission and verify newly created Wave IDs. An uncertain upload is read only until resolved, including when preparation is run again before rechecking.
+- Share verified account history with Subscription Finder while keeping original Apple exports separate from Wave accounting records. Preserve existing approvals and refuse conflicting recovery backups.
+- Validate with fictional browser/calendar/import fixtures, desktop/mobile checks and existing regressions. Signed-in provider layouts remain a live acceptance step.
+
 ## 0.99.5 — actionable scan failure and empty-backlog recovery
 
 - Return and validate the current collection result, including business, Not Reviewed scope, fresh capture and complete unique-ID count. Surface loading, selection/filter and count failures instead of hiding them behind generic preparation text.
