@@ -48,6 +48,8 @@ export function validateLocalBackup(value) {
   if(typeof r.key!=='string'||keys.has(r.key)||(r.key!=='current'&&!featureKey.test(r.key)))throw Error('Unsupported or duplicate backup record.');keys.add(r.key);
   if(r.key==='current'&&!validSession(r.value))throw Error('The backup session is invalid.');
   const scoped=r.key.match(businessKey);
+  const subscriptionOwner=r.key.match(/^finance:subscriptions:([0-9a-f-]{36})$/i)?.[1];
+  if(subscriptionOwner&&r.value?.business!==subscriptionOwner)throw Error('Subscription choices belong to a different business.');
   if(scoped&&r.value?.business&&r.value.business!==scoped[2])throw Error('A backup record belongs to a different business.');
   if(r.key.startsWith('command:')&&scoped)for(const d of Object.values(r.value?.decisions||{})) {
    if(d.business!==scoped[2]||!Array.isArray(d.ids)||!d.ids.every(id=>typeof id==='string')||!Array.isArray(d.expected)||!d.expected.every(e=>typeof e.id==='string'&&Number.isSafeInteger(e.amountCents)))throw Error('A queued decision has invalid identity or amounts.');
@@ -64,7 +66,7 @@ export function planBackupImport(value,records,settings) {
   const current=existing.get(r.key),emptySession=r.key==='current'&&validSession(current)&&!current.csvText&&!current.loadedPlan&&!current.proposalPack&&!current.shortlist?.length;
   if(existing.has(r.key)&&!same(portableValue(current),portableValue(r.value))){
    if(emptySession){writes.push(r);continue;}
-   if(r.key.startsWith('finance:'))continue; // Keep new installation freshness and UI metadata.
+   if(r.key.startsWith('finance:')&&!r.key.startsWith('finance:subscriptions:'))continue; // Keep new installation freshness and UI metadata.
    throw Error('Existing '+r.key+' differs. Restore into a fresh installation to protect current approvals and save locks.');
   }
   if(!existing.has(r.key))writes.push(r);

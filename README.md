@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.6)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.7)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -23,6 +23,18 @@ Wave may display an expense refund as **Refund for [expense category]**. For an 
 If a scan tab closes, collection automatically opens a replacement in the same Chrome window without taking focus. A closure during collection restarts it once. Other scan failures show their actual loading/filter/count reason. **Apply & verify** retries a failed or outdated preparation before saving queued work; only a fresh complete collection permits execution. Approvals remain saved if preparation still fails. Clear extra searches/filters or selected checkboxes in Wave only when the specific diagnostic requests it. A stable explicit empty Not Reviewed list confirms zero; missing tables, loading, missing scope, unknown totals and partial rows do not prove an empty backlog.
 
 See [the extension guide](extension/README.md) for account-name collection, rules, live checks, export shortcuts, and session restoration.
+
+## Subscription Finder
+
+Open **Subscriptions** to analyze the selected business's available accounting history, saved full collection, confirmed live transaction details and saved observations. Reviewed transactions and earlier bookkeeping periods are included. Analysis stays local and makes no Wave calls. **Collect full Wave history** opens the existing read-only year collector; **Import history / evidence** opens Data & setup.
+
+Cards separate likely recurring charges, weaker possible patterns and variable bills. They show typical/latest charges, frequency, estimated monthly/annual cost, the next date implied by the observed pattern, possible price increases and possible duplicate schedules. Expand a card to see original descriptions, all supporting charges and exact Wave transaction links. Filter by account, confidence, frequency and fixed/variable amount; search names, notes and descriptions. Cost sorting and totals do not convert currencies.
+
+**Confirm subscription**, **Mark as recurring bill**, **Not recurring**, friendly names, notes and Undo change this list only. They never categorize, review, create a merchant rule or cancel a service. Choices persist per business and receive new matching charges. Names also survive descriptor changes when shared charge IDs establish continuity. Saved choices remain visible when supporting history is missing; no cancellation is inferred. Confirmed costs are estimates of the observed pattern, not a contract or guarantee of future billing.
+
+Coverage distinguishes available date ranges from count-confirmed full collections. Incoming/refund/transfer/payment movements, conflicting copies, truncated fields, missing money direction and future-dated records are excluded explicitly. Missing currency stays unspecified and costs remain separate by account. Generic retail/processor descriptions stay tentative unless an unchanged confirmed source link identifies the merchant/service. Source guesses never become links. High-volume groups over 600 charges need more specific service/item evidence and are reported rather than silently treated as subscriptions.
+
+Detection runs in a local worker, can be stopped, and is cached by business, input fingerprint, date and algorithm version. Timelines and large result sets load on demand. Portable backups include subscription choices and refuse conflicting replacements.
 
 ## Workspace
 

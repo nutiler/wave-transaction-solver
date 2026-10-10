@@ -1,5 +1,6 @@
 import {installFinanceHome} from './finance-home.js';
 import {installDataWorkspace} from './data-workspace.js';
+import {installSubscriptionView} from './subscription-view.js';
 
 let controller=null;
 const make=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -10,22 +11,23 @@ export function showDebug(id){controller?.open('debug');const slot=document.getE
 export function debugLink(id,label='View diagnostics'){const b=make('button',label);b.type='button';b.className='secondary';b.onclick=()=>showDebug(id);return b;}
 export function showUsageSection(id){const target=document.getElementById(id);if(!target)return;if(target.closest('#debugWorkspace'))showDebug(target.closest('.debug-body')?.id);else controller?.open(target.closest('[data-stage]')?.dataset.stage||'transactions');if(target.tagName==='DETAILS')target.open=true;}
 
-export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command=()=>null}={}){
+export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}),onStageChange=()=>{},command=()=>null}={}){
  const main=document.querySelector('main');document.body.classList.add('finance-app');
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.6';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.7';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();
- for(const [id,label] of [['transactions','Update finances'],['setup','Data & setup'],['rules','Rules'],['debug','Advanced']]){
+ for(const [id,label] of [['transactions','Update finances'],['subscriptions','Subscriptions'],['setup','Data & setup'],['rules','Rules'],['debug','Advanced']]){
   const group=id==='debug'?debugRoot():make('div');if(id!=='debug'){group.id='usage-'+id;group.className='workflow-group';group.dataset.stage=id;group.setAttribute('role','tabpanel');usage.append(group);}group.setAttribute('aria-labelledby','workspace-'+id);groups.set(id,group);
   const b=make('button',label);b.type='button';b.id='workspace-'+id;b.dataset.stage=id;b.setAttribute('role','tab');b.setAttribute('aria-controls',group.id);b.onclick=()=>controller.open(id);buttons.set(id,b);nav.append(b);
  }
  header.after(nav);const section=id=>document.getElementById(id)?.closest('section');
  const daily=groups.get('transactions'),data=groups.get('setup'),rules=groups.get('rules');
  const home=installFinanceHome({parent:daily,getState,command,openData:()=>controller.open('setup')});
+ const subscriptions=installSubscriptionView({parent:groups.get('subscriptions'),getState:getSubscriptionState,openHistory:()=>showUsageSection('allCollection'),openData:()=>controller.open('setup')});
  if(section('commandCenter'))daily.append(section('commandCenter'));
  data.append(make('h2','Your data & connections'),make('p','Connect once. Scan Wave for daily work; refresh files when you need history or purchase details.'));
  installDataWorkspace({parent:data,getState,command});
@@ -44,12 +46,13 @@ export function installWorkspace({getState=()=>({}),onStageChange=()=>{},command
  for(const title of document.querySelectorAll('.step-title'))title.textContent=title.textContent.replace(/^\d+\.\s*/,'');
  main.querySelector('footer').textContent='Your files and decisions stay on this computer. Wave changes require your approved queue.';
  let active='transactions',seen=null;
- function refresh(){home.refresh();ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
+ function refresh(){home.refresh();if(active==='subscriptions')subscriptions.refresh();ruleScope.textContent=getState().business?'Business scope: '+getState().business:'Choose a Wave business before adding rules.';if(seen!==getState().business){seen=getState().business;void home.restore();}buttons.get('setup').classList.toggle('needs-setup',!getState().business);}
  function open(id,{save=true,focus=false}={}){
   if(['collection','planning','usage'].includes(id))id='transactions';if(!groups.has(id))id='transactions';active=id;
   for(const [key,g] of groups)g.hidden=key!==id;
   usage.hidden=id==='debug';
   for(const [key,b] of buttons){b.setAttribute('aria-selected',String(key===id));b.tabIndex=key===id?0:-1;}
+  heading.textContent=id==='subscriptions'?'Subscriptions':'Update my finances';intro.textContent=id==='subscriptions'?'Your recurring charges, costs, and expected billing dates.':'A clear path from new transactions to verified bookkeeping.';
   document.getElementById('commandCenter').open=true;
   if(focus)buttons.get(id).focus();refresh();document.dispatchEvent(new CustomEvent('finance-workspace',{detail:id}));if(save)onStageChange(id);
  }
