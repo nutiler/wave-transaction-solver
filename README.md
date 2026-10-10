@@ -2,7 +2,7 @@
 
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.8)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.9)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Install
 
@@ -27,6 +27,8 @@ See [the extension guide](extension/README.md) for account-name collection, rule
 For Wave AI-categorized transactions, **Apply & verify** opens the exact record’s **Review updates** menu. If the displayed category matches your local approval, it uses **Confirm category**; otherwise it uses **Change category** and selects your approved category. It then uses **Mark as reviewed** and verifies the saved fields and reviewed status after reopening the record. Unrecognized, disabled or ambiguous menu actions stop with diagnostics. Category confirmation is treated as a possible write and retained in the save history; an uncertain response never triggers a blind repeat.
 
 ## Subscription Finder
+
+The default **Recent findings (18 months)** view includes only patterns with a charge within the last 18 calendar months, including the cutoff date. Patterns with older last charges move to **Historical patterns** and are excluded from the main counts and current confirmed cost estimates. **All findings (all history)** shows both. All old transactions still support detection; saved names, notes and confirmations remain intact. A historical label means probably no longer subscribed under this rule, not confirmed cancellation. New matching charges can return a pattern to the recent list.
 
 Open **Subscriptions** to analyze the selected business's available accounting history, saved full collection, confirmed live transaction details and saved observations. Reviewed transactions and earlier bookkeeping periods are included. Analysis stays local and makes no Wave calls. **Collect full Wave history** opens the existing read-only year collector; **Import history / evidence** opens Data & setup.
 

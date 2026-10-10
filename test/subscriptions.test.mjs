@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {prepareSubscriptionTransactions,findSubscriptions,subscriptionMerchant,saveSubscriptionChoice,subscriptionChoice,observeSubscriptionChoices,undoSubscriptionChoice,subscriptionTotals} from '../extension/subscriptions.js';
+import {prepareSubscriptionTransactions,findSubscriptions,subscriptionMerchant,saveSubscriptionChoice,subscriptionChoice,observeSubscriptionChoices,undoSubscriptionChoice,subscriptionTotals,subscriptionRecentSince} from '../extension/subscriptions.js';
 import {recordSnapshot} from '../extension/plan.js';import {evidenceSnapshot} from '../extension/service-solvers.js';
 import {validateLocalBackup,planBackupImport} from '../extension/migration.js';
 const business='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
@@ -79,4 +79,23 @@ test('subscription choices participate in portable backups without silently repl
 test('truncated descriptors and missing capture dates cannot establish a complete subscription history',()=>{
  const rows=monthly().map(t=>({...t,description:'Fictional Cloud…'})),result=analyze(rows);assert.equal(result.findings.length,0);assert.equal(result.coverage.excluded['Truncated account or description'],4);
  const report={business,filter:'ALL',completeness:'count-confirmed',expectedTotal:0,records:[]};assert.equal(prepareSubscriptionTransactions({business,reports:[report]}).coverage.fullCountConfirmed,false);
+});
+
+test('18 calendar months is inclusive and handles month ends and leap years',()=>{
+ assert.equal(subscriptionRecentSince('2026-10-09'),'2025-04-09');assert.equal(subscriptionRecentSince('2026-08-31'),'2025-02-28');assert.equal(subscriptionRecentSince('2025-08-31'),'2024-02-29');assert.throws(()=>subscriptionRecentSince('2026-02-30'));
+ const boundary=analyze(['2023-04-09','2024-04-09','2025-04-09'].map(d=>tx(d))).findings[0],old=analyze(['2023-04-08','2024-04-08','2025-04-08'].map(d=>tx(d))).findings[0];assert.equal(boundary.recency,'recent');assert.equal(old.recency,'historical');
+});
+
+test('old charges remain supporting evidence for a pattern with a recent charge',()=>{
+ const rows=Array.from({length:7},(_,i)=>tx((2020+i)+'-06-15')),result=analyze(rows),f=result.findings[0];assert.equal(result.recentSince,'2025-04-09');assert.equal(f.recency,'recent');assert.equal(f.transactions.length,7);assert.equal(f.firstDate,'2020-06-15');assert.equal(result.coverage.observed,7);
+});
+
+test('each independent plan uses its own latest charge, including plans at the same merchant',()=>{
+ const old=['2023-08-05','2023-09-05','2023-10-05','2023-11-05'].map(d=>tx(d,1000)),recent=monthly(4000),findings=analyze([...old,...recent]).findings;assert.equal(findings.length,2);assert.equal(findings.find(f=>f.typicalCents===1000).recency,'historical');assert.equal(findings.find(f=>f.typicalCents===4000).recency,'recent');assert.equal(findings.flatMap(f=>f.transactions).length,8);
+});
+
+test('aging excludes confirmed estimates without deleting names, notes or choices; a new charge reactivates the pattern',()=>{
+ const rows=['2022-06-15','2023-06-15','2024-06-15','2025-06-15'].map(d=>tx(d)),f=analyze(rows).findings[0],state=saveSubscriptionChoice({version:1,business,choices:{},history:[]},f,{kind:'subscription',name:'Work license',note:'Keep history'}),before=structuredClone(state),aged=findSubscriptions(prepareSubscriptionTransactions({business,transactions:rows}),{asOf:'2027-01-16'}).findings[0];
+ assert.equal(aged.recency,'historical');assert.equal(aged.transactions.length,4);assert.equal(subscriptionTotals([aged],state).length,0);assert.equal(subscriptionChoice(state,aged).name,'Work license');assert.equal(subscriptionChoice(state,aged).kind,'subscription');assert.deepEqual(state,before);
+ const current=findSubscriptions(prepareSubscriptionTransactions({business,transactions:[...rows,tx('2026-06-15')]}),{asOf:'2027-01-16'}).findings[0],observed=observeSubscriptionChoices(state,[current]);assert.equal(current.recency,'recent');assert.equal(subscriptionChoice(observed,current).note,'Keep history');assert.equal(subscriptionChoice(observed,current).ids.length,5);assert.equal(subscriptionTotals([current],observed)[0].count,1);assert.doesNotMatch(current.explanation,/canceled|cancelled/i);
 });

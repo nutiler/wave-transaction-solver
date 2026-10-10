@@ -2,7 +2,7 @@ import {recordSnapshot} from './plan.js';
 import {evidenceSnapshot} from './service-solvers.js';
 import {nonPurchaseReason} from './rules.js';
 
-export const subscriptionVersion=1;
+export const subscriptionVersion=2;
 const clean=v=>String(v??'').normalize('NFKC').replace(/\s+/g,' ').trim();
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const day=date=>Date.parse(date+'T00:00:00Z')/86400000;
@@ -78,6 +78,7 @@ export function prepareSubscriptionTransactions({business,transactions=[],liveTr
 }
 
 function addMonths(date,months,anchor=null){const d=new Date(date+'T00:00:00Z'),wanted=anchor??d.getUTCDate(),target=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+months,1)),end=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();target.setUTCDate(Math.min(wanted,end));return target.toISOString().slice(0,10);}
+export function subscriptionRecentSince(asOf){if(!validDate(asOf))throw Error('A valid analysis date is required.');return addMonths(asOf,-18);}
 function relation(a,b,c){const delta=day(b.date)-day(a.date);if(delta<=0)return null;
  const months=(Number(b.date.slice(0,4))-Number(a.date.slice(0,4)))*12+Number(b.date.slice(5,7))-Number(a.date.slice(5,7));
  const cycles=Math.round(c.months?months/c.months:delta/c.days);if(cycles<1||cycles>3)return null;
@@ -113,6 +114,7 @@ function candidate(chain,business,asOf){
 }
 
 export function findSubscriptions(prepared,{asOf=new Date().toISOString().slice(0,10),progress=()=>{}}={}){
+ const recentSince=subscriptionRecentSince(asOf);
  const history=prepared.transactions.filter(t=>!validDate(asOf)||t.date<=asOf),future=prepared.transactions.length-history.length;
  const groups=new Map();for(const t of history){const key=JSON.stringify([t.accountKey,t.currency,t.merchantKey]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(t);}
  const findings=[],analysisIssues=[];
@@ -129,11 +131,14 @@ export function findSubscriptions(prepared,{asOf=new Date().toISOString().slice(
   if(earlier&&relation(earlier.transactions.at(-1),later.transactions[0],cadence)?.cycles===1){findings[i]=candidate({rows:[...earlier.transactions,...later.transactions],cadence},prepared.business,asOf);findings[j]=null;}
  }
  const result=findings.filter(Boolean);
+ // Keep every supporting transaction. Age affects presentation and current
+ // estimates only; separate plans at one merchant retain their own last charge.
+ for(const finding of result)finding.recency=finding.lastDate>=recentSince?'recent':'historical';
  for(let i=0;i<result.length;i++)for(let j=i+1;j<result.length;j++){const a=result[i],b=result[j];if(a.merchantKey!==b.merchantKey||a.currency!==b.currency||a.lastDate<b.firstDate||b.lastDate<a.firstDate)continue;
   for(const item of [a,b])if(!item.flags.includes('Multiple recurring schedules at this merchant'))item.flags.push('Multiple recurring schedules at this merchant');
   if(a.cadence===b.cadence&&Math.abs(a.typicalCents-b.typicalCents)<=Math.max(1,a.typicalCents*.02)&&Math.abs(day(a.lastDate)-day(b.lastDate))<=cadences.find(c=>c.id===a.cadence).tolerance)for(const item of [a,b])item.flags.push('Possible duplicate subscription — compare both timelines');
  }
- return {version:subscriptionVersion,business:prepared.business,asOf,coverage:{...prepared.coverage,eligible:history.length,unspecifiedCurrency:history.filter(t=>t.currency==='Unspecified').length,excluded:{...prepared.coverage.excluded,...(future?{'Future-dated records are not observed charges':future}:{})}},findings:result.sort((a,b)=>b.score-a.score||b.monthlyCents-a.monthlyCents||a.key.localeCompare(b.key)),analysisIssues};
+ return {version:subscriptionVersion,business:prepared.business,asOf,recentSince,recentMonths:18,coverage:{...prepared.coverage,eligible:history.length,unspecifiedCurrency:history.filter(t=>t.currency==='Unspecified').length,excluded:{...prepared.coverage.excluded,...(future?{'Future-dated records are not observed charges':future}:{})}},findings:result.sort((a,b)=>b.score-a.score||b.monthlyCents-a.monthlyCents||a.key.localeCompare(b.key)),analysisIssues};
 }
 
 export function subscriptionChoice(state,finding){
@@ -151,4 +156,4 @@ export function saveSubscriptionChoice(state,finding,{kind,name='',note=''},now=
 export function undoSubscriptionChoice(state){const last=state.history?.at(-1);if(!last)return state;const choices={...state.choices};if(last.before)choices[last.key]=structuredClone(last.before);else delete choices[last.key];return {...state,choices,history:state.history.slice(0,-1)};}
 export function removeSubscriptionChoice(state,key,now=new Date().toISOString()){const before=state.choices?.[key];if(!before)return state;const choices={...state.choices};delete choices[key];return {...state,choices,history:[...(state.history||[]).slice(-99),{key,before:structuredClone(before),after:null,at:now}]};}
 export function observeSubscriptionChoices(state,findings){let changed=false;const choices={...state.choices};for(const f of findings){const d=subscriptionChoice(state,f);if(!d)continue;const ids=[...new Set([...d.ids,...f.transactions.map(t=>t.id)])];if(ids.length!==d.ids.length||d.merchantKey!==f.merchantKey){choices[d.key]={...choices[d.key],ids,merchantKey:f.merchantKey,merchant:f.merchant,lastSeen:f.lastDate};changed=true;}}return changed?{...state,choices}:state;}
-export function subscriptionTotals(findings,state){const totals=new Map();for(const f of findings){const d=subscriptionChoice(state,f);if(!['subscription','bill'].includes(d?.kind))continue;const key=f.currency==='Unspecified'?f.accountKey+' (currency unspecified)':f.currency;if(!totals.has(key))totals.set(key,{label:f.currency==='Unspecified'?f.account+' (currency unspecified)':f.currency,monthlyCents:0,annualCents:0,count:0});const total=totals.get(key);total.monthlyCents+=f.monthlyCents;total.annualCents+=f.annualCents;total.count++;}return [...totals.values()];}
+export function subscriptionTotals(findings,state){const totals=new Map();for(const f of findings){const d=subscriptionChoice(state,f);if(f.recency==='historical'||!['subscription','bill'].includes(d?.kind))continue;const key=f.currency==='Unspecified'?f.accountKey+' (currency unspecified)':f.currency;if(!totals.has(key))totals.set(key,{label:f.currency==='Unspecified'?f.account+' (currency unspecified)':f.currency,monthlyCents:0,annualCents:0,count:0});const total=totals.get(key);total.monthlyCents+=f.monthlyCents;total.annualCents+=f.annualCents;total.count++;}return [...totals.values()];}

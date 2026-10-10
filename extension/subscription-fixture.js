@@ -15,5 +15,8 @@ button('Add next fictional charge',async()=>{if(extra.length)return;extra=[{...r
 button('Switch fictional business',async()=>{business=business===businesses[0]?businesses[1]:businesses[0];location.hash=business===businesses[1]?'other':'';extra=await loadLocalFeature('finance:subscription-fixture:'+business)||[];rows=[...seeds(),...extra];view.refresh();});
 button('Load 12000 fictional records',()=>{serial=200000;rows=Array.from({length:12000},(_,i)=>row('2026-'+String(i%8+1).padStart(2,'0')+'-05',2000,'Fictional Service '+Math.floor(i/8)));view.refresh();});
 button('Restore fictional history',()=>{rows=[...seeds(),...extra];view.refresh();});
+const historicalRows=()=>['2023-01-10','2023-02-10','2023-03-10','2023-04-10'].map((date,i)=>({...row(date,7500,'Fictional Retired Service'),id:String(190000+i)}));
+button('Add historical fictional pattern',()=>{rows=[...seeds(),...extra,...historicalRows()];view.refresh();});
+button('Load historical-only fictional records',()=>{rows=historicalRows();view.refresh();});
 globalThis.subscriptionFixture={snapshot:()=>view.snapshot(),waveCalls:()=>calls};
 view.refresh();setInterval(()=>{document.getElementById('fixtureDiagnostics').textContent='Business: '+business+' · available records: '+rows.length+' · Wave calls: '+calls;},200);
