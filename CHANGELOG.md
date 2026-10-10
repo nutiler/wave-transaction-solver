@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.99.15 — incremental Apple imports and empty Venmo months
+
+- Handle Apple Statements navigation with duplicate static titles, and Wave’s button-based Upload transactions navigation with observed same-tab legacy destination binding. Support teal final CSV mapping previews.
+- Check complete live Wave history and verify the latest exact Apple Card record before setting the export start date inclusively. Compare every downloaded row against live Wave again before uploading a missing-only CSV, including prior manual imports using Transaction Date. Preserve originals and uncertain-upload locks.
+- Recognize plain-text Venmo statement month headings, distinguish them from dropdown selections, persist explicit no-activity proofs for both profiles and resume without reopening confirmed empty months. Missing buttons alone remain unconfirmed.
+- Explain dashboard scopes: scanned backlog, working-period decisions, exceptions and verified decisions retained across runs.
+- Validate with fictional provider/browser cases and existing regressions; no real Wave transactions changed during development.
+
 ## 0.99.14 — wider Wave sheets
 
 - Remove Wave's 1,600px main-content width cap automatically on next.waveapps.com. Keep Wave's existing padding and responsive layout.

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {appleAccountScope,parseAppleCard,planAppleImport,appleWaveCSV,beginAppleUpload,verifyAppleUpload} from '../extension/apple-card.js';
+import {appleAccountScope,parseAppleCard,planAppleImport,appleWaveCSV,beginAppleUpload,verifyAppleUpload,appleExportStart} from '../extension/apple-card.js';
 import {detectDataProvider,indexDataFolder} from '../extension/data-index.js';
 import {validateLocalBackup,planBackupImport} from '../extension/migration.js';
 const business='11111111-1111-4111-8111-111111111111',accountId='1000000000000000001',accountName='Fictional Apple Card',url='https://next.waveapps.com/'+business+'/transactions?anchorId='+encodeURIComponent(btoa('Account:'+accountId+';Business:'+business)),scope={...appleAccountScope(url),accountName};
@@ -53,3 +53,17 @@ test('completed manual imports using Transaction Date are recognized without dup
  const s=await parseAppleCard(csv(row(),row(),row('12/31/2025','01/02/2026','Fictional annual'))),records=s.records.map((r,i)=>({...live(r,String(8000+i)),date:r.transactionDate})),p=planAppleImport(s,history(records),scope);assert.equal(p.existing.length,3);assert.equal(p.missing.length,0);assert.equal(p.held.length,0);const verified=Object.fromEntries(p.existing.map(x=>[x.record.key,{waveId:x.waveId,date:x.liveDate,amountCents:x.record.amountCents}]));const again=planAppleImport(s,history(records.map(r=>({...r,description:'Locally enriched'}))),scope,{business,accountId,verified});assert.equal(again.existing.length,3);assert.equal(again.missing.length,0);assert.equal(again.held.length,0);
 });
 test('renamed manual imports at original transaction dates are held instead of uploaded again',async()=>{const s=await parseAppleCard(csv(row())),r=s.records[0],p=planAppleImport(s,history([{...live(r),date:r.transactionDate,description:'Renamed manual entry'}]),scope);assert.equal(p.held.length,1);assert.equal(p.missing.length,0);});
+
+test('incremental export starts inclusively at the last live Wave date, with an empty-account floor',async()=>{
+ const range={floor:'2024-01-01',end:'2026-10-10'},s=await parseAppleCard(csv(row()));
+ assert.equal(appleExportStart(history(),scope,range).start,range.floor);
+ assert.equal(appleExportStart(history([live(s.records[0])]),scope,range).start,'2026-01-02');
+ assert.equal(appleExportStart(history([{...live(s.records[0]),date:'2023-12-31'}]),scope,range).start,range.floor);
+ for(const h of [{...history(),completeness:'unconfirmed'},{...history(),accountId:'9'},history([{...live(s.records[0]),date:'2026-10-11'}])])assert.throws(()=>appleExportStart(h,scope,range));
+ assert.throws(()=>appleExportStart(history(),scope,{...range,floor:'2024-02-30'}));
+});
+
+test('boundary-day manual imports are removed from the prepared CSV while new same-day charges remain',async()=>{
+ const s=await parseAppleCard(csv(row(),row('01/01/2026','01/02/2026','New same-day purchase','Purchase','3.00'),row('01/01/2026','01/02/2026','Existing credit','Credit','-2.00'))),old=s.records.filter(r=>r.description!=='New same-day purchase'),p=planAppleImport(s,history(old.map((r,i)=>({...live(r,String(6000+i)),date:r.transactionDate}))),scope);
+ assert.equal(p.existing.length,2);assert.equal(p.held.length,0);assert.equal(p.missing.length,1);assert.match(appleWaveCSV(p.missing),/New same-day purchase/);assert.doesNotMatch(appleWaveCSV(p.missing),/Fictional Shop|Existing credit/);
+});

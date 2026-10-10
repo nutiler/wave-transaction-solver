@@ -46,6 +46,13 @@ export function planAppleImport(statement,history,scope,state={}){
  const pending=state.pending?.attempted?state.pending:null;
  return {version:1,business:scope.business,accountId:scope.accountId,accountName:scope.accountName,sourceHash:statement.sha256,sourceName:statement.name,preparedAt:new Date().toISOString(),historyCapturedAt:history.capturedAt,beforeIds:history.records.map(r=>r.id),existing,missing:safe,held,locked:!!pending,pending,earliest:statement.earliest,latest:statement.latest};
 }
+export function appleExportStart(history,scope,{floor,end}){
+ validateAppleHistory(history,scope);return {...appleExportDate({floor,end,lastWaveDate:history.records.map(r=>r.date).sort().at(-1)||null}),historyCapturedAt:history.capturedAt};
+}
+export function appleExportDate({floor,end,lastWaveDate=null}){
+ floor=iso(floor);end=iso(end);if(floor>end)throw Error('Apple’s available export range is invalid.');if(lastWaveDate)lastWaveDate=iso(lastWaveDate);if(lastWaveDate&&lastWaveDate>end)throw Error('The latest Wave Apple Card transaction is future dated. Inspect it before exporting.');
+ return {start:lastWaveDate&&lastWaveDate>floor?lastWaveDate:floor,lastWaveDate};
+}
 export function appleWaveCSV(records){const quote=v=>'"'+String(v).replaceAll('"','""')+'"';return [['Date','Description','Amount'],...records.map(r=>[r.date,r.description,(r.amountCents/100).toFixed(2)])].map(row=>row.map(quote).join(',')).join('\r\n')+'\r\n';}
 export function beginAppleUpload(state,plan){if(plan.locked||plan.held.length||!plan.missing.length||state.pending?.attempted)throw Error('Resolve held or uncertain imports before uploading.');return {...state,version:1,business:plan.business,accountId:plan.accountId,pending:{attempted:true,startedAt:new Date().toISOString(),sourceHash:plan.sourceHash,records:structuredClone(plan.missing),beforeIds:[...plan.beforeIds],phase:'final-confirmation'},lastPlan:{sourceHash:plan.sourceHash,count:plan.missing.length}};}
 export function verifyAppleUpload(state,history,scope){
