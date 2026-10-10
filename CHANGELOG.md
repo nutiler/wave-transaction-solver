@@ -1,5 +1,9 @@
 # Development milestones
 
+## 0.99.16 — accounting width override on open tabs
+
+- Apply the width override directly to Wave’s main wrapper without requiring a particular ancestor. Reapply it to already-open Wave tabs when the extension is installed or reloaded.
+
 ## 0.99.15 — incremental Apple imports and empty Venmo months
 
 - Handle Apple Statements navigation with duplicate static titles, and Wave’s button-based Upload transactions navigation with observed same-tab legacy destination binding. Support teal final CSV mapping previews.

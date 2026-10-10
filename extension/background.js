@@ -11,4 +11,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Refresh an already-open solver after an unpacked-extension update/reload.
   const tabs = await chrome.tabs.query({ url: `${chrome.runtime.getURL('app.html')}*` });
   await Promise.allSettled(tabs.map(tab => chrome.tabs.reload(tab.id)));
+  // Existing Wave pages also get the layout when the extension is reloaded.
+  const waveTabs = await chrome.tabs.query({ url: 'https://next.waveapps.com/*' });
+  await Promise.allSettled(waveTabs.map(tab => chrome.scripting.insertCSS({
+    target: { tabId: tab.id }, files: ['wave-layout.css'], origin: 'USER'
+  })));
 });

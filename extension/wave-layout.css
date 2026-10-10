@@ -1,4 +1,5 @@
 /* Let Wave's main sheets use the available monitor width. */
-.wv-frame .wv-frame__content__body__main__wrapper {
+.wv-frame .wv-frame__content__body__main__wrapper,
+.wv-frame__content__body__main__wrapper {
   max-width: none !important;
 }
