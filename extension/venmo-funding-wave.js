@@ -1,9 +1,9 @@
 import {readWavePage} from './live-reader.js';
-import {editWaveTransaction} from './editor.js?build=0.99.23';
+import {editWaveTransaction} from './editor.js?build=0.99.24';
 import {readTransferMenu} from './transfer-menu.js';
 import {waveListScan} from './list-scan.js';
 import {openBackgroundTab,reopenSavedTransaction,waitForLiveSnapshot} from './workflow.js';
-import {venmoRepairPage} from './venmo-repair-page.js?build=0.99.23';
+import {venmoRepairPage} from './venmo-repair-page.js?build=0.99.24';
 const workers=new Map();
 
 export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=[],isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{},wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),now=Date.now}){
@@ -44,7 +44,7 @@ export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=
   if(activeBank?.id!==p.bank.id)throw Error('Exact bank transaction tab is unavailable.');
   const fresh=await script(activeBank.tabId,readWavePage);if(fresh.identity?.business!==business||fresh.identity.transaction!==p.bank.id||JSON.stringify(fresh.fields)!==JSON.stringify(snapshot.fields))throw Error('Bank changed during live preflight.');
   const result=await script(activeBank.tabId,editWaveTransaction,[{business,id:p.bank.id,category:fresh.fields.category,expected:fresh.fields,liveOnly:true,openTransferMenu:true}]);
-  if(!result.menuOpened||result.saveAttempted){const error=Error(result.problem||'Transfer menu did not open without saving.');error.code='WAVE_TRANSFER_MENU_UNAVAILABLE';throw error;}
+  if(!result.menuOpened||result.saveAttempted){const error=Error(result.problem||'Transfer menu did not open without saving.');error.code='WAVE_TRANSFER_MENU_UNAVAILABLE';error.recordId=p.bank.id;error.menuDiagnostics=result.menuDiagnostics||[];throw error;}
   return script(activeBank.tabId,readTransferMenu);
  }
  async function edit(p,request){if(activeBank?.id!==p.bank.id)throw Error('Exact bank transaction tab is unavailable.');return script(activeBank.tabId,editWaveTransaction,[request]);}
@@ -56,5 +56,5 @@ export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=
   const allocations=action.record?.postings.filter(p=>p.account!==action.record.primary.account).map(p=>[p.account,p.debit-p.credit]).sort();
   return script(tabId,venmoRepairPage,[{business,id:action.record?.id,kind:action.kind,...fields,targetCents:action.targetCents,categoryPath:action.categoryPath,split:action.record?.postings.length>2,allocations}]);
  }
- return {read,collect,openMenu,edit,inspect,mutate,engineBuild:'0.99.23'};
+ return {read,collect,openMenu,edit,inspect,mutate,engineBuild:'0.99.24'};
 }

@@ -1,8 +1,8 @@
 import {validateRepairPlan,repairKey,repairFingerprint,repairYears,assertRepairSnapshot,assertRetainedCopy,repairRecordFields,sameDepositRow,normalizeDepositCategory} from './venmo-reconciliation.js';
-import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.23';
-export const VENMO_REPAIR_ENGINE_VERSION='0.99.23';
-import {fundingKey,fundingFingerprint,assertFundingCollection,assertFundingRecord} from './venmo-funding.js';
-import {cents,normalize} from './model.js';
+import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.24';
+export const VENMO_REPAIR_ENGINE_VERSION='0.99.24';
+import {fundingKey,fundingFingerprint,assertFundingCollection,assertFundingRecord,accountLabel} from './venmo-funding.js';
+import {cents} from './model.js';
 import {evidenceSnapshot} from './service-solvers.js';
 
 // A package is an exact preview, not a general instruction to balance an account.
@@ -20,7 +20,7 @@ export async function runVenmoRepairPlan({plan,business,approvedFingerprint,rece
  const confirmationRecovery=r=>!r.confirmationRecoveryAttempted&&!r.outcome?.saveConfirmationAttempted&&r.outcome?.mutationAttempted===true&&r.outcome?.stage==='opening submitted'&&r.outcome?.problem==='Wave has not closed the transaction form after Save. Saved outcome remains locked; recheck before continuing.';
  const changed=a=>actionYears(a).forEach(y=>dirtyYears.add(y));
  const refresh=async(force=false,required=years,includeDirty=true)=>{current();const needed=required.filter(y=>!yearReports.has(y)||force||includeDirty&&dirtyYears.has(y));if(needed.length){onProgress('Reading live history for affected years: '+needed.join(', ')+'…');const fresh=await collect(needed,business);current();assertFundingCollection(fresh,business,needed);for(const y of needed){yearReports.set(y,fresh.records.filter(r=>r.date.startsWith(y+'-')));dirtyYears.delete(y);}}report={business,filter:'ALL',completeness:'count-confirmed',years:[...yearReports.keys()],records:[...yearReports.values()].flat()};assertFundingCollection(report,business,required);return report;};
- const snapshot=async(a,t=a.record)=>{current();const s=await read(t,business);current();if(inspect)s.repairDetails=await inspect(t,business);current();if(s.structure?.split&&s.repairDetails?.allocations?.length){const row=report?.records.find(r=>r.id===t.id),sum=s.repairDetails.allocations.reduce((n,p)=>n+p.amountCents,0);if(row?.account===t.primary.account&&row.amountCents===sum&&s.identity?.transaction===row.id&&s.identity.business===business){if(!s.fields.amount){s.fields.amount=(sum/100).toFixed(2);s.problems=s.problems.filter(p=>!/^Amount:/.test(p));s.repairDetails.amountEvidence='Exact live-list total plus independently read split allocation sum';}if(!s.currency)s.currency=s.repairDetails.currency;}}return s;};
+ const snapshot=async(a,t=a.record)=>{current();const s=await read(t,business);current();if(inspect)s.repairDetails=await inspect(t,business);current();if(s.structure?.split&&s.repairDetails?.allocations?.length){const row=report?.records.find(r=>r.id===t.id),sum=s.repairDetails.allocations.reduce((n,p)=>n+p.amountCents,0);if(accountLabel(row?.account)===accountLabel(t.primary.account)&&row.amountCents===sum&&s.identity?.transaction===row.id&&s.identity.business===business){if(!s.fields.amount){s.fields.amount=(sum/100).toFixed(2);s.problems=s.problems.filter(p=>!/^Amount:/.test(p));s.repairDetails.amountEvidence='Exact live-list total plus independently read split allocation sum';}if(!s.currency)s.currency=s.repairDetails.currency;}}return s;};
  const checkDeposit=async(a,rows,beforeIds=[])=>{const candidates=rows.filter(r=>sameDepositRow(a,r)&&!beforeIds.includes(r.id)),matches=[];for(const row of candidates){const s=await read({id:row.id},business);current();if(s.identity?.business!==business||s.identity.transaction!==row.id||s.currency!=='USD'||s.problems?.length)throw Error('Possible duplicate deposit is unreadable.');if(s.fields.type==='Deposit')matches.push({row,s});}return matches;};
  const verifyMutation=async a=>{
   const k=repairKey(a),receipt=saved[k];if(!receipt?.saveAttempted)return null;
@@ -55,14 +55,14 @@ export async function runVenmoRepairPlan({plan,business,approvedFingerprint,rece
  // repeating the same mismatch across every payment. This proves no aliases.
  if(mode!=='recheck'){
   const accounts=new Map();
-  for(const a of plan.actions.filter(a=>a.kind==='opening'))accounts.set(normalize(a.record.primary.account),a.record);
-  for(const a of plan.actions.filter(a=>a.kind==='transfer'))for(const t of [a.transfer.bank,a.transfer.purchase].filter(Boolean))if(!accounts.has(normalize(t.primary.account)))accounts.set(normalize(t.primary.account),t);
+  for(const a of plan.actions.filter(a=>a.kind==='opening'))accounts.set(accountLabel(a.record.primary.account),a.record);
+  for(const a of plan.actions.filter(a=>a.kind==='transfer'))for(const t of [a.transfer.bank,a.transfer.purchase].filter(Boolean))if(!accounts.has(accountLabel(t.primary.account)))accounts.set(accountLabel(t.primary.account),t);
   onProgress('Checking '+accounts.size+' approved account names before history collection or new fixes…');
   for(const t of accounts.values()){
    if(stopRequested())return {receipts:saved,transferReceipts:transfers,results,stopped:true};
    const s=await read(t,business);current();
    if(s?.identity?.business!==business||s.identity.transaction!==t.id||s.currency!=='USD'||!s.fields?.account)throw Error('Could not read the exact approved account before this batch. No new fix started.');
-   if(normalize(s.fields.account)!==normalize(t.primary.account))throw Error('Account differs from the prepared audit: expected '+JSON.stringify(t.primary.account)+'; live '+JSON.stringify(s.fields.account)+'. Batch held before history collection or new fixes.');
+   if(accountLabel(s.fields.account)!==accountLabel(t.primary.account))throw Error('Account differs from the prepared audit: expected '+JSON.stringify(t.primary.account)+'; live '+JSON.stringify(s.fields.account)+'. Batch held before history collection or new fixes.');
   }
  }
  // All other uncertain writes must resolve before this invocation starts any
@@ -119,7 +119,11 @@ export async function runVenmoRepairPlan({plan,business,approvedFingerprint,rece
   if(stopRequested())break;
   const proposals=group.map(a=>a.transfer),approvals=Object.fromEntries(proposals.map(p=>[fundingKey(p),fundingFingerprint(p)]));let calls=0;
   onProgress('Working on '+group[0].transfer.bank.date.slice(0,4)+' · '+group.length+' transfer fixes. Completed years stay checkpointed.');
-  const result=await runFundingRepairs({proposals,business,approvals,receipts:transfers,read,openMenu,edit,persist:async next=>{current();await persist({receipts:saved,transferReceipts:next});transfers=next;},isCurrent,stopRequested,hasLock:p=>hasLock({kind:'transfer',transfer:p}),onProgress,mode,collect:async needed=>refresh(calls++>0,needed)});
+  let result;try{result=await runFundingRepairs({proposals,business,approvals,receipts:transfers,read,openMenu,edit,persist:async next=>{current();await persist({receipts:saved,transferReceipts:next});transfers=next;},isCurrent,stopRequested,hasLock:p=>hasLock({kind:'transfer',transfer:p}),onProgress,mode,collect:async needed=>refresh(calls++>0,needed)});}catch(e){
+   const a=e.code==='WAVE_TRANSFER_MENU_UNAVAILABLE'&&group.find(a=>a.transfer.bank.id===e.recordId);
+   if(a&&!saved[repairKey(a)]?.saveAttempted&&!transfers[fundingKey(a.transfer)]?.saveAttempted)await checkpoint(repairKey(a),{business,action:a,fingerprint:repairFingerprint(a),saveAttempted:false,verified:false,message:'Held before creation: '+e.message,outcome:{stage:'open transfer menu',mutationAttempted:false,problem:e.message,menuDiagnostics:e.menuDiagnostics||[]}});
+   throw e;
+  }
   results.push(...result.results);transfers=result.receipts;
   for(const r of result.results.filter(r=>r.ready===false)){const a=group.find(a=>fundingKey(a.transfer)===r.key);if(a)await checkpoint(repairKey(a),{business,action:a,fingerprint:repairFingerprint(a),saveAttempted:false,verified:false,message:r.message});}
   for(const a of group){const r=transfers[fundingKey(a.transfer)];if(r?.verified)await checkpoint(repairKey(a),{business,action:a,fingerprint:repairFingerprint(a),saveAttempted:true,verified:true,transferKey:fundingKey(a.transfer),message:r.message});}

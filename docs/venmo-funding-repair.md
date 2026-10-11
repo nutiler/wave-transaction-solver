@@ -2,7 +2,9 @@
 
 This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
 
-## Prepared reconciliation (0.99.23)
+## Prepared reconciliation (0.99.24)
+
+Account labels use whitespace-only normalization consistently across the approved snapshots and live-list proofs. This handles CSV trailing spaces without removing Closed prefixes, changing account words or inventing aliases. IDs, amounts, dates, directions and unchanged purchase/category checks still apply. The category opener can traverse a scrollable popup or search within its owned popup for the exact approved transfer branch. Missing, disabled and ambiguous branches remain blocked. A popup failure records its current bank ID and option labels in the automatic report; it never resets an uncertain financial save.
 
 The account preflight reads one intact opening/transfer record per approved account before collecting years or starting new fixes. An expected/live name mismatch stops with both labels. It does not infer that a renamed account is the same account or change the immutable package. **Check fixes in Wave** performs this preflight read-only.
 

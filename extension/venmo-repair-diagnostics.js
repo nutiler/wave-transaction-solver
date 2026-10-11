@@ -7,7 +7,7 @@ export function repairDiagnosticReport({plan,receipts={},transferReceipts={},mod
  const byKey=new Map(results.map(r=>[r.key,r]));
  const actions=plan.actions.map(a=>{
   const key=repairKey(a),funding=a.kind==='transfer'?transferReceipts[fundingKey(a.transfer)]:null,r=receipts[key]||funding,result=byKey.get(key)||byKey.get(a.kind==='transfer'?fundingKey(a.transfer):key);
-  return {key,kind:a.kind,recordId:a.record?.id||a.transfer?.bank.id||null,date:a.record?.date||a.transfer?.bank.date||a.date,verified:!!r?.verified,saveAttempted:!!(r?.saveAttempted||funding?.saveAttempted),reason:r?.message||funding?.message||result?.message||'Not checked yet.',stage:r?.outcome?.stage||funding?.outcome?.stage||null,problem:r?.outcome?.problem||funding?.outcome?.problem||null};
+  return {key,kind:a.kind,recordId:a.record?.id||a.transfer?.bank.id||null,date:a.record?.date||a.transfer?.bank.date||a.date,verified:!!r?.verified,saveAttempted:!!(r?.saveAttempted||funding?.saveAttempted),reason:r?.message||funding?.message||result?.message||'Not checked yet.',stage:r?.outcome?.stage||funding?.outcome?.stage||null,problem:r?.outcome?.problem||funding?.outcome?.problem||null,menuDiagnostics:r?.outcome?.menuDiagnostics||funding?.outcome?.menuDiagnostics||[]};
  });
  return {format:'wave-solver-venmo-repair-diagnostics',version:1,business:plan.business,capturedAt:now,mode,detail,builds,total:actions.length,verified:actions.filter(a=>a.verified).length,unverified:actions.filter(a=>!a.verified).length,actions};
 }

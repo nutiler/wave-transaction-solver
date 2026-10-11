@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.24 — account whitespace and bounded category navigation
+
+- Compare approved and live account labels with the same whitespace-only normalization in original-row proof, counterpart detection/verification, equal-amount groups and account preflight. Preserve words, punctuation, case, amounts, exact IDs and dates; do not rewrite the immutable audit. A trailing space in the archived Wells Fargo name no longer produces a false missing-record hold.
+- Find the exact transfer branch through bounded category-popup scrolling and an owned-popup search fallback. Reject missing, disabled, duplicate or ambiguous controls without a financial click, and restore an unsuccessful search value.
+- Report expected and live original-row values on genuine mismatches. Capture option labels and the exact current bank record when a menu fails, without overwriting an uncertain saved attempt or creating a transfer lock for a read-only failure.
+- Cover archived-name whitespace, retained genuine account differences, virtualized/search-only menus, unavailable branches and current-record diagnostics with fictional tests. Live batch completion remains unverified.
+
 ## 0.99.23 — observed create-only transfer menus and delete icons
 
 - Recognize the observed transfer popup containing only Select Account to Create Transfer. Require one create section, plain account entries exclusively after its heading, no busy state or unclassified/linked entries, and complete live-history duplicate checks. Existing-match selection still requires its matching section.

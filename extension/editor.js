@@ -192,13 +192,25 @@ export async function editWaveTransaction(request, testContext) {
       if(!isOpen()){
         if(!scopes().length){const toggles=[...category.querySelectorAll('.wv-select__toggle')].filter(visible);if(toggles.length!==1 || !enabled(toggles[0]))throw Error('Cannot identify the category toggle.');assertFields(request.expected.category);toggles[0].click();}
         let branches=[];
+        const branch=request.expected.type==='Deposit'?'Transfer from Bank, Credit Card, or Loan':'Transfer to Bank, Credit Card, or Loan';
+        const findBranches=()=>{const menus=scopes();if(menus.length>1)throw Error('Multiple category menus are open. Nothing further clicked.');const candidates=new Set(menus.flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el)&&clean(el)===branch));return [...candidates].filter(el=>![...candidates].some(other=>other!==el&&el.contains(other)));};
         for(let i=0;i<20;i++){
           assertFields(request.expected.category);
-          const branch=request.expected.type==='Deposit'?'Transfer from Bank, Credit Card, or Loan':'Transfer to Bank, Credit Card, or Loan';
-          const candidates=new Set(scopes().flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el) && clean(el)===branch));
-          branches=[...candidates].filter(el=>![...candidates].some(other=>other!==el && el.contains(other)));
+          branches=findBranches();
           if(branches.length)break;await wait(100);
         }
+        // The first category popup can render only a viewport of its options.
+        // Scroll bounded steps, reacquiring the exact branch after each update.
+        for(let i=0;!branches.length&&i<40;i++){
+          assertFields(request.expected.category);const menus=scopes();if(menus.length!==1)break;
+          const scrollables=[menus[0],...menus[0].querySelectorAll('*')].filter(el=>visible(el)&&el.clientHeight>0&&el.scrollHeight>el.clientHeight+2);
+          if(!scrollables.length)break;let advanced=false;
+          for(const el of scrollables){const next=Math.min(el.scrollHeight-el.clientHeight,el.scrollTop+Math.max(1,Math.floor(el.clientHeight*.75)));if(next>el.scrollTop){el.scrollTop=next;el.dispatchEvent(new doc.defaultView.Event('scroll',{bubbles:true}));advanced=true;}}
+          await wait(100);branches=findBranches();if(!advanced)break;
+        }
+        // Search only the owned category popup, then still require one enabled
+        // exact transfer branch. Search and scrolling cannot save a transaction.
+        if(!branches.length){const menus=scopes();if(menus.length===1){const searches=[...menus[0].querySelectorAll('input')].filter(el=>visible(el)&&/^Search categories[.…]*$/i.test(tidy(el.placeholder||el.getAttribute('aria-label'))));if(searches.length===1&&enabled(searches[0])){const input=searches[0],previous=input.value,setter=Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype,'value')?.set;if(setter){assertFields(request.expected.category);setter.call(input,branch);input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));for(let i=0;i<20;i++){await wait(100);assertFields(request.expected.category);branches=findBranches();if(branches.length)break;}if(!branches.length&&input.isConnected){setter.call(input,previous);input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));}}}}}
         if(branches.length!==1 || !enabled(branches[0]))throw Error('Cannot identify one transfer submenu.');
         assertFields(request.expected.category);branches[0].click();
         for(let i=0;i<20 && !isOpen();i++){assertFields(request.expected.category);await wait(100);}
@@ -377,8 +389,8 @@ export async function editWaveTransaction(request, testContext) {
     for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested,categoryConfirmationAttempted,categoryChangeRequested }; }
     return { saveAttempted, reviewRequested, stage,categoryConfirmationAttempted,categoryChangeRequested, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    const menuDiagnostics=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(visible).slice(0,6).map(el=>({tag:el.tagName,role:el.getAttribute('role'),className:el.className,matchingHeading:tidy(el.textContent).includes('Select Account with Matching Transaction'),createHeading:tidy(el.textContent).includes('Select Account to Create Transfer'),optionCount:el.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],.wv-select__menu__option').length}));
-    // Structural diagnostics omit account names, transaction labels and IDs.
+    const menuDiagnostics=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(visible).slice(0,6).map(el=>({tag:el.tagName,role:el.getAttribute('role'),className:el.className,matchingHeading:tidy(el.textContent).includes('Select Account with Matching Transaction'),createHeading:tidy(el.textContent).includes('Select Account to Create Transfer'),optionCount:el.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],.wv-select__menu__option').length,optionLabels:[...el.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],.wv-select__menu__option')].filter(visible).slice(0,18).map(o=>{const c=o.cloneNode(true);c.querySelectorAll('svg,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent).slice(0,200);})}));
+    // Popup labels explain unavailable branches; exported logs redact identifiers.
     return { saveAttempted, stage,reviewRequested,categoryConfirmationAttempted,categoryChangeRequested, menuDiagnostics, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }
