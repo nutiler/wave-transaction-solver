@@ -44,7 +44,7 @@ export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=
   if(activeBank?.id!==p.bank.id)throw Error('Exact bank transaction tab is unavailable.');
   const fresh=await script(activeBank.tabId,readWavePage);if(fresh.identity?.business!==business||fresh.identity.transaction!==p.bank.id||JSON.stringify(fresh.fields)!==JSON.stringify(snapshot.fields))throw Error('Bank changed during live preflight.');
   const result=await script(activeBank.tabId,editWaveTransaction,[{business,id:p.bank.id,category:fresh.fields.category,expected:fresh.fields,liveOnly:true,openTransferMenu:true}]);
-  if(!result.menuOpened||result.saveAttempted)throw Error(result.problem||'Transfer menu did not open without saving.');
+  if(!result.menuOpened||result.saveAttempted){const error=Error(result.problem||'Transfer menu did not open without saving.');error.code='WAVE_TRANSFER_MENU_UNAVAILABLE';throw error;}
   return script(activeBank.tabId,readTransferMenu);
  }
  async function edit(p,request){if(activeBank?.id!==p.bank.id)throw Error('Exact bank transaction tab is unavailable.');return script(activeBank.tabId,editWaveTransaction,[request]);}

@@ -1,5 +1,13 @@
 # Development milestones
 
+## 0.99.21 — held Venmo fixes and transfer popup handling
+
+- Recognize Wave's outer category popup as well as its nested options containers, so transfer section headings outside the options list remain visible to opening and creation. Preserve exact account, existing-match, currency, field and checkpoint guards.
+- Stop immediately on an unavailable transfer menu instead of repeating the same UI failure across every remaining payment. Preserve completed writes and read-only verification; expose held reasons in the batch result.
+- Display Stopped for an incomplete prepared batch, including runs that return held results without throwing. Label the balance as the projection after verified fixes rather than a fresh Wave balance.
+- Select the new deposit account/category before filling its fields, reacquire controls after UI updates, and recognize radio menu options. Cover field reset, nested popup, existing-match protection, early stopping and incomplete status with fictional tests.
+- Add structural popup diagnostics to exported errors without transaction labels, account names or IDs. No live financial records are modified during development.
+
 ## 0.99.20 — advancing and resumable live collection
 
 - Drive Venmo history steps from the extension so background Wave timers are not the sole scrolling driver. Cache unchanged row parsing, capture table diagnostics once, and return compact progress responses while scanning.

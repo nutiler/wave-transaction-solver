@@ -143,6 +143,12 @@ export async function editWaveTransaction(request, testContext) {
     return {mark:[...buttons(dialog,['Mark as reviewed','Mark reviewed']),...boxes.filter(el=>checked(el)===false)],confirmed:[...buttons(dialog,['Reviewed','Mark as unreviewed','Mark as not reviewed','Mark unreviewed','Unreview']),...boxes.filter(el=>checked(el)===true)]};
   }
   function enabled(el) { return !el.disabled && el.getAttribute('aria-disabled') !== 'true'; }
+  // Wave can place section headings outside its options container. Keep the
+  // popup root, as the read-only transfer reader does, without including forms.
+  function transferScopes() {
+    const menus=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el)&&!el.querySelector('textarea,input[type="password"],input[type="date"]')&&!el.contains(control(root(),'Category')));
+    return menus.filter(el=>!menus.some(other=>other!==el&&other.contains(el)));
+  }
   function updateScopes(dialog) {
     const triggers=buttons(dialog,['Review updates']);
     if(triggers.length!==1)throw Error('Cannot identify one Review updates menu trigger.');
@@ -181,7 +187,7 @@ export async function editWaveTransaction(request, testContext) {
       stage='open transfer menu';
       const category=control(dialog,'Category');
       const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
-      const scopes=()=>[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(visible);
+      const scopes=transferScopes;
       const isOpen=()=>scopes().some(el=>clean(el).includes('Select Account with Matching Transaction'));
       if(!isOpen()){
         if(!scopes().length){const toggles=[...category.querySelectorAll('.wv-select__toggle')].filter(visible);if(toggles.length!==1 || !enabled(toggles[0]))throw Error('Cannot identify the category toggle.');assertFields(request.expected.category);toggles[0].click();}
@@ -220,7 +226,7 @@ export async function editWaveTransaction(request, testContext) {
       const t=request.transferCreate,direction=request.expected.type==='Withdrawal'?'out':request.expected.type==='Deposit'?'in':null;
       if(request.transfer||request.reviewOnly||request.description!==undefined||request.preserveReviewed!==true||request.liveOnly!==true||t.confirmed!==true||t.direction!==direction||!direction||t.label!==t.account||!tidy(t.account)||t.account===request.expected.account||request.category!=='Transfer '+(direction==='out'?'to ':'from ')+t.account)throw Error('Invalid explicit transfer-creation request.');
       const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,script,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
-      const menus=[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el)&&clean(el).includes('Select Account with Matching Transaction'));
+      const menus=transferScopes().filter(el=>clean(el).includes('Select Account with Matching Transaction'));
       const scopes=menus.filter(el=>!menus.some(other=>other!==el&&el.contains(other)));
       if(scopes.length!==1)throw Error('One transfer submenu must be open. Nothing created.');
       const menu=scopes[0],heading=text=>[...menu.querySelectorAll('div,span,h3,h4,strong')].filter(el=>visible(el)&&clean(el)===text).filter(el=>![...el.children].some(c=>visible(c)&&clean(c)===text));
@@ -244,7 +250,7 @@ export async function editWaveTransaction(request, testContext) {
       const labels=dates.map(d=>normal(t.account+' - '+d+' - '+t.description));
       if(!labels.includes(normal(t.label).replace(/^Transfer to /i,'')))throw Error('Counterpart label does not identify the expected transaction.');
       const clean=el=>{const clone=el.cloneNode(true);clone.querySelectorAll('svg,script,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(clone.textContent);};
-      const menus=[...doc.querySelectorAll('.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el) && clean(el).includes('Select Account with Matching Transaction'));
+      const menus=transferScopes().filter(el=>clean(el).includes('Select Account with Matching Transaction'));
       const scopes=menus.filter(el=>!menus.some(other=>other!==el && el.contains(other)));
       if(scopes.length!==1)throw Error('Leave one matching-transaction submenu open, then read it again.');
       const menu=scopes[0];
@@ -369,6 +375,8 @@ export async function editWaveTransaction(request, testContext) {
     for (let i = 0; i < 40; i++) { await wait(100); if (!visible(dialog)) return { saveAttempted, stage, reviewRequested,categoryConfirmationAttempted,categoryChangeRequested }; }
     return { saveAttempted, reviewRequested, stage,categoryConfirmationAttempted,categoryChangeRequested, problem: 'Wave did not close the dialog after Save. Check for a validation error; no retry was made.' };
   } catch (error) {
-    return { saveAttempted, stage,reviewRequested,categoryConfirmationAttempted,categoryChangeRequested, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
+    const menuDiagnostics=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(visible).slice(0,6).map(el=>({tag:el.tagName,role:el.getAttribute('role'),className:el.className,matchingHeading:tidy(el.textContent).includes('Select Account with Matching Transaction'),createHeading:tidy(el.textContent).includes('Select Account to Create Transfer'),optionCount:el.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],.wv-select__menu__option').length}));
+    // Structural diagnostics omit account names, transaction labels and IDs.
+    return { saveAttempted, stage,reviewRequested,categoryConfirmationAttempted,categoryChangeRequested, menuDiagnostics, problem: error.message, reviewDiagnostics:(()=>{try{return [...root().querySelectorAll('button,[role="button"],input[type="checkbox"],[role="checkbox"]')].filter(visible).slice(0,25).map(el=>({tag:el.tagName,ariaLabel:el.getAttribute('aria-label'),role:el.getAttribute('role'),disabled:!enabled(el),html:el.outerHTML.slice(0,1800)}));}catch{return [];}})(), selectedCategory: (()=>{try{return value(control(root(),'Category'));}catch{return null;}})(), categorySearches: [...doc.querySelectorAll('input')].filter(el => visible(el) && /categor/i.test(el.placeholder || el.getAttribute('aria-label') || '')).slice(0, 2).map(el => { let popup = el.parentElement; for (let i = 0; i < 3 && popup?.parentElement && popup.parentElement !== doc.body; i++) { if (popup.parentElement.querySelector('textarea,input[type="password"],input[type="date"]')) break; popup = popup.parentElement; } const clone = popup.cloneNode(true); clone.querySelectorAll('script,textarea,input[type="password"]').forEach(node => node.remove()); return clone.outerHTML.slice(0, 12000); }), categoryControls: [...doc.querySelectorAll(".wv-select,.wv-select__menu,[role=\"listbox\"]")].filter(visible).filter(el => tidy(el.textContent).includes(request?.expected?.category || request?.category || "\u0000")).slice(0, 2).map(el => el.outerHTML.slice(0, 5000)) };
   }
 }

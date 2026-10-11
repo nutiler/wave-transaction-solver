@@ -54,7 +54,7 @@ export async function runFundingRepairs({proposals,business,approvals={},receipt
    if(fundingLiveCounterparts(p,report).length){results.push({key:k,ready:false,message:'Live Wave has a same-amount opposite Venmo record. Inspect it before creating anything.'});continue;}
    const menu=await openMenu(p,snapshots[p.bank.id],business);current();
    request=prepareFundingCreate(p,snapshots,menu,report);
-   }catch(e){current();results.push({key:k,ready:false,message:'Held before creation: '+e.message});onProgress('Held one changed or unsupported repair; checking the next selected record.');continue;}
+   }catch(e){current();if(e.code==='WAVE_TRANSFER_MENU_UNAVAILABLE')throw e;results.push({key:k,ready:false,message:'Held before creation: '+e.message});onProgress('Held before creation: '+e.message+' Checking the next selected record.');continue;}
    if(mode==='check'){results.push({key:k,ready:true,message:'Live bank, Venmo purchase, complete history and create-transfer account checked. Nothing changed.'});continue;}
    if(approvals[k]!==fundingFingerprint(p))throw Error('Approve this exact repair proposal locally before applying.');
    const receipt={version:1,business,fingerprint:fundingFingerprint(p),proposal:p,originalSnapshots:snapshots,beforeIds:report.records.map(r=>r.id),saveAttempted:true,verified:false,stage:'creation-checkpoint',startedAt:new Date().toISOString(),message:'Creation checkpoint saved. Any interruption must be rechecked without repeating creation.'};
@@ -76,6 +76,6 @@ export async function runFundingRepairs({proposals,business,approvals={},receipt
    catch(e){for(const p of attempts){const k=fundingKey(p);if(!saved[k].verified&&isCurrent())await checkpoint(k,{...saved[k],message:'Saved-result check stopped: '+e.message});}}
   }
  }
- if(stoppedError&&(!attempts.length||attempts.some(p=>!saved[fundingKey(p)]?.verified)))throw stoppedError;
+ if(stoppedError&&(stoppedError.code==='WAVE_TRANSFER_MENU_UNAVAILABLE'||!attempts.length||attempts.some(p=>!saved[fundingKey(p)]?.verified)))throw stoppedError;
  return {results,receipts:saved,stoppedReason:stoppedError?.message||null};
 }
