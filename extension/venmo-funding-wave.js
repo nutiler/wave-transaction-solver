@@ -1,9 +1,9 @@
 import {readWavePage} from './live-reader.js';
-import {editWaveTransaction} from './editor.js?build=0.99.22';
+import {editWaveTransaction} from './editor.js?build=0.99.23';
 import {readTransferMenu} from './transfer-menu.js';
 import {waveListScan} from './list-scan.js';
 import {openBackgroundTab,reopenSavedTransaction,waitForLiveSnapshot} from './workflow.js';
-import {venmoRepairPage} from './venmo-repair-page.js?build=0.99.22';
+import {venmoRepairPage} from './venmo-repair-page.js?build=0.99.23';
 const workers=new Map();
 
 export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=[],isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{},wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),now=Date.now}){
@@ -56,5 +56,5 @@ export function fundingWaveAdapter({api=globalThis.chrome,business,transactions=
   const allocations=action.record?.postings.filter(p=>p.account!==action.record.primary.account).map(p=>[p.account,p.debit-p.credit]).sort();
   return script(tabId,venmoRepairPage,[{business,id:action.record?.id,kind:action.kind,...fields,targetCents:action.targetCents,categoryPath:action.categoryPath,split:action.record?.postings.length>2,allocations}]);
  }
- return {read,collect,openMenu,edit,inspect,mutate,engineBuild:'0.99.22'};
+ return {read,collect,openMenu,edit,inspect,mutate,engineBuild:'0.99.23'};
 }

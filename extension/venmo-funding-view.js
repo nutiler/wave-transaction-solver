@@ -1,5 +1,5 @@
 import {auditVenmoFunding,fundingKey,fundingFingerprint,projectedVenmoBalance} from './venmo-funding.js';
-import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.22';
+import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.23';
 import {loadLocalFeature,updateLocalFeature,claimVenmoLease,releaseVenmoLease} from './session.js';
 import {activity,paintActivity} from './activity.js';
 import {logEvent,logError} from './diagnostic-console.js';

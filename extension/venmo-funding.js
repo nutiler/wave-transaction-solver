@@ -63,7 +63,7 @@ export function assertFundingRecord(record,snapshot,business,{ignoreCategory=fal
  const checks=compareLive(record,snapshot).checks.filter(c=>!ignoreCategory||c.field!=='Category');
  const category=record.categories?.[0],refund=record.direction==='in'&&record.categories?.length===1&&snapshot.fields?.type==='Deposit'&&record.postings?.some(p=>p.account===category&&['Expense','Expenses'].includes(p.group))&&normalize(snapshot.fields.category)===normalize('Refund for '+category);
  if(refund){const check=checks.find(c=>c.field==='Category');if(check)check.state='Match';}
- if(checks.some(c=>c.state!=='Match'))throw Error('Live '+checks.filter(c=>c.state!=='Match').map(c=>c.field).join(', ')+' changed. Refresh the audit; nothing changed.');
+ if(checks.some(c=>c.state!=='Match')){const differences=checks.filter(c=>c.state!=='Match');throw Error('Live '+differences.map(c=>c.field).join(', ')+' changed. '+differences.filter(c=>c.field==='Account').map(c=>'Expected account '+JSON.stringify(c.exported)+'; live account '+JSON.stringify(c.live)+'. ').join('')+'Refresh the audit; nothing changed.');}
 }
 const transferCategory=(direction,account)=>'Transfer '+(direction==='out'?'to ':'from ')+account;
 export function fundingCategoryMatches(label,direction,account,other=null){
@@ -84,7 +84,8 @@ export function prepareFundingCreate(p,snapshots,menu,report){
  assertFundingRecord(p.bank,snapshots[p.bank.id],p.business);if(p.purchase)assertFundingRecord(p.purchase,snapshots[p.purchase.id],p.business);
  for(const t of [p.bank,p.purchase].filter(Boolean))if(!report.records.some(r=>r.id===t.id&&r.date===t.date&&r.account===t.primary.account&&r.amountCents===t.amount))throw Error('An original record is absent or changed in the complete live collection.');
  if(fundingLiveCounterparts(p,report).length)throw Error('A same-amount Venmo record exists in live Wave. Inspect it instead of creating a duplicate.');
- if(menu?.format!=='wave-solver-transfer-menu'||menu.identity?.business!==p.business||menu.identity?.transaction!==p.bank.id||menu.matchingGroups!==1||menu.createGroups!==1||!Array.isArray(menu.matchingOptions)||!Array.isArray(menu.createOptions)||!Array.isArray(menu.problems)||menu.problems.some(s=>s!=='No recognizable matching options captured. The menu HTML is included for selector inspection.'))throw Error('Transfer creation menu is incomplete or ambiguous.');
+ const matchingSection=menu?.matchingGroups===1||menu?.matchingGroups===0&&menu.createOnlyValidated===true&&menu.matchingOptions?.length===0;
+ if(menu?.format!=='wave-solver-transfer-menu'||menu.identity?.business!==p.business||menu.identity?.transaction!==p.bank.id||!matchingSection||menu.createGroups!==1||!Array.isArray(menu.matchingOptions)||!Array.isArray(menu.createOptions)||!Array.isArray(menu.problems)||menu.problems.some(s=>s!=='No recognizable matching options captured. The menu HTML is included for selector inspection.'))throw Error('Transfer creation menu is incomplete or ambiguous.');
  const assigned=new Set((report.verifiedAssignments||[]).filter(a=>a.business===p.business&&!a.bankIds.includes(p.bank.id)).flatMap(a=>a.counterpartIds));
  if(menu.matchingOptions.some(o=>String(o.text||'').includes(p.walletAccount.account)&&!assigned.has(o.transactionId)))throw Error('Wave offers an existing Venmo match. Inspect it; creation is blocked.');
  const options=menu.createOptions.filter(o=>o.text===p.walletAccount.account&&!o.disabled&&!o.transactionId&&!o.href);

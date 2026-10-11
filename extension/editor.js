@@ -188,7 +188,7 @@ export async function editWaveTransaction(request, testContext) {
       const category=control(dialog,'Category');
       const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
       const scopes=transferScopes;
-      const isOpen=()=>scopes().some(el=>clean(el).includes('Select Account with Matching Transaction'));
+      const isOpen=()=>scopes().some(el=>clean(el).includes('Select Account with Matching Transaction')||clean(el).includes('Select Account to Create Transfer'));
       if(!isOpen()){
         if(!scopes().length){const toggles=[...category.querySelectorAll('.wv-select__toggle')].filter(visible);if(toggles.length!==1 || !enabled(toggles[0]))throw Error('Cannot identify the category toggle.');assertFields(request.expected.category);toggles[0].click();}
         let branches=[];
@@ -226,15 +226,17 @@ export async function editWaveTransaction(request, testContext) {
       const t=request.transferCreate,direction=request.expected.type==='Withdrawal'?'out':request.expected.type==='Deposit'?'in':null;
       if(request.transfer||request.reviewOnly||request.description!==undefined||request.preserveReviewed!==true||request.liveOnly!==true||t.confirmed!==true||t.direction!==direction||!direction||t.label!==t.account||!tidy(t.account)||t.account===request.expected.account||request.category!=='Transfer '+(direction==='out'?'to ':'from ')+t.account)throw Error('Invalid explicit transfer-creation request.');
       const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,script,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
-      const menus=transferScopes().filter(el=>clean(el).includes('Select Account with Matching Transaction'));
+      const menus=transferScopes().filter(el=>clean(el).includes('Select Account with Matching Transaction')||clean(el).includes('Select Account to Create Transfer'));
       const scopes=menus.filter(el=>!menus.some(other=>other!==el&&el.contains(other)));
       if(scopes.length!==1)throw Error('One transfer submenu must be open. Nothing created.');
       const menu=scopes[0],heading=text=>[...menu.querySelectorAll('div,span,h3,h4,strong')].filter(el=>visible(el)&&clean(el)===text).filter(el=>![...el.children].some(c=>visible(c)&&clean(c)===text));
       const matching=heading('Select Account with Matching Transaction'),create=heading('Select Account to Create Transfer'),follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
-      if(matching.length!==1||create.length!==1||!follows(matching[0],create[0]))throw Error('Transfer creation sections are ambiguous.');
+      if(create.length!==1||matching.length>1||matching.length===1&&!follows(matching[0],create[0]))throw Error('Transfer creation sections are ambiguous.');
+      if(menu.matches('[aria-busy="true"]')||[...menu.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible))throw Error('Transfer creation menu is still loading.');
       const all=[...menu.querySelectorAll('[role="menuitemradio"],.wv-select__menu__option,[role="option"],[role="menuitem"],li,button')].filter(visible);
       const options=all.filter(el=>!all.some(child=>child!==el&&el.contains(child)&&clean(child)===clean(el)));
-      if(options.some(el=>follows(matching[0],el)&&follows(el,create[0])&&clean(el).includes(t.account)))throw Error('An existing Venmo matching option is present. Do not create another transfer.');
+      if(!matching.length&&(!options.length||options.some(el=>!follows(create[0],el)||el.hasAttribute('data-transaction-id')||el.querySelector('[data-transaction-id],a[href]')||el.hasAttribute('href')||/^Transfer (?:to|from) /i.test(clean(el)))))throw Error('Create-only transfer menu has unclassified options. Nothing created.');
+      if(matching.length&&options.some(el=>follows(matching[0],el)&&follows(el,create[0])&&clean(el).includes(t.account)))throw Error('An existing Venmo matching option is present. Do not create another transfer.');
       const exact=options.filter(el=>follows(create[0],el)&&clean(el)===t.label);
       if(exact.length!==1||!enabled(exact[0])||exact[0].getAttribute('data-transaction-id')||exact[0].querySelector('[data-transaction-id]')||exact[0].getAttribute('href')||exact[0].querySelector('a[href]'))throw Error('Exact create-transfer account is missing, disabled or ambiguous.');
       assertFields(request.expected.category);saveAttempted=true;exact[0].click();

@@ -1,5 +1,5 @@
 import {fundingKey,fundingFingerprint,fundingYears,assertFundingRecord,assertFundingCollection,fundingLiveCounterparts,fundingCategoryMatches,prepareFundingCreate,verifyFundingRepair,verifyFundingBatch} from './venmo-funding.js';
-export const VENMO_FUNDING_ENGINE_VERSION='0.99.22';
+export const VENMO_FUNDING_ENGINE_VERSION='0.99.23';
 
 // Every possible financial click has a durable checkpoint. A lost response is
 // recovered by reading the saved result, never by retrying creation.

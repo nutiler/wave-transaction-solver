@@ -12,7 +12,7 @@ export function readTransferMenu(testContext){
  const searches=[...doc.querySelectorAll('input')].filter(e=>visible(e) && /search\s+categories/i.test(tidy(e.placeholder || e.getAttribute('aria-label'))));
  const roots=new Set();
  // The section heading remains visible even when Wave changes the search markup.
- for(const heading of headingNodes(doc,matchingText)){
+ for(const heading of [...headingNodes(doc,matchingText),...headingNodes(doc,createText)]){
   for(let e=heading.parentElement,i=0;e && e!==doc.body && i<9;e=e.parentElement,i++){
    if(e.querySelector('textarea,input[type="password"],input[type="date"]'))break;
    const inputs=[...e.querySelectorAll('input')].filter(visible);
@@ -29,6 +29,7 @@ export function readTransferMenu(testContext){
  result.searchControls=searches.slice(0,4).map(e=>({tag:e.tagName,type:e.type,placeholder:e.placeholder,ariaLabel:e.getAttribute('aria-label'),class:e.className}));
  if(roots.size!==1){result.problems.push(roots.size?'Multiple transfer menus are visible. Close extra menus and read again.':'No matching submenu was detected. Leave the matching-transaction submenu open in the money-out transaction tab.');return result;}
  const menu=[...roots][0],matching=headingNodes(menu,matchingText),create=headingNodes(menu,createText);result.matchingGroups=matching.length;result.createGroups=create.length;
+ if(menu.closest('[aria-busy="true"]')||[...menu.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible))result.problems.push('Transfer menu is still loading.');
  const follows=(a,b)=>!!(a.compareDocumentPosition(b)&4);
  const nodes=[...menu.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],li,button,a,.wv-list__item,.wv-dropdown__item,.wv-select__option,.wv-select__menu__option')].filter(visible);
  const options=nodes.filter(e=>!nodes.some(child=>child!==e && e.contains(child) && clean(child)===clean(e)));
@@ -37,8 +38,12 @@ export function readTransferMenu(testContext){
   if(matching.length===1 && follows(matching[0],e) && (!create.length || create.every(h=>follows(e,h))))result.matchingOptions.push(item);
   else if(create.length===1 && follows(create[0],e))result.createOptions.push(item);
  }
- if(matching.length!==1)result.problems.push('Could not identify one matching-transaction section.');
- if(!result.matchingOptions.length)result.problems.push('No recognizable matching options captured. The menu HTML is included for selector inspection.');
+ // Wave omits the matching section when this popup offers only new transfers.
+ // Prove every selectable entry belongs to its one create section; do not
+ // interpret a missing heading alone as proof that no existing match exists.
+ result.createOnlyValidated=matching.length===0&&create.length===1&&result.createOptions.length>0&&options.every(e=>follows(create[0],e))&&result.createOptions.every(o=>!o.transactionId&&!o.href&&!/^Transfer (?:to|from) /i.test(o.text))&&!result.problems.length;
+ if(matching.length!==1&&!result.createOnlyValidated)result.problems.push('Could not identify one matching-transaction section.');
+ if(!result.matchingOptions.length&&!result.createOnlyValidated)result.problems.push('No recognizable matching options captured. The menu HTML is included for selector inspection.');
  return result;
 }
 export function checkTransferMenu(report,pair,business){

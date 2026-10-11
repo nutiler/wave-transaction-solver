@@ -1,5 +1,12 @@
 # Development milestones
 
+## 0.99.23 — observed create-only transfer menus and delete icons
+
+- Recognize the observed transfer popup containing only Select Account to Create Transfer. Require one create section, plain account entries exclusively after its heading, no busy state or unclassified/linked entries, and complete live-history duplicate checks. Existing-match selection still requires its matching section.
+- Accept Wave's exact delete icon accessible label inside the checked transaction form; preserve protected-record, exact-field, retained-copy and checkpoint safeguards.
+- Preflight one intact record per approved opening/transfer account before new fixes or calendar-history collection. A name mismatch stops with expected and live account names, without inferring an alias or modifying the immutable package. This avoids repeating the same account failure across dozens of payments.
+- Add create-only reader/editor and duplicate/loading rejection cases, the observed delete label and zero-write/no-collection account mismatch coverage. Live batch completion remains unverified.
+
 ## 0.99.22 — automatic held-fix reports and repair engine identity
 
 - Copy every prepared action's verified/uncertain status and exact held reason into a separate diagnostic record when restoring the panel and finishing a run. Log all held reasons; write `data/venmo/venmo-repair-diagnostics.local.json` only with existing write permission. Never prompt for permissions or replace financial checkpoints.

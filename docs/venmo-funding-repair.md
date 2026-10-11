@@ -2,7 +2,11 @@
 
 This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
 
-## Prepared reconciliation (0.99.22)
+## Prepared reconciliation (0.99.23)
+
+The account preflight reads one intact opening/transfer record per approved account before collecting years or starting new fixes. An expected/live name mismatch stops with both labels. It does not infer that a renamed account is the same account or change the immutable package. **Check fixes in Wave** performs this preflight read-only.
+
+Wave may omit Select Account with Matching Transaction and display only Select Account to Create Transfer. Creation accepts that layout only after proving one create section, plain unlinked account entries exclusively after its heading, no unclassified entries or loading state, and complete live-history absence of an eligible counterpart. Matching an existing transaction still requires the matching section. Deletion recognizes the observed delete icon accessible label and retains all original-record/retained-copy checks.
 
 Restoring the panel records all saved held reasons automatically; it does not need another repair run. A separate `venmo:repair-diagnostics:<business>` record includes status, exact IDs, stages, reasons and engine versions without the raw snapshots. If the connected data folder already has write permission, the report is also saved to `data/venmo/venmo-repair-diagnostics.local.json`. No new permission prompt is opened. These diagnostic copies never replace or authorize financial checkpoints. A mismatch between the installed manifest, loaded repair/funding engines or Wave adapter stops before any Wave action. Build-specific module URLs prevent the repair handler from relying solely on the header's version label.
 

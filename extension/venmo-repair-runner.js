@@ -1,8 +1,8 @@
 import {validateRepairPlan,repairKey,repairFingerprint,repairYears,assertRepairSnapshot,assertRetainedCopy,repairRecordFields,sameDepositRow,normalizeDepositCategory} from './venmo-reconciliation.js';
-import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.22';
-export const VENMO_REPAIR_ENGINE_VERSION='0.99.22';
+import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.23';
+export const VENMO_REPAIR_ENGINE_VERSION='0.99.23';
 import {fundingKey,fundingFingerprint,assertFundingCollection,assertFundingRecord} from './venmo-funding.js';
-import {cents} from './model.js';
+import {cents,normalize} from './model.js';
 import {evidenceSnapshot} from './service-solvers.js';
 
 // A package is an exact preview, not a general instruction to balance an account.
@@ -49,6 +49,21 @@ export async function runVenmoRepairPlan({plan,business,approvedFingerprint,rece
  for(const a of plan.actions.filter(a=>mode!=='recheck'&&a.kind==='opening'&&saved[repairKey(a)]?.saveAttempted)){
   try{const r=await verifyMutation(a),receipt=saved[repairKey(a)];if(mode!=='recheck'&&!r.verified&&(!r.retryReady||((receipt.amountRetryCount||0)>=1&&!confirmationRecovery(receipt))))throw Error(receipt.message+' Opening correction already retried; inspect the Wave form before continuing.');}
   catch(e){await checkpoint(repairKey(a),{...saved[repairKey(a)],verified:false,message:e.message});if(mode!=='recheck')throw e;}
+ }
+ // A changed account label affects an entire group. Read one intact record
+ // per approved account before new writes or years of collection, rather than
+ // repeating the same mismatch across every payment. This proves no aliases.
+ if(mode!=='recheck'){
+  const accounts=new Map();
+  for(const a of plan.actions.filter(a=>a.kind==='opening'))accounts.set(normalize(a.record.primary.account),a.record);
+  for(const a of plan.actions.filter(a=>a.kind==='transfer'))for(const t of [a.transfer.bank,a.transfer.purchase].filter(Boolean))if(!accounts.has(normalize(t.primary.account)))accounts.set(normalize(t.primary.account),t);
+  onProgress('Checking '+accounts.size+' approved account names before history collection or new fixes…');
+  for(const t of accounts.values()){
+   if(stopRequested())return {receipts:saved,transferReceipts:transfers,results,stopped:true};
+   const s=await read(t,business);current();
+   if(s?.identity?.business!==business||s.identity.transaction!==t.id||s.currency!=='USD'||!s.fields?.account)throw Error('Could not read the exact approved account before this batch. No new fix started.');
+   if(normalize(s.fields.account)!==normalize(t.primary.account))throw Error('Account differs from the prepared audit: expected '+JSON.stringify(t.primary.account)+'; live '+JSON.stringify(s.fields.account)+'. Batch held before history collection or new fixes.');
+  }
  }
  // All other uncertain writes must resolve before this invocation starts any
  // new writes, even when their action appears later in the prepared package.
