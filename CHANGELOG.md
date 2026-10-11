@@ -1,5 +1,11 @@
 # Development milestones
 
+## 0.99.22 — automatic held-fix reports and repair engine identity
+
+- Copy every prepared action's verified/uncertain status and exact held reason into a separate diagnostic record when restoring the panel and finishing a run. Log all held reasons; write `data/venmo/venmo-repair-diagnostics.local.json` only with existing write permission. Never prompt for permissions or replace financial checkpoints.
+- Log the installed extension, loaded reconciliation engine and loaded funding engine versions. Stop before Wave access when these differ or the loaded Wave adapter is stale. Load critical repair modules through build-specific URLs so their identity is independent of the header's manifest label.
+- Add report tests for withheld write permission, exact file destination, uncertain saves, unchanged source checkpoints, real browser file writing and mismatched-engine zero-write behavior. Live repair completion remains unverified.
+
 ## 0.99.21 — held Venmo fixes and transfer popup handling
 
 - Recognize Wave's outer category popup as well as its nested options containers, so transfer section headings outside the options list remain visible to opening and creation. Preserve exact account, existing-match, currency, field and checkpoint guards.

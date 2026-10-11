@@ -1,5 +1,6 @@
 import {validateRepairPlan,repairKey,repairFingerprint,repairYears,assertRepairSnapshot,assertRetainedCopy,repairRecordFields,sameDepositRow,normalizeDepositCategory} from './venmo-reconciliation.js';
-import {runFundingRepairs} from './venmo-funding-runner.js';
+import {runFundingRepairs} from './venmo-funding-runner.js?build=0.99.22';
+export const VENMO_REPAIR_ENGINE_VERSION='0.99.22';
 import {fundingKey,fundingFingerprint,assertFundingCollection,assertFundingRecord} from './venmo-funding.js';
 import {cents} from './model.js';
 import {evidenceSnapshot} from './service-solvers.js';

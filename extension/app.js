@@ -1,5 +1,5 @@
 import {liveRecord,savedSnapshotRecord,assertLiveStructure,scanDateScope} from './live-records.js';
-import {fundingWaveAdapter} from './venmo-funding-wave.js';
+import {fundingWaveAdapter} from './venmo-funding-wave.js?build=0.99.22';
 import {installCommandCenter} from './command-view.js';
 import {prepareCommandModel,validateCommandDecision,decisionRecord,commandBaselineRecord} from './command-center.js';
 import {indexDataFolder,mergeAccountingHistory} from './data-index.js';

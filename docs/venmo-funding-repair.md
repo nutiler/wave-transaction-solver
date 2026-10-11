@@ -2,7 +2,9 @@
 
 This feature repairs supported missing transfer counterparts, rather than inserting a balancing adjustment. It uses bank movements mentioning Venmo, within the selected Wave business, with USD statement evidence identifying the exact bank ending and the exact Venmo profile/account.
 
-## Prepared reconciliation (0.99.21)
+## Prepared reconciliation (0.99.22)
+
+Restoring the panel records all saved held reasons automatically; it does not need another repair run. A separate `venmo:repair-diagnostics:<business>` record includes status, exact IDs, stages, reasons and engine versions without the raw snapshots. If the connected data folder already has write permission, the report is also saved to `data/venmo/venmo-repair-diagnostics.local.json`. No new permission prompt is opened. These diagnostic copies never replace or authorize financial checkpoints. A mismatch between the installed manifest, loaded repair/funding engines or Wave adapter stops before any Wave action. Build-specific module URLs prevent the repair handler from relying solely on the header's version label.
 
 The top of **Venmo balance** loads `data/venmo/venmo-repair-plan.local.json` from the already connected project data folder. The package contains exact ledger snapshots, source identities, monthly balance proofs, retained-copy choices, deposit categories and signed balance effects. Private packages are excluded from version control; there is no customer-specific financial data in the shipped source code.
 
