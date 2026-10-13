@@ -1,5 +1,54 @@
 # Development milestones
 
+## 0.99.31 — inspect homogeneous split allocations across separate columns
+
+- The 103/105 run reports explicit USD from the fee inspector but zero allocations. Support split layouts whose category and named Amount controls live in separate columns when every selected category is identical and the exact counts agree. This does not assume a positional pairing.
+- Continue to require the exact approved allocation multiset, explicit USD, exact live-list total and unprotected form before deletion. Mixed categories, missing controls, changed amounts, foreign currency and protected records remain blocked in browser tests.
+- Preserve compact split-control diagnostics on failed reads, and the exact live bank transfer label, exposed links and candidate snapshots on unresolved reciprocal checks. Do not repeat Save for the held existing Chase relationship. All 103 verified checkpoints remain unchanged.
+
+## 0.99.30 — recover the held menu attempt and scope deposit dropdowns
+
+- Scope Account/Category options to the current field's contained or ARIA-linked popup. An unrelated Add transaction menu no longer makes a proven owned Account popup ambiguous; genuinely ambiguous unowned popups still hold.
+- Split inspection excludes currency selectors from expense allocations and reads exact currency text with decorative SVGs. Deletion still requires explicit USD, all unchanged allocations, the exact live-list total and no protected details. Currency holds now preserve concise diagnostics.
+- An earlier guarded retry that definitively stopped in open-transfer-menu navigation without any financial click can resume under Do fixes only after the unchanged original and absent opposite-entry proofs pass again. Prior checkpoints remain recorded; unknown or financially attempted outcomes do not receive this exception, and Recheck never writes.
+- Audit of the new 10,119-transaction export confirms the 101 completed ledger effects and the four remaining changes totaling $2,369.77. Same-date/amount generated transfers are checked against the multiplicity of separate approved bank movements, not declared duplicate by description alone. The existing $1,000 Chase relationship remains unresolved.
+
+## 0.99.29 — wait for Wave category navigation before selecting Transfer
+
+- Fix a reproduced asynchronous-menu failure: the old reader checked More options before the category popup mounted, then searched inside the current personal/refund group. Reacquire the owned popup and back control until the root transfer branch appears; also wait for the back navigation to render.
+- Clear an existing owned category filter before navigating back. Click each observed back control once, reject ambiguous/disabled controls, and hold with an explicit navigation error if Wave never leaves the group. No transfer or Save is clicked after a failed group transition.
+- Fictional browser regressions cover delayed popup mounting, delayed back navigation, funding and cash-outs, and a stalled back control. Existing saved financial checkpoints and exact-account, amount, counterpart and Save guards remain intact. Real batch completion still requires live verification.
+
+## 0.99.28 — navigate the observed category group and read split fees
+
+- Use the observed `More options` control to leave the selected personal/refund category group before locating Transfer. Scope the read-only navigation to one popup and reject disabled or ambiguous controls; preserve the existing counterpart and Save guards.
+- Recognize a split form with separate named Amount controls and Category rows. Return it for independent allocation, USD and exact live-list total checks rather than timing out while demanding one amount/category. The approved $19.77 fee still requires all three original allocations before deletion.
+- Wait for the new-deposit fields to mount, support required-marked and ARIA-linked labels, and accept the exact `Refund for <approved expense>` menu label within its approved path. Do not save until every target field verifies.
+- Adopt exact read-only verified funding checkpoints into the prepared batch even when no Save was attempted. Report the total remaining separately from held results, avoiding the confusing 77 verified / 27 held sum.
+- Browser regressions reproduce the screenshot's nested More options control, personal/refund submenus, separate split amounts, late deposit controls, required labels and prefixed refund labels. Real batch completion remains unverified; the existing Chase relationship remains held for inspection.
+
+## 0.99.27 — recover Venmo checkpoints without reopening verified purchases
+
+- Fix the observed v0.99.26 stop during legacy checkpoint adoption. An exact verified proposal is adopted without rereading its retained purchase; only a changed retained-copy proposal needs that read. Hold a failed changed-copy adoption locally and continue independent fixes.
+- Persist recovered progress into both financial stores as each transfer verifies, so an interrupted recovery retains its correct progress count immediately.
+- Replace repeated Venmo snapshot polling with one read-only DOM observation of the exact business/transaction form. Wait for delayed React mounting, reject other records, and bound saved-record navigation by elapsed time when Chrome throttles background timers. Accept a split form for subsequent independently checked allocation reading.
+- Prefer the latest checked transfer failure in diagnostics over an earlier submenu warning; include exact read identity and structural problems without copying full snapshots.
+- Reproduce the reported redundant-read failure, delayed dialog mount, wrong-record timeout and throttled navigation in tests. Exercise 52 older uncertain funding checkpoints in the 63-completed/42-remaining mixed regression. Real batch completion remains unverified.
+
+## 0.99.26 — recover completed Venmo pairs from the latest export
+
+- Accept Wave's exact `Created Transfer: <originating description>` counterpart labels during account selection and reciprocal verification, alongside its older description. Preserve exact amount, date, direction, business, account and retained-purchase checks.
+- Read the newest business-scoped immutable export to locate saved counterpart IDs. Verify each pair in live Wave before adopting it; export evidence alone never marks a repair complete or authorizes a write. The current export locates 52 unique completed funding pairs without history scans. Preserve the original 105-action plan and saved financial checkpoints.
+- Keep real incoming payments distinct from generated funding. An existing bank relationship pointing to a real receipt stays held with the affected ID and inspection link; independent fixes continue. Protected deletions remain protected.
+- Test the exact 105-action mix resuming from 63 completed and applying only 42 remaining. Isolated browser testing exercises 42 account selections/Saves with dated, full generated descriptions, 52 read-only adoptions, zero full-history scans and no repeated writes on resume. Real batch completion still requires live verification.
+
+## 0.99.25 — direct Venmo transfers and immediate checkpoints
+
+- Prepared funding fixes now open the exact bank transaction, choose Transfer to/from Venmo and Save in one owned operation. The opener supports hover category branches and create-only account menus. Preserve amounts, dates, descriptions, reviewed state and the retained Venmo expense.
+- Remove full-history scans from the live repair path. Verify the exact linked counterpart when available; otherwise use a count-confirmed lookup restricted to the bank posting date. Fee absence checks use the fee's date; new-deposit duplicate checks use their seven-day window. No date-scoped lookup is presented as complete yearly history.
+- Checkpoint every verified transfer immediately in both repair stores. Skip completed actions on resume, adopt manually completed transfers read-only, and keep unknown Save outcomes locked without holding unrelated payments. Reject other-account transfer relationships and changed exact fields.
+- Validate 105 fictional fixes resuming from 11 completed to 105 verified, with zero full-history scans and no repeated writes. Browser validation exercises 94 actual editor selections/Saves, hover/create-only menus and the real form reader. The real remaining batch has not been observed: live computer use was blocked by unreliable Chrome URL detection.
+
 ## 0.99.24 — account whitespace and bounded category navigation
 
 - Compare approved and live account labels with the same whitespace-only normalization in original-row proof, counterpart detection/verification, equal-amount groups and account preflight. Preserve words, punctuation, case, amounts, exact IDs and dates; do not rewrite the immutable audit. A trailing space in the archived Wells Fargo name no longer produces a false missing-record hold.

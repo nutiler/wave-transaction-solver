@@ -62,6 +62,13 @@ test('Verification waits for the save redirect to settle before reopening its re
   const tabs={get:async()=>{reads++;return reads===1?{id:9,url,status:'loading',pendingUrl:list}:reads===2?{id:9,url:list,status:'complete'}:{id:9,url,status:'complete'};},update:async()=>calls.push('update'),reload:async()=>calls.push('reload')};
   await reopenSavedTransaction(tabs,9,business,'1',()=>true,async()=>{});assert.deepEqual(calls,['update']);
 });
+
+test('saved-record navigation has a wall-clock bound when background timers are throttled',async()=>{
+ let clock=0,waits=0;
+ const tabs={get:async()=>({id:9,url:'https://next.waveapps.com/'+business+'/transactions',status:'complete'}),update:async()=>{}};
+ await assert.rejects(()=>reopenSavedTransaction(tabs,9,business,'1',()=>true,async()=>{waits++;clock+=6000;},{now:()=>clock,timeoutMs:15000}),/Opening exact transaction 1 timed out/);
+ assert(waits<=3,'must not spend 100 throttled waits opening one record');
+});
 test('Verification blocks other businesses, cancelled selections and unfinished record navigation',async()=>{
   const other=url.replace(business,'22222222-2222-2222-2222-222222222222');let updates=0;
   await assert.rejects(()=>reopenSavedTransaction({get:async()=>({url:other})},9,business,'1',()=>true,async()=>{}),/changed businesses/);

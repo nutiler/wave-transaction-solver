@@ -1,6 +1,24 @@
 // Injected only when the user presses Read live details. Keep self-contained.
 // This function reads the DOM and URL only: no clicks, input edits or network calls.
 export function readWavePage(testContext) {
+  // A single read-only DOM observer waits for React to render the owned record.
+  // Solver timers can be heavily throttled in a background Chrome tab, so avoid
+  // repeated caller-side sleeps and never accept another transaction as ready.
+  if(testContext?.waitForReady){
+    const request=testContext.waitForReady,doc=testContext.document||document,view=doc.defaultView||globalThis;
+    const milliseconds=Math.min(15000,Math.max(1000,Number(request.timeoutMs)||15000));
+    return new Promise(resolve=>{
+      let observer,timer,finished=false;
+      const read=()=>readWavePage(testContext.document?{document:doc,location:testContext.location,getComputedStyle:testContext.getComputedStyle}:undefined);
+      const finish=s=>{if(finished)return;finished=true;observer?.disconnect();if(timer) view.clearTimeout(timer);resolve(s);};
+      const inspect=()=>{const s=read();if(s.identity?.business!==request.business||s.identity.transaction!==request.id)return;
+        const required=['date','description','account','type',...(s.structure?.split?[]:['amount','category'])];
+        if(required.every(k=>typeof s.fields[k]==='string'&&s.fields[k].trim()))finish(s);
+      };
+      observer=new view.MutationObserver(inspect);observer.observe(doc.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});
+      timer=view.setTimeout(()=>{const s=read();s.problems.push('Timed out waiting for the exact transaction form.');finish(s);},milliseconds);inspect();
+    });
+  }
   // The extension calls this without arguments. A supplied DOM context is only
   // used by the local mock-dialog harness; it never changes a real Wave page.
   const pageDocument = testContext?.document || document;
@@ -82,13 +100,23 @@ export function readWavePage(testContext) {
     return '';
   }
   for (const name of names) result.fields[name.toLowerCase()] = field(name);
+  // Only links inside the selected Category control can identify the other
+  // transfer side. Unrelated list/receipt links never become counterpart IDs.
+  result.transferLinks=[];
+  for(const label of fieldLabels.filter(el=>tidy(el.textContent).toLowerCase()==='category'))for(let container=label.parentElement;container&&container!==root;container=container.parentElement){
+    if(fieldLabels.some(other=>other!==label&&container.contains(other)))break;
+    for(const anchor of container.querySelectorAll('a[href]')){try{const target=new URL(anchor.getAttribute('href'),url.href),m=target.pathname.match(/^\/([0-9a-f-]{36})\/transactions\/(\d+)\/?$/i);if(target.origin===url.origin&&m?.[1]===identity.business&&m[2]!==identity.transaction)result.transferLinks.push(m[2]);}catch{}}
+  }
+  result.transferLinks=[...new Set(result.transferLinks)];
   const buttonText = el => {
     const clone = el.cloneNode(true);
     clone.querySelectorAll('svg,[aria-hidden="true"],.sr-only,[role="tooltip"]').forEach(node=>node.remove());
     return (tidy(clone.textContent) || tidy(el.getAttribute('aria-label'))).replace(/^[✓✔]\s*/, '');
   };
   const structuralButtons=[...root.querySelectorAll('button,[role=button]')].filter(visible).map(buttonText);
-  const split=structuralButtons.some(text=>/^(?:Remove split|Add (?:another )?split|Delete split)$/i.test(text))||/^(?:Split transaction|Multiple categories)$/i.test(result.fields.category||'');
+  const namedAmounts=[...root.querySelectorAll('input')].filter(el=>visible(el)&&tidy(el.getAttribute('aria-label')).toLowerCase()==='amount');
+  const splitRows=namedAmounts.length>1&&fieldLabels.filter(el=>tidy(el.textContent).toLowerCase()==='category').length>1;
+  const split=splitRows||structuralButtons.some(text=>/^(?:Remove split|Add (?:another )?split|Delete split)$/i.test(text))||/^(?:Split transaction|Multiple categories)$/i.test(result.fields.category||'');
   const currencies=new Set();for(const label of fieldLabels.filter(el=>tidy(el.textContent).toLowerCase()==='amount')){for(let container=label.parentElement;container&&container!==root;container=container.parentElement){if(fieldLabels.some(other=>other!==label&&container.contains(other)&&tidy(other.textContent).toLowerCase()!=='amount'))break;for(const el of [...container.querySelectorAll('*')].filter(el=>visible(el)&&!el.children.length&&/^(?:USD|CAD|EUR|GBP|AUD)$/i.test(tidy(el.textContent))))currencies.add(tidy(el.textContent).toUpperCase());if(currencies.size)break;}}result.currency=currencies.size===1?[...currencies][0]:null;
   result.structure={singleCategory:!split&&!!result.fields.category&&structuralButtons.filter(text=>/^Split transaction$/i.test(text)).length===1,split};
   result.controls = [...root.querySelectorAll('button,[role="button"]')].filter(visible).map(buttonText).filter(text => /^(Save|Cancel|Reviewed|Review updates|Mark (as )?reviewed|Mark (as )?(unreviewed|not reviewed)|Unreview)$/i.test(text));

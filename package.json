@@ -1,6 +1,6 @@
 {
   "name": "wave-transaction-solver",
-  "version": "0.99.24",
+  "version": "0.99.31",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,10 @@
     "test:console": "node scripts/check-console-browser.mjs",
     "test:venmo-funding": "node scripts/check-venmo-funding-browser.mjs",
     "test:venmo-repairs": "node scripts/check-venmo-repair-browser.mjs",
-    "test:list": "node scripts/check-list-browser.mjs"
+    "test:list": "node scripts/check-list-browser.mjs",
+    "test:venmo-direct": "node scripts/check-venmo-direct-browser.mjs",
+    "test:venmo-read": "node scripts/check-venmo-read-browser.mjs",
+    "test:venmo-observed": "node scripts/check-venmo-observed-browser.mjs"
   },
   "engines": {
     "node": ">=20"

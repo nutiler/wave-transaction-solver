@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import {fictionalRepairPlan} from '../extension/venmo-repair-fixture-data.js';
 import {repairKey} from '../extension/venmo-reconciliation.js';
 import {repairDiagnosticReport,persistRepairDiagnostics} from '../extension/venmo-repair-diagnostics.js';
+import {fundingKey} from '../extension/venmo-funding.js';
+
+test('latest transfer read failure is reported instead of an earlier submenu failure',()=>{
+ const plan=fictionalRepairPlan(),a=plan.actions.find(a=>a.kind==='transfer'),report=repairDiagnosticReport({plan,receipts:{[repairKey(a)]:{verified:false,saveAttempted:false,message:'Earlier submenu did not open.'}},transferReceipts:{[fundingKey(a.transfer)]:{verified:false,saveAttempted:true,checkedAt:'2026-10-12T21:09:00Z',message:'Exact record form timed out.',liveDiagnostics:{expectedId:a.transfer.bank.id,problems:['Dialog absent']}}}});
+ const result=report.actions.find(r=>r.key===repairKey(a));assert.equal(result.reason,'Exact record form timed out.');assert(result.saveAttempted);assert.deepEqual(result.liveDiagnostics.problems,['Dialog absent']);
+});
+
+test('diagnostics do not count an older verified transfer when retained-copy adoption is held',()=>{
+ const plan=fictionalRepairPlan(),a=plan.actions.find(a=>a.kind==='transfer'),report=repairDiagnosticReport({plan,receipts:{[repairKey(a)]:{verified:false,saveAttempted:true,message:'Retained-copy adoption held.'}},transferReceipts:{[fundingKey(a.transfer)]:{verified:true,saveAttempted:true,fingerprint:'earlier proposal',checkedAt:'2026-10-12T21:09:00Z',message:'Older transfer verified.'}}});
+ assert.equal(report.actions.find(r=>r.key===repairKey(a)).verified,false);assert.equal(report.verified,0);
+});
 
 test('repair diagnostic copies show every held reason and preserve uncertain save status without raw snapshots',()=>{
  const plan=fictionalRepairPlan(),first=plan.actions[0],second=plan.actions[1],receipts={[repairKey(first)]:{verified:true,saveAttempted:true,message:'Removed copy verified.'},[repairKey(second)]:{verified:false,saveAttempted:true,message:'Saved result needs verification.',outcome:{stage:'deletion requested',problem:'Response lost'},originalSnapshot:{secret:'Do not include full fields'}}};

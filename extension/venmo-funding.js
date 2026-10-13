@@ -81,6 +81,9 @@ export function fundingYears(proposals){return [...new Set(proposals.flatMap(p=>
 // Display whitespace is not an account rename. Preserve words, punctuation,
 // case and card endings; do not apply merchant-name normalization here.
 export const accountLabel=value=>String(value??'').replace(/\s+/g,' ').trim();
+  // Wave includes the originating description in newer generated counterparts.
+  // Accept these exact forms, never an arbitrary "Created Transfer" prefix.
+  export const fundingCreatedDescriptions=p=>['Created Transfer','Created Transfer: '+p.bank.description];
 export function fundingLiveCounterparts(p,report){return report.records.filter(r=>{if(accountLabel(r.account)!==accountLabel(p.walletAccount.account)||r.amountCents!==p.bank.amount||!near(r.date,p.bank.date,20)||r.id===p.purchase?.id)return false;if(report.verifiedAssignments?.some(a=>a.business===p.business&&!a.bankIds.includes(p.bank.id)&&a.counterpartIds.includes(r.id)))return false;const s=r.directionEvidence,f=s?.fields,amount=String(f?.amount??'').replace(/[$,]/g,'');if(s?.identity?.business===p.business&&s.identity.transaction===r.id&&s.currency==='USD'&&!s.problems?.length&&accountLabel(f.account)===accountLabel(r.account)&&f.date===r.date&&/^\d+(?:\.\d{1,2})?$/.test(amount)&&Math.round(Number(amount)*100)===r.amountCents&&['Deposit','Withdrawal'].includes(f.type))return f.type===(p.kind==='funding'?'Deposit':'Withdrawal');return true;});}
 export function prepareFundingCreate(p,snapshots,menu,report){
  assertFundingCollection(report,p.business,fundingYears([p]));

@@ -3,8 +3,9 @@ import {importAccounting} from './model.js';
 import {importVenmoEvidence,mergeServiceEvidence} from './service-solvers.js';
 import {validateRepairPlan,repairKey,completedRepairBalance} from './venmo-reconciliation.js';
 import {fundingKey} from './venmo-funding.js';
-import {runVenmoRepairPlan,VENMO_REPAIR_ENGINE_VERSION} from './venmo-repair-runner.js?build=0.99.24';
-import {VENMO_FUNDING_ENGINE_VERSION} from './venmo-funding-runner.js?build=0.99.24';
+import {fundingExportHints,loadLatestRepairExport} from './venmo-export-hints.js';
+import {runVenmoRepairPlan,VENMO_REPAIR_ENGINE_VERSION} from './venmo-repair-runner.js?build=0.99.31';
+import {VENMO_FUNDING_ENGINE_VERSION} from './venmo-funding-runner.js?build=0.99.31';
 import {repairDiagnosticReport,persistRepairDiagnostics} from './venmo-repair-diagnostics.js';
 import {activity,paintActivity} from './activity.js';
 import {logEvent,logError} from './diagnostic-console.js';
@@ -21,7 +22,9 @@ export async function loadPreparedVenmoRepair(root,business){
  const records=mergeServiceEvidence(bundles);validateRepairPlan(plan,business,{records,statements});
  const accounting=await fileAt(root,plan.waveSource),ledger=importAccounting(await accounting.text()),byID=new Map(ledger.transactions.map(t=>[t.id,t]));
  for(const t of plan.baseline)if(JSON.stringify(byID.get(t.id))!==JSON.stringify(t))throw Error('The archived Wave export differs from the prepared audit.');
- return {plan,transactions:ledger.transactions,records,statements};
+ const latest=await loadLatestRepairExport(root,business);let currentLedger=null;
+ if(latest){currentLedger=importAccounting(latest.text);if(currentLedger.transactions.length!==latest.manifest.transactionCount)throw Error('Latest Wave export count differs from its business manifest.');}
+ return {plan,transactions:ledger.transactions,records,statements,counterpartHints:currentLedger?fundingExportHints(plan,currentLedger.transactions):{},latestTransactions:currentLedger?.transactions,latestExport:latest?{source:latest.source,importedAt:latest.manifest.importedAt}:null};
 }
 export function installVenmoRepairView({parent,getState,makeAdapter,withRun=fn=>fn(),loadPrepared=async business=>{const root=await projectDataFolder();if(!root)return null;if(await root.queryPermission({mode:'read'})!=='granted')throw Error('Refresh your connected data folder to restore read access.');return loadPreparedVenmoRepair(root,business);}}){
  const section=el('section',undefined,'venmo-repair-workspace');section.id='venmoRepairBatch';parent.prepend(section);
@@ -29,7 +32,7 @@ export function installVenmoRepairView({parent,getState,makeAdapter,withRun=fn=>
  const summary=el('div',undefined,'funding-balances'),details=el('details',undefined,'setup-options'),rows=el('div');details.append(el('summary','Review every prepared fix'),rows);
  const run=el('button','Do fixes'),check=el('button','Check fixes in Wave','secondary'),recheck=el('button','Recheck saved fixes','secondary'),refresh=el('button','Reload prepared findings','secondary'),stop=el('button','Stop after current fix','secondary');stop.hidden=true;
  const batchLabel=el('span'),bar=el('div',undefined,'bar');bar.append(run,check,recheck,refresh,stop,batchLabel);
- section.append(el('span','PREPARED RECONCILIATION','finance-eyebrow'),el('h2','Your Venmo fixes, ready to run'),el('p','Do fixes approves the exact changes displayed below. The app checks live records, preserves the retained payment categories, and verifies saved results.'),status,bar,summary,details);
+ section.append(el('span','PREPARED RECONCILIATION','finance-eyebrow'),el('h2','Your Venmo fixes, ready to run'),el('p','Do fixes resumes unfinished items. Each bank payment is set to Transfer to Venmo and saved; the Venmo purchase stays as the expense. Saved transfers are checked directly, with a posting-date lookup when needed.'),status,bar,summary,details);
  let owner=null,saved={version:1,plan:null,receipts:{}},loaded=null,legacy=null,running=false,loading=false,stopRequested=false,epoch=0,problem='';
  const busy=()=>running||loading||getState().busy;
  const builds=()=>({installed:globalThis.chrome?.runtime?.getManifest?.().version||null,repair:VENMO_REPAIR_ENGINE_VERSION,funding:VENMO_FUNDING_ENGINE_VERSION});
@@ -65,19 +68,20 @@ export function installVenmoRepairView({parent,getState,makeAdapter,withRun=fn=>
  async function execute(mode){
   if(busy()||!saved.plan||problem||!getState().extensionMode||getState().sample)return;running=true;stopRequested=false;stop.hidden=false;stop.disabled=false;const business=owner,plan=saved.plan,source=getState().transactions,lease=crypto.randomUUID(),task=activity.begin(mode==='apply'?'Applying prepared Venmo fixes':'Checking prepared Venmo fixes',{priority:10});let heartbeat=null,leaseValid=false,leaseDeadline=0,renewal=Promise.resolve(),failed=false,diagnosticResults=[];update();
   const current=()=>leaseValid&&Date.now()<leaseDeadline&&getState().business===business&&saved.plan===plan&&getState().transactions===source;
-  const progress=message=>{status.textContent=message;task.update({detail:message});logEvent(message,{provider:'venmo',detail:'Prepared reconciliation'});};
+  const progress=message=>{const done=plan.actions.filter(a=>saved.receipts[repairKey(a)]?.verified).length;status.textContent=done+' / '+plan.actions.length+' verified · '+message;task.update({detail:status.textContent});logEvent(message,{provider:'venmo',detail:done+'/'+plan.actions.length+' prepared fixes verified'});};
   try{
    await paintActivity();const build=builds();logEvent('Venmo repair engine loaded',{provider:'venmo',detail:JSON.stringify(build)});if(build.installed&&[build.repair,build.funding].some(v=>v!==build.installed))throw Error('Loaded Venmo engine '+build.repair+' does not match installed extension '+build.installed+'. Close Solver tabs, reload the extension and reopen Solver. No Wave action started.');await claimVenmoLease(business,lease);leaseValid=true;leaseDeadline=Date.now()+240000;heartbeat=setInterval(()=>{renewal=renewal.then(()=>claimVenmoLease(business,lease)).then(()=>{leaseDeadline=Date.now()+240000;}).catch(e=>{leaseValid=false;logError(e,'Venmo run lease lost');});},30000);const fresh=await loadPrepared(business);if(!fresh||JSON.stringify(fresh.plan)!==JSON.stringify(plan))throw Error('Prepared files changed. Reload the findings and review the new preview before applying.');loaded=fresh;validateRepairPlan(plan,business,{records:loaded.records,statements:loaded.statements});
    // Re-read persisted locks; the older funding panel may have run since load.
    legacy=fundingState(await loadLocalFeature('venmo:funding:'+business),business);
    const pendingFunding=Object.values(legacy.receipts||{}).filter(r=>r.saveAttempted&&!r.verified&&!plan.actions.some(a=>a.kind==='transfer'&&fundingKey(a.transfer)===fundingKey(r.proposal)));
    if(pendingFunding.length)throw Error('An earlier transfer save needs its read-only recheck before this batch can write.');
-   const adapter=makeAdapter({business,transactions:loaded.transactions,isCurrent:current,stopRequested:()=>stopRequested,onProgress:progress});
+   const adapter=makeAdapter({business,transactions:loaded.latestTransactions||loaded.transactions,isCurrent:current,stopRequested:()=>stopRequested,onProgress:progress});
+   if(loaded.latestExport)progress('Latest export supplies exact addresses for '+Object.keys(loaded.counterpartHints||{}).length+' saved transfer pairs. Checking live records; completed transfers will not be saved again.');
    if(build.installed&&adapter.engineBuild!==build.installed)throw Error('Loaded Venmo Wave adapter '+(adapter.engineBuild||'unknown')+' does not match installed extension '+build.installed+'. Close Solver tabs, reload the extension and reopen Solver. No Wave action started.');
-   const result=await withRun(()=>runVenmoRepairPlan({plan,business,approvedFingerprint:mode==='apply'?JSON.stringify(plan):null,receipts:saved.receipts,transferReceipts:legacy.receipts||{},...adapter,mode,isCurrent:current,stopRequested:()=>stopRequested,onProgress:progress,hasLock:a=>{const ids=[a.record?.id,a.keep?.id,a.transfer?.bank.id,a.transfer?.purchase?.id].filter(Boolean);return unverifiedWaveReceipts(getState().receipts,business).some(({key,receipt:r})=>ids.some(id=>key===business+':'+id||r.ids?.includes(id)));},persist:async state=>{const next={...saved,business,receipts:state.receipts},funding={...legacy,receipts:state.transferReceipts};await writeLocalRecords([{key:'venmo:reconciliation:'+business,value:next},{key:'venmo:funding:'+business,value:funding}]);saved=next;legacy=funding;}}));
+   const result=await withRun(()=>runVenmoRepairPlan({plan,business,approvedFingerprint:mode==='apply'?JSON.stringify(plan):null,receipts:saved.receipts,transferReceipts:legacy.receipts||{},counterpartHints:loaded.counterpartHints||{},...adapter,mode,isCurrent:current,stopRequested:()=>stopRequested,onProgress:progress,hasLock:a=>{const ids=[a.record?.id,a.keep?.id,a.transfer?.bank.id,a.transfer?.purchase?.id].filter(Boolean);return unverifiedWaveReceipts(getState().receipts,business).some(({key,receipt:r})=>ids.some(id=>key===business+':'+id||r.ids?.includes(id)));},persist:async state=>{const next={...saved,business,receipts:state.receipts},funding={...legacy,receipts:state.transferReceipts};await writeLocalRecords([{key:'venmo:reconciliation:'+business,value:next},{key:'venmo:funding:'+business,value:funding}]);saved=next;legacy=funding;}}));
    const verified=plan.actions.filter(a=>result.receipts[repairKey(a)]?.verified).length,held=result.results.filter(r=>r.ready===false&&!r.verified).length;
    failed=held>0||!!result.stopped||(mode!=='check'&&verified<plan.actions.length);
-   status.textContent=mode==='check'?result.results.filter(r=>r.ready).length+' checks passed · '+held+' held. Nothing changed.':(failed?'Batch incomplete: ':'')+verified+' / '+plan.actions.length+' fixes verified · '+held+' held.'+(result.stopped?' Stopped after the current fix.':'')+' Projected balance after verified fixes: '+money(completedRepairBalance(plan,result.receipts))+'.';
+   status.textContent=mode==='check'?result.results.filter(r=>r.ready).length+' checks passed · '+held+' held. Nothing changed.':(failed?'Batch incomplete: ':'')+verified+' / '+plan.actions.length+' fixes verified · '+(verified<plan.actions.length?(plan.actions.length-verified)+' remaining · ':'')+held+' held.'+(result.stopped?' Stopped after the current fix.':'')+' Projected balance after verified fixes: '+money(completedRepairBalance(plan,result.receipts))+'.';
    const blockers=[...new Set(result.results.filter(r=>!r.verified&&r.ready===false&&r.message).map(r=>r.message))];
    if(blockers.length)status.textContent+=' '+blockers.slice(0,3).join(' · ');
    logEvent(failed?'Prepared Venmo batch incomplete':'Prepared Venmo batch finished',{provider:'venmo',level:failed?'warn':'info',detail:status.textContent});

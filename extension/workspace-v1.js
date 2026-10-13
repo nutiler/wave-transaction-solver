@@ -2,7 +2,7 @@ import {installFinanceHome} from './finance-home.js';
 import {installDataWorkspace} from './data-workspace.js';
 import {installSubscriptionView} from './subscription-view.js';
 import {installVenmoFundingView} from './venmo-funding-view.js';
-import {installVenmoRepairView} from './venmo-repair-view.js?build=0.99.24';
+import {installVenmoRepairView} from './venmo-repair-view.js?build=0.99.31';
 
 let controller=null;
 const make=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -18,7 +18,7 @@ export function installWorkspace({getState=()=>({}),getSubscriptionState=()=>({}
  const heading=main.querySelector(':scope>h1'),intro=heading.nextElementSibling;
  heading.textContent='Update my finances';intro.textContent='A clear path from new transactions to verified bookkeeping.';
  main.querySelector(':scope>.notice')?.remove();
- const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.24';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
+ const header=main.querySelector('header'),loadedVersion=globalThis.chrome?.runtime?.getManifest?.().version||'0.99.31';header.querySelector('strong').textContent='∿  Wave Solver';header.querySelector('.badge').textContent='1.0 PREVIEW · v'+loadedVersion+' · LOCAL & PRIVATE';
  const usage=make('div');usage.id='usageWorkspace';main.querySelector('footer').before(usage);
  const nav=make('nav');nav.className='workspace-nav finance-nav';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Wave Solver');
  const groups=new Map(),buttons=new Map();

@@ -125,7 +125,7 @@ export async function editWaveTransaction(request, testContext) {
       const actual = value(control(dialog, name)), expected = name === 'Category' ? category : name==='Description'&&descriptionUpdated?request.description:request.expected[name.toLowerCase()];
       const money = text => { const s = tidy(text).replace(/[$,]/g, ''); if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN; return Math.round(Number(s) * 100); };
       const transferLabels=name==='Category' && request.transfer && category===request.category ? [tidy(request.transfer.label),tidy('Transfer to '+String(request.transfer.label || '').replace(/^Transfer to /i,''))] : [];
-      if(name==='Category'&&request.transferCreate&&category===request.category){const date=new Date(request.expected.date+'T00:00:00Z');for(const d of [request.expected.date,...['short','long'].map(month=>new Intl.DateTimeFormat('en-US',{month,day:'numeric',year:'numeric',timeZone:'UTC'}).format(date))])transferLabels.push(tidy(request.category+' - '+d+' - Created Transfer'));}
+      if(name==='Category'&&request.transferCreate&&category===request.category){const date=new Date(request.expected.date+'T00:00:00Z');for(const d of [request.expected.date,...['short','long'].map(month=>new Intl.DateTimeFormat('en-US',{month,day:'numeric',year:'numeric',timeZone:'UTC'}).format(date))])for(const description of ['Created Transfer','Created Transfer: '+request.expected.description])transferLabels.push(tidy(request.category+' - '+d+' - '+description));}
       const refundLabel=name==='Category'&&category===request.category&&request.refund===true&&request.expected.type==='Deposit'&&request.categoryPath?.length===1&&request.categoryPath[0]==='Refund for Expense'&&actual===tidy('Refund for '+request.category);
       if (name === 'Amount' ? money(actual) !== money(expected) : actual !== tidy(expected) && !transferLabels.includes(actual) && !refundLabel) throw new Error(name + ' changed or could not be read. Nothing further clicked.');
     }
@@ -146,7 +146,7 @@ export async function editWaveTransaction(request, testContext) {
   // Wave can place section headings outside its options container. Keep the
   // popup root, as the read-only transfer reader does, without including forms.
   function transferScopes() {
-    const menus=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,[role="menu"],[role="listbox"]')].filter(el=>visible(el)&&!el.querySelector('textarea,input[type="password"],input[type="date"]')&&!el.contains(control(root(),'Category')));
+    const menus=[...doc.querySelectorAll('.wv-select__menu,.wv-select__menu__options,.wv-dropdown-menu,[role="menu"],[role="listbox"]')].filter(el=>visible(el)&&!el.querySelector('textarea,input[type="password"],input[type="date"]')&&!el.contains(control(root(),'Category')));
     return menus.filter(el=>!menus.some(other=>other!==el&&other.contains(el)));
   }
   function updateScopes(dialog) {
@@ -183,7 +183,7 @@ export async function editWaveTransaction(request, testContext) {
     if (review.length + alreadyReviewed.length !== 1 && !usesUpdates || updates.length&& !usesUpdates) throw new Error('Cannot identify a reviewed-state control. Copy the field diagnostics.');
     if(usesUpdates&&(!enabled(updates[0])||request.transfer||request.transferCreate||request.openTransferMenu))throw Error('Review updates is disabled or unsupported for this transfer. Nothing edited.');
     reviewRequested = alreadyReviewed.length === 1;
-    if (request.openTransferMenu) {
+    if (request.openTransferMenu || request.transferCreate?.openMenu) {
       stage='open transfer menu';
       const category=control(dialog,'Category');
       const clean=el=>{const c=el.cloneNode(true);c.querySelectorAll('svg,[aria-hidden="true"],.sr-only').forEach(n=>n.remove());return tidy(c.textContent);};
@@ -193,12 +193,33 @@ export async function editWaveTransaction(request, testContext) {
         if(!scopes().length){const toggles=[...category.querySelectorAll('.wv-select__toggle')].filter(visible);if(toggles.length!==1 || !enabled(toggles[0]))throw Error('Cannot identify the category toggle.');assertFields(request.expected.category);toggles[0].click();}
         let branches=[];
         const branch=request.expected.type==='Deposit'?'Transfer from Bank, Credit Card, or Loan':'Transfer to Bank, Credit Card, or Loan';
-        const findBranches=()=>{const menus=scopes();if(menus.length>1)throw Error('Multiple category menus are open. Nothing further clicked.');const candidates=new Set(menus.flatMap(el=>[...el.querySelectorAll('div,span,li,button,[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el)&&clean(el)===branch));return [...candidates].filter(el=>![...candidates].some(other=>other!==el&&el.contains(other)));};
-        for(let i=0;i<20;i++){
-          assertFields(request.expected.category);
-          branches=findBranches();
-          if(branches.length)break;await wait(100);
+        const findBranches=()=>{const menus=scopes();if(menus.length>1)throw Error('Multiple category menus are open. Nothing further clicked.');const candidates=new Set(menus.flatMap(el=>[...el.querySelectorAll('div,span,li,button,a,[role="option"],[role="menuitem"],[role="menuitemradio"]')]).filter(el=>visible(el)&&clean(el)===branch));return [...candidates].filter(el=>![...candidates].some(other=>other!==el&&el.contains(other)));};
+        // The toggle and back navigation both mount asynchronously in Wave.
+        // Reacquire the current group after each wait, rather than checking Back
+        // once before the popup exists and then searching the wrong group.
+        const findBack=menu=>{const candidates=[...menu.querySelectorAll('button,a,div,span,[role="button"]')].filter(el=>visible(el)&&clean(el)==='More options');return candidates.filter(el=>!candidates.some(other=>other!==el&&el.contains(other)));};
+        const clickedBack=new Set();
+        for(let i=0;i<40;i++){
+          assertFields(request.expected.category);branches=findBranches();
+          if(branches.length||isOpen())break;
+          const menus=scopes();
+          if(menus.length===1){
+            const back=findBack(menus[0]);
+            if(back.length>1)throw Error('Category More options control is ambiguous.');
+            if(back.length===1&&!clickedBack.has(back[0])){
+              if(clickedBack.size>=3)throw Error('Category navigation did not reach the transfer options.');
+              for(let el=back[0];el;el=el.parentElement){if(!enabled(el))throw Error('Category More options control is disabled.');if(el===menus[0])break;}
+              // A previous search can survive group navigation. Clear only the
+              // owned category filter before going back to the root choices.
+              const searches=[...menus[0].querySelectorAll('input')].filter(el=>visible(el)&&/^Search categories[.…]*$/i.test(tidy(el.placeholder||el.getAttribute('aria-label'))));
+              if(searches.length>1)throw Error('Category search is ambiguous.');
+              if(searches[0]?.value){const setter=Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype,'value')?.set;if(!setter||!enabled(searches[0]))throw Error('Cannot clear the category filter.');setter.call(searches[0],'');for(const event of ['input','change'])searches[0].dispatchEvent(new doc.defaultView.Event(event,{bubbles:true}));}
+              assertFields(request.expected.category);clickedBack.add(back[0]);back[0].click();
+            }
+          }
+          await wait(100);
         }
+        if(!branches.length&&!isOpen()&&scopes().some(menu=>findBack(menu).length))throw Error('Wave did not leave the current category group after More options. Transfer was not selected; nothing saved.');
         // The first category popup can render only a viewport of its options.
         // Scroll bounded steps, reacquiring the exact branch after each update.
         for(let i=0;!branches.length&&i<40;i++){
@@ -212,12 +233,17 @@ export async function editWaveTransaction(request, testContext) {
         // exact transfer branch. Search and scrolling cannot save a transaction.
         if(!branches.length){const menus=scopes();if(menus.length===1){const searches=[...menus[0].querySelectorAll('input')].filter(el=>visible(el)&&/^Search categories[.…]*$/i.test(tidy(el.placeholder||el.getAttribute('aria-label'))));if(searches.length===1&&enabled(searches[0])){const input=searches[0],previous=input.value,setter=Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype,'value')?.set;if(setter){assertFields(request.expected.category);setter.call(input,branch);input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));for(let i=0;i<20;i++){await wait(100);assertFields(request.expected.category);branches=findBranches();if(branches.length)break;}if(!branches.length&&input.isConnected){setter.call(input,previous);input.dispatchEvent(new doc.defaultView.Event('input',{bubbles:true}));input.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));}}}}}
         if(branches.length!==1 || !enabled(branches[0]))throw Error('Cannot identify one transfer submenu.');
-        assertFields(request.expected.category);branches[0].click();
+        assertFields(request.expected.category);
+        const option=branches[0].closest('.wv-select__menu__option,.wv-select__option,[role="option"],[role="menuitem"],[role="menuitemradio"],button,a')||branches[0];
+        if(!enabled(option))throw Error('Transfer branch is disabled.');
+        // Wave's nested category branches can open on hover rather than click.
+        for(const name of ['pointerover','mouseover','mouseenter'])option.dispatchEvent(new doc.defaultView.MouseEvent(name,{bubbles:true}));
+        if(!isOpen())option.click();
         for(let i=0;i<20 && !isOpen();i++){assertFields(request.expected.category);await wait(100);}
       }
       assertFields(request.expected.category);
       if(!isOpen())throw Error('The matching-transaction submenu did not open.');
-      return {saveAttempted:false,stage,menuOpened:true};
+      if(request.openTransferMenu)return {saveAttempted:false,stage,menuOpened:true};
     }
     if(request.reviewOnly){
       if(tidy(request.expected.category)!==tidy(request.category))throw Error('Review-only requests cannot change the category.');
@@ -251,6 +277,7 @@ export async function editWaveTransaction(request, testContext) {
       if(matching.length&&options.some(el=>follows(matching[0],el)&&follows(el,create[0])&&clean(el).includes(t.account)))throw Error('An existing Venmo matching option is present. Do not create another transfer.');
       const exact=options.filter(el=>follows(create[0],el)&&clean(el)===t.label);
       if(exact.length!==1||!enabled(exact[0])||exact[0].getAttribute('data-transaction-id')||exact[0].querySelector('[data-transaction-id]')||exact[0].getAttribute('href')||exact[0].querySelector('a[href]'))throw Error('Exact create-transfer account is missing, disabled or ambiguous.');
+      if(t.checkOnly===true)return {saveAttempted:false,stage:'direct transfer checked',menuOpened:true};
       assertFields(request.expected.category);saveAttempted=true;exact[0].click();
       let ready=false;for(let i=0;i<20;i++){try{dialog=assertFields(request.category);ready=true;break;}catch{await wait(100);}}
       if(!ready)throw Error('Creation was attempted but the selected transfer category is uncertain. Recheck; never repeat creation.');

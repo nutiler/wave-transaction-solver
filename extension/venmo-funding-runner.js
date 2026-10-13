@@ -1,11 +1,13 @@
 import {fundingKey,fundingFingerprint,fundingYears,assertFundingRecord,assertFundingCollection,fundingLiveCounterparts,fundingCategoryMatches,prepareFundingCreate,verifyFundingRepair,verifyFundingBatch} from './venmo-funding.js';
-export const VENMO_FUNDING_ENGINE_VERSION='0.99.24';
+import {runDirectFundingRepairs} from './venmo-direct-runner.js';
+export const VENMO_FUNDING_ENGINE_VERSION='0.99.31';
 
 // Every possible financial click has a durable checkpoint. A lost response is
 // recovered by reading the saved result, never by retrying creation.
-export async function runFundingRepairs({proposals,business,approvals={},receipts={},collect,read,openMenu,edit,persist,isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{},mode='check',hasLock=()=>false}){
+export async function runFundingRepairs({proposals,business,approvals={},receipts={},counterpartHints={},collect,read,openMenu,edit,lookupDates,directTransfer,persist,isCurrent=()=>true,stopRequested=()=>false,onProgress=()=>{},mode='check',hasLock=()=>false}){
  const current=()=>{if(!isCurrent())throw Error('Business or source history changed. Repair stopped.');};
  if(!['check','apply','recheck'].includes(mode)||!proposals.length||proposals.some(p=>p.business!==business))throw Error('Choose repairs for one Wave business.');
+ if(lookupDates&&directTransfer)return runDirectFundingRepairs({proposals,business,approvals,receipts,counterpartHints,read,lookupDates,directTransfer,persist,isCurrent,stopRequested,onProgress,mode,hasLock});
  const saved={...receipts},results=[],attempts=[],years=fundingYears(proposals);let stoppedError=null,batchReport=null,batchResults=new Map();
  const checkpoint=async(key,value)=>{current();const next={...saved,[key]:value};await persist(next);Object.assign(saved,next);};
  const snapshotsFor=async p=>{const s={};for(const t of [p.bank,p.purchase].filter(Boolean)){current();s[t.id]=await read(t,business);current();}return s;};

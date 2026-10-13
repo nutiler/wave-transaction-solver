@@ -1,8 +1,12 @@
 # Wave Solver
 
+This repository preserves the **0.5 → 1.0 learning experiment**, ending at preview 0.99.31. It is a historical prototype, not a completed live acceptance release. The owner manually finished the last Venmo repairs and reported reconciling the account; the old prepared batch must not be replayed.
+
+See the [learning retrospective](docs/learning-archive.md), [2.0 master plan](docs/2.0-master-plan.md), and [copy-and-paste 2.0 build prompt](docs/2.0-master-prompt.md). Financial exports, personal settings, repair checkpoints, and generated tax reports remain local and excluded from this public repository.
+
 A local Chrome extension centered on **Update my finances**: scan Wave, review supported suggestions, approve locally, then apply and verify. Daily work needs no accounting CSV. Optional exports and Amazon, PayPal and Venmo evidence add history and purchase details.
 
-The current build is **1.0 preview (0.99.24)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
+The current build is **1.0 preview (0.99.31)**. The beta and saved state remain recoverable. See [upgrade and live acceptance](docs/1.0-acceptance.md) before declaring final 1.0.
 
 ## Prepared Venmo fixes
 

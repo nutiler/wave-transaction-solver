@@ -54,10 +54,12 @@ export async function waitForLiveSnapshot(read, isCurrent, wait = ms=>new Promis
 }
 
 // Read-only navigation after a possible save. Never issues an editing action.
-export async function reopenSavedTransaction(tabs, tabId, business, id, isCurrent, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
+export async function reopenSavedTransaction(tabs, tabId, business, id, isCurrent, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms)), timing={}) {
   const url = 'https://next.waveapps.com/' + business + '/transactions/' + id;
   if (businessFromUrl(url) !== business || !/^\d+$/.test(id || '')) throw new Error('Invalid saved-record identity.');
   const guard = () => { if (!isCurrent()) throw new Error('Selection changed during saved-result verification.'); };
+  const now=timing.now||Date.now,deadline=now()+(timing.timeoutMs||15000);
+  const withinTime=()=>{if(now()>=deadline)throw Error('Opening exact transaction '+id+' timed out. No Save was repeated.');};
   const checkBusiness = tab => {
     for (const value of [tab.url, tab.pendingUrl].filter(Boolean)) {
       if (businessFromUrl(value) !== business) throw new Error('The Wave tab changed businesses. Reopen the intended record before verifying.');
@@ -72,7 +74,7 @@ export async function reopenSavedTransaction(tabs, tabId, business, id, isCurren
     checkBusiness(tab);
     // Save can still be navigating back to the list. Let it settle first.
     for (let i=0; (tab.status === 'loading' || tab.pendingUrl) && i<50; i++) {
-      guard(); await wait(100);
+      guard(); withinTime(); await wait(100);
       try { tab = await tabs.get(tab.id); } catch { guard(); tab = await openBackgroundTab(tabs,url); fresh = true; break; }
       checkBusiness(tab);
     }
@@ -86,7 +88,7 @@ export async function reopenSavedTransaction(tabs, tabId, business, id, isCurren
   }
   const targetId = tab.id;
   for (let i=0; i<100; i++) {
-    guard(); await wait(100);
+    guard(); withinTime(); await wait(100);
     tab = await tabs.get(targetId); checkBusiness(tab);
     if (tab.url === url && tab.status === 'complete' && !tab.pendingUrl) return tab;
   }

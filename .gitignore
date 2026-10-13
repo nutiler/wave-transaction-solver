@@ -26,3 +26,7 @@ local-analysis/
 
 # Private downloaded statements and collection manifests
 data/
+
+# Generated financial reports and private conversation notes
+outputs/
+*.local.md
